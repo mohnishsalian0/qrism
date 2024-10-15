@@ -1,5 +1,8 @@
 use std::cmp::{Ordering, PartialOrd};
-use std::fmt::{Display, Error, Formatter};
+use std::fmt::{Debug, Display, Error, Formatter};
+use std::ops::Not;
+
+use crate::mask::MaskingPattern;
 
 // Error
 //------------------------------------------------------------------------------
@@ -34,15 +37,6 @@ impl std::error::Error for QRError {}
 
 pub type QRResult<T> = Result<T, QRError>;
 
-// Color
-//------------------------------------------------------------------------------
-
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum Color {
-    Mono(bool),
-    Multi(u8, u8, u8),
-}
-
 // Version
 //------------------------------------------------------------------------------
 
@@ -53,31 +47,31 @@ pub enum Version {
 }
 
 impl Version {
-    pub const fn width(&self) -> usize {
+    pub const fn get_width(self) -> usize {
         debug_assert!(
-            matches!(*self, Self::Micro(1..=4) | Self::Normal(1..=40)),
+            matches!(self, Self::Micro(1..=4) | Self::Normal(1..=40)),
             "Invalid version"
         );
-        match *self {
+        match self {
             Self::Micro(v) => v * 2 + 9,
             Self::Normal(v) => v * 4 + 17,
         }
     }
 
-    pub fn alignment_pattern(&self) -> &[usize] {
+    pub fn get_alignment_pattern(self) -> &'static [i16] {
         debug_assert!(
-            matches!(*self, Self::Micro(1..=4) | Self::Normal(1..=40)),
+            matches!(self, Self::Micro(1..=4) | Self::Normal(1..=40)),
             "Invalid version"
         );
-        match *self {
+        match self {
             Self::Micro(_) => &[],
             Self::Normal(v) => ALIGNMENT_PATTERN_POSITIONS[v],
         }
     }
 
-    pub fn version_info(&self) -> u32 {
-        debug_assert!(matches!(*self, Self::Normal(7..=40)), "Invalid version");
-        match *self {
+    pub fn get_version_info(self) -> u32 {
+        debug_assert!(matches!(self, Self::Normal(7..=40)), "Invalid version");
+        match self {
             Self::Normal(v) => VERSION_INFOS[v - 7],
             _ => unreachable!(),
         }
@@ -91,42 +85,42 @@ mod version_tests {
     #[should_panic(expected = "Invalid version")]
     fn test_width_invalid_micro_version_low() {
         let invalid_version = Micro(0);
-        invalid_version.alignment_pattern();
+        invalid_version.get_alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_width_invalid_micro_version_high() {
         let invalid_version = Micro(5);
-        invalid_version.alignment_pattern();
+        invalid_version.get_alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_width_invalid_normal_version_low() {
         let invalid_version = Normal(0);
-        invalid_version.alignment_pattern();
+        invalid_version.get_alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_width_invalid_normal_version_high() {
         let invalid_version = Normal(41);
-        invalid_version.alignment_pattern();
+        invalid_version.get_alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_version_info_invalid_version_low() {
         let invalid_version = Normal(0);
-        invalid_version.alignment_pattern();
+        invalid_version.get_alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_version_info_invalid_version_high() {
         let invalid_version = Normal(41);
-        invalid_version.alignment_pattern();
+        invalid_version.get_alignment_pattern();
     }
 }
 
@@ -147,7 +141,52 @@ pub enum ECLevel {
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Palette {
     Monochrome,
-    Multicolor(u16),
+    Polychrome(u8),
+}
+
+impl Palette {
+    pub fn get_palette_info(self) -> Option<u32> {
+        match self {
+            Self::Monochrome => None,
+            Self::Polychrome(p) => {
+                debug_assert!(1 < p && p < 17, "Invalid palette");
+                Some(PALETTE_INFOS[p as usize - 1])
+            }
+        }
+    }
+}
+
+// Color
+//------------------------------------------------------------------------------
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub enum Color {
+    Light,
+    Dark,
+    Hue(u32),
+}
+
+// TODO: Figure out how to handle hue
+impl Not for Color {
+    type Output = Self;
+    fn not(self) -> Self::Output {
+        match self {
+            Self::Light => Self::Dark,
+            Self::Dark => Self::Light,
+            Self::Hue(h) => Self::Hue(!h),
+        }
+    }
+}
+
+// TODO: Figure out how to handle hue
+impl Color {
+    pub fn select<T: Debug>(&self, light: T, dark: T, hue: T) -> T {
+        match self {
+            Self::Light => light,
+            Self::Dark => dark,
+            Self::Hue(_) => hue,
+        }
+    }
 }
 
 // Mode
@@ -241,74 +280,23 @@ mod mode_tests {
     }
 }
 
-// Masking pattern
-//------------------------------------------------------------------------------
-
-pub struct MaskingPattern(u8);
-
-mod mask_functions {
-    pub fn checkerboard(r: i16, c: i16) -> bool {
-        (r + c) & 1 == 0
-    }
-
-    pub fn horizontal_lines(r: i16, _: i16) -> bool {
-        r & 1 == 0
-    }
-
-    pub fn vertical_lines(_: i16, c: i16) -> bool {
-        c % 3 == 0
-    }
-
-    pub fn diagonal_lines(r: i16, c: i16) -> bool {
-        (r + c) % 3 == 0
-    }
-
-    pub fn large_checkerboard(r: i16, c: i16) -> bool {
-        ((r >> 1) + (c / 3)) & 1 == 0
-    }
-
-    pub fn fields(r: i16, c: i16) -> bool {
-        ((r * c) & 1) + ((r * c) % 3) == 0
-    }
-
-    pub fn diamonds(r: i16, c: i16) -> bool {
-        (((r * c) & 1) + ((r * c) % 3)) & 1 == 0
-    }
-
-    pub fn meadow(r: i16, c: i16) -> bool {
-        (((r + c) & 1) + ((r * c) % 3)) & 1 == 0
-    }
-}
-
-pub fn get_mask_functions(pattern: MaskingPattern) -> QRResult<fn(i16, i16) -> bool> {
-    let MaskingPattern(pattern) = pattern;
-    let mask_function = match pattern {
-        0b000 => mask_functions::checkerboard,
-        0b001 => mask_functions::horizontal_lines,
-        0b010 => mask_functions::vertical_lines,
-        0b011 => mask_functions::diagonal_lines,
-        0b100 => mask_functions::large_checkerboard,
-        0b101 => mask_functions::fields,
-        0b110 => mask_functions::diamonds,
-        0b111 => mask_functions::meadow,
-        _ => return Err(QRError::InvalidMaskingPattern),
-    };
-    Ok(mask_function)
-}
-
 // Format information
 //------------------------------------------------------------------------------
 
-pub fn format_info_qr(ec_level: ECLevel, mask_pattern: MaskingPattern) -> u16 {
-    let MaskingPattern(m) = mask_pattern;
-    let format_data = ((ec_level as usize) ^ 1) << 3 | (m as usize);
-    FORMAT_INFOS_QR[format_data]
+pub fn get_format_info(version: Version, ec_level: ECLevel, mask_pattern: MaskingPattern) -> u32 {
+    match version {
+        Version::Micro(_) => todo!(),
+        Version::Normal(_) => {
+            let format_data = ((ec_level as usize) ^ 1) << 3 | (*mask_pattern as usize);
+            FORMAT_INFOS_QR[format_data]
+        }
+    }
 }
 
 // Global constants
 //------------------------------------------------------------------------------
 
-static ALIGNMENT_PATTERN_POSITIONS: [&[usize]; 40] = [
+static ALIGNMENT_PATTERN_POSITIONS: [&[i16]; 40] = [
     &[],
     &[6, 18],
     &[6, 22],
@@ -358,8 +346,11 @@ static VERSION_INFOS: [u32; 34] = [
     0x2542e, 0x26a64, 0x27541, 0x28c69,
 ];
 
-static FORMAT_INFOS_QR: [u16; 32] = [
+static FORMAT_INFOS_QR: [u32; 32] = [
     0x5412, 0x5125, 0x5e7c, 0x5b4b, 0x45f9, 0x40ce, 0x4f97, 0x4aa0, 0x77c4, 0x72f3, 0x7daa, 0x789d,
     0x662f, 0x6318, 0x6c41, 0x6976, 0x1689, 0x13be, 0x1ce7, 0x19d0, 0x0762, 0x0255, 0x0d0c, 0x083b,
     0x355f, 0x3068, 0x3f31, 0x3a06, 0x24b4, 0x2183, 0x2eda, 0x2bed,
 ];
+
+// TODO: Calculate and fill out palette info
+static PALETTE_INFOS: [u32; 16] = [0; 16];
