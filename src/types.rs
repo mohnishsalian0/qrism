@@ -1,6 +1,6 @@
 use std::cmp::{Ordering, PartialOrd};
 use std::fmt::{Debug, Display, Error, Formatter};
-use std::ops::Not;
+use std::ops::{Deref, Not};
 
 use crate::mask::MaskingPattern;
 
@@ -46,6 +46,16 @@ pub enum Version {
     Normal(usize),
 }
 
+impl Deref for Version {
+    type Target = usize;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Micro(v) => v,
+            Self::Normal(v) => v,
+        }
+    }
+}
+
 impl Version {
     pub const fn get_width(self) -> usize {
         debug_assert!(
@@ -65,7 +75,7 @@ impl Version {
         );
         match self {
             Self::Micro(_) => &[],
-            Self::Normal(v) => ALIGNMENT_PATTERN_POSITIONS[v],
+            Self::Normal(v) => ALIGNMENT_PATTERN_POSITIONS[v - 1],
         }
     }
 
@@ -144,14 +154,23 @@ pub enum Palette {
     Polychrome(u8),
 }
 
-impl Palette {
-    pub fn get_palette_info(self) -> Option<u32> {
+impl Deref for Palette {
+    type Target = u8;
+    fn deref(&self) -> &Self::Target {
         match self {
-            Self::Monochrome => None,
-            Self::Polychrome(p) => {
-                debug_assert!(1 < p && p < 17, "Invalid palette");
-                Some(PALETTE_INFOS[p as usize - 1])
-            }
+            Self::Monochrome => &1,
+            Self::Polychrome(p) => p,
+        }
+    }
+}
+
+impl Palette {
+    pub fn get_palette_info(self) -> u32 {
+        debug_assert!(0 < *self && *self < 17, "Invalid palette");
+
+        match self {
+            Self::Monochrome => 1,
+            Self::Polychrome(p) => PALETTE_INFOS[p as usize],
         }
     }
 }
@@ -352,5 +371,5 @@ static FORMAT_INFOS_QR: [u32; 32] = [
     0x355f, 0x3068, 0x3f31, 0x3a06, 0x24b4, 0x2183, 0x2eda, 0x2bed,
 ];
 
-// TODO: Calculate and fill out palette info
-static PALETTE_INFOS: [u32; 16] = [0; 16];
+// TODO: Fill out palette info
+static PALETTE_INFOS: [u32; 12] = [0xFFF; 12];
