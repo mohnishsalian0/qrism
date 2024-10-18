@@ -127,6 +127,14 @@ pub struct EncodedData {
 }
 
 impl EncodedData {
+    fn new(capacity: usize, version: Version) -> Self {
+        Self {
+            data: Vec::with_capacity(capacity),
+            remainder_bits: 8,
+            version,
+        }
+    }
+
     fn push_mode(&mut self, mode: Mode) {
         todo!()
     }
