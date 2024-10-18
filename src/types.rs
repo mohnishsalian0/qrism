@@ -86,6 +86,13 @@ impl Version {
             _ => unreachable!(),
         }
     }
+
+    pub fn get_mode_len(self) -> usize {
+        match version {
+            Version::Micro(v) => v - 1,
+            Version::Normal(_) => 4,
+        }
+    }
 }
 
 #[cfg(test)]

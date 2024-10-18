@@ -12,7 +12,12 @@ pub enum Mode {
 }
 
 impl Mode {
-    pub fn char_count_bits_len(&self, version: Version) -> QRResult<usize> {
+    pub fn char_count_bits_len(&self, version: Version) -> usize {
+        debug_assert!(
+            matches!(self, Self::Micro(1..=4) | Self::Normal(1..=40)),
+            "Invalid version"
+        );
+
         let bits_len = match version {
             Version::Micro(v) => match *self {
                 Self::Numeric => v + 2,
@@ -29,12 +34,11 @@ impl Mode {
                 Self::Alphanumeric => 11,
                 Self::Byte => 16,
             },
-            Version::Normal(27..=40) => match *self {
+            Version::Normal(_) => match *self {
                 Self::Numeric => 14,
                 Self::Alphanumeric => 13,
                 Self::Byte => 16,
             },
-            _ => return Err(QRError::InvalidVersion),
         };
         Ok(bits_len)
     }
@@ -112,7 +116,10 @@ impl<'a> Segment<'a> {
     }
 
     fn get_encoded_len(&self, version: Version) -> usize {
-        todo!()
+        let mode_len = version.get_mode_len();
+        let char_count_len = self.mode.char_count_bits_len(version);
+        let data_len = self.mode.data_bits_len(self.data);
+        mode_len + char_count_len + data_len
     }
 }
 
