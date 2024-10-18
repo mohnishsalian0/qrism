@@ -87,6 +87,7 @@ impl Version {
         }
     }
 }
+
 #[cfg(test)]
 mod version_tests {
     use super::Version::*;
@@ -205,97 +206,6 @@ impl Color {
             Self::Dark => dark,
             Self::Hue(_) => hue,
         }
-    }
-}
-
-// Mode
-//------------------------------------------------------------------------------
-
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum Mode {
-    Numeric = 0b0001,
-    Alphanumeric = 0b0010,
-    Byte = 0b0100,
-}
-
-impl Mode {
-    pub fn char_count_bits_len(&self, version: Version) -> QRResult<usize> {
-        let bits_len = match version {
-            Version::Micro(v) => match *self {
-                Self::Numeric => v + 2,
-                Self::Alphanumeric => v + 1,
-                Self::Byte => v + 1,
-            },
-            Version::Normal(1..=9) => match *self {
-                Self::Numeric => 10,
-                Self::Alphanumeric => 9,
-                Self::Byte => 8,
-            },
-            Version::Normal(10..=26) => match *self {
-                Self::Numeric => 12,
-                Self::Alphanumeric => 11,
-                Self::Byte => 16,
-            },
-            Version::Normal(27..=40) => match *self {
-                Self::Numeric => 14,
-                Self::Alphanumeric => 13,
-                Self::Byte => 16,
-            },
-            _ => return Err(QRError::InvalidVersion),
-        };
-        Ok(bits_len)
-    }
-
-    pub fn data_bits_len(&self, raw_data_len: usize) -> usize {
-        match *self {
-            Self::Numeric => (raw_data_len * 10 + 2) / 3,
-            Self::Alphanumeric => (raw_data_len * 11 + 1) / 2,
-            Self::Byte => raw_data_len * 8,
-        }
-    }
-}
-
-impl PartialOrd for Mode {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Mode {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match (*self, *other) {
-            (a, b) if a == b => Ordering::Equal,
-            (Self::Numeric, _) | (_, Self::Byte) => Ordering::Less,
-            (_, Self::Numeric) | (Self::Byte, _) => Ordering::Greater,
-            _ => unreachable!(),
-        }
-    }
-}
-
-#[cfg(test)]
-mod mode_tests {
-    use super::Mode::*;
-    use super::QRError::*;
-    use super::Version::*;
-
-    #[test]
-    fn test_char_count_bits_len_invalid_version() {
-        let result = Numeric.char_count_bits_len(Normal(0));
-        assert_eq!(result, Err(InvalidVersion));
-        let result = Alphanumeric.char_count_bits_len(Normal(41));
-        assert_eq!(result, Err(InvalidVersion));
-        let result = Alphanumeric.char_count_bits_len(Normal(usize::MAX));
-        assert_eq!(result, Err(InvalidVersion));
-    }
-
-    #[test]
-    fn test_comparison() {
-        assert!(Numeric == Numeric);
-        assert!(Numeric < Alphanumeric);
-        assert!(Numeric < Byte);
-        assert!(Alphanumeric == Alphanumeric);
-        assert!(Alphanumeric < Byte);
-        assert!(Byte == Byte);
     }
 }
 

@@ -1,7 +1,9 @@
-#![allow(clippy::items_after_test_module)]
+// TODO: Remember to remove unused_variables & dead_code
+#![allow(clippy::items_after_test_module, unused_variables, dead_code)]
 
 use std::error::Error;
 
+pub mod encode;
 pub mod mask;
 pub mod render;
 pub mod types;
