@@ -1,5 +1,8 @@
 use crate::types::{ECLevel, QRError, QRResult, Version};
-use std::cmp::Ordering;
+use std::{
+    cmp::{min, Ordering},
+    io::Read,
+};
 
 // Mode
 //------------------------------------------------------------------------------
@@ -12,13 +15,13 @@ pub enum Mode {
 }
 
 impl Mode {
-    pub fn char_count_bits_len(&self, version: Version) -> usize {
+    pub fn char_count_bit_len(&self, version: Version) -> usize {
         debug_assert!(
-            matches!(self, Self::Micro(1..=4) | Self::Normal(1..=40)),
+            matches!(version, Version::Micro(1..=4) | Version::Normal(1..=40)),
             "Invalid version"
         );
 
-        let bits_len = match version {
+        match version {
             Version::Micro(v) => match *self {
                 Self::Numeric => v + 2,
                 Self::Alphanumeric => v + 1,
@@ -39,15 +42,15 @@ impl Mode {
                 Self::Alphanumeric => 13,
                 Self::Byte => 16,
             },
-        };
-        Ok(bits_len)
+        }
     }
 
-    pub fn data_bits_len(&self, raw_data_len: usize) -> usize {
+    pub fn data_bits_len(&self, raw_data: &[u8]) -> usize {
+        let len = raw_data.len();
         match *self {
-            Self::Numeric => (raw_data_len * 10 + 2) / 3,
-            Self::Alphanumeric => (raw_data_len * 11 + 1) / 2,
-            Self::Byte => raw_data_len * 8,
+            Self::Numeric => (len * 10 + 2) / 3,
+            Self::Alphanumeric => (len * 11 + 1) / 2,
+            Self::Byte => len * 8,
         }
     }
 }
@@ -69,20 +72,98 @@ impl Ord for Mode {
     }
 }
 
+impl Mode {
+    #[inline]
+    fn numeric_digit(char: u8) -> u16 {
+        (char - b'0') as u16
+    }
+
+    #[inline]
+    fn alphanumeric_digit(char: u8) -> u16 {
+        match char {
+            b'0'..=b'9' => (char - b'0') as u16,
+            b'A'..=b'Z' => (char - b'A') as u16,
+            b' ' => 36,
+            b'$' => 37,
+            b'%' => 38,
+            b'*' => 39,
+            b'+' => 40,
+            b'-' => 41,
+            b'.' => 42,
+            b'/' => 43,
+            b':' => 44,
+            _ => 0,
+        }
+    }
+
+    pub fn from(&self, data: &[u8]) -> u16 {
+        match self {
+            Self::Numeric => {
+                debug_assert!(data.len() <= 3, "Data is too long for numeric conversion");
+                data.iter()
+                    .fold(0_u16, |n, b| n * 10 + Self::numeric_digit(*b))
+            }
+            Self::Alphanumeric => {
+                debug_assert!(
+                    data.len() <= 2,
+                    "Data is too long for alphanumeric conversion"
+                );
+                data.iter()
+                    .fold(0_u16, |n, b| n * 10 + Self::alphanumeric_digit(*b))
+            }
+            Self::Byte => {
+                debug_assert!(data.len() == 1, "Data is too long for byte conversion");
+                data[0] as u16
+            }
+        }
+    }
+
+    pub fn contains(&self, byte: u8) -> bool {
+        match self {
+            Self::Numeric => match byte {
+                b'0'..=b'9' => true,
+                _ => false,
+            },
+            Self::Alphanumeric => match byte {
+                b'0'..=b'9' => true,
+                b'A'..=b'Z' => true,
+                b' ' => true,
+                b'$' => true,
+                b'%' => true,
+                b'*' => true,
+                b'+' => true,
+                b'-' => true,
+                b'.' => true,
+                b'/' => true,
+                b':' => true,
+                _ => false,
+            },
+            _ => true,
+        }
+    }
+}
+
 #[cfg(test)]
 mod mode_tests {
     use super::Mode::*;
-    use super::QRError::*;
     use super::Version::*;
 
     #[test]
-    fn test_char_count_bits_len_invalid_version() {
-        let result = Numeric.char_count_bits_len(Normal(0));
-        assert_eq!(result, Err(InvalidVersion));
-        let result = Alphanumeric.char_count_bits_len(Normal(41));
-        assert_eq!(result, Err(InvalidVersion));
-        let result = Alphanumeric.char_count_bits_len(Normal(usize::MAX));
-        assert_eq!(result, Err(InvalidVersion));
+    #[should_panic]
+    fn test_char_count_bit_len_invalid_version_low() {
+        Numeric.char_count_bit_len(Normal(0));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_char_count_bit_len_invalid_version_high() {
+        Alphanumeric.char_count_bit_len(Normal(41));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_char_count_bit_len_invalid_version_max() {
+        Alphanumeric.char_count_bit_len(Normal(usize::MAX));
     }
 
     #[test]
@@ -102,22 +183,17 @@ mod mode_tests {
 #[derive(Debug, Clone)]
 struct Segment<'a> {
     mode: Mode,
-    char_count: usize,
     data: &'a [u8], // Reference to raw data
 }
 
 impl<'a> Segment<'a> {
-    fn get_mode(&self) -> Mode {
-        self.mode
+    pub fn new(mode: Mode, data: &'a [u8]) -> Self {
+        Self { mode, data }
     }
 
-    fn get_char_count(&self) -> usize {
-        self.char_count
-    }
-
-    fn get_encoded_len(&self, version: Version) -> usize {
+    pub fn len(&self, version: Version) -> usize {
         let mode_len = version.get_mode_len();
-        let char_count_len = self.mode.char_count_bits_len(version);
+        let char_count_len = self.mode.char_count_bit_len(version);
         let data_len = self.mode.data_bits_len(self.data);
         mode_len + char_count_len + data_len
     }
@@ -129,7 +205,7 @@ impl<'a> Segment<'a> {
 #[derive(Debug, Clone)]
 pub struct EncodedData {
     data: Vec<u8>,
-    remainder_bits: u8,
+    bit_offset: usize,
     version: Version,
 }
 
@@ -137,45 +213,121 @@ impl EncodedData {
     fn new(capacity: usize, version: Version) -> Self {
         Self {
             data: Vec::with_capacity(capacity),
-            remainder_bits: 8,
+            bit_offset: 0,
             version,
         }
     }
 
-    fn push_mode(&mut self, mode: Mode) {
-        todo!()
+    fn len(&self) -> usize {
+        match self.bit_offset {
+            0 => self.data.len() * 8,
+            o => (self.data.len() - 1) * 8 + o,
+        }
     }
 
-    fn push_char_count(&mut self, count: usize) {
-        todo!()
+    fn push_bits(&mut self, bit_len: usize, bits: u16) {
+        debug_assert!(
+            (4..=11).contains(&bit_len) && bit_len != 5 && bit_len != 9,
+            "Invalid bits"
+        );
+        let shifted_len = bit_len + self.bit_offset;
+        if self.bit_offset == 0 {
+            if shifted_len <= 8 {
+                self.data.push((bits << (8 - shifted_len)) as u8);
+            } else {
+                self.data.push((bits >> (shifted_len - 8)) as u8);
+                self.data.push((bits << (16 - shifted_len)) as u8);
+            }
+        } else {
+            let last = self.data.len() - 1;
+            if shifted_len <= 8 {
+                self.data[last] |= (bits << (8 - shifted_len)) as u8;
+            } else if shifted_len <= 16 {
+                self.data[last] |= (bits >> (shifted_len - 8)) as u8;
+                self.data.push((bits << (16 - shifted_len)) as u8);
+            } else {
+                self.data[last] |= (bits >> (shifted_len - 8)) as u8;
+                self.data.push((bits >> (shifted_len - 16)) as u8);
+                self.data.push((bits << (24 - shifted_len)) as u8);
+            }
+        }
+        self.bit_offset = shifted_len & 7;
     }
 
-    fn push_header(&mut self, mode: Mode, count: usize) {
-        todo!()
-    }
-
-    fn push_bits(&mut self, bits: u16) {
-        todo!()
+    fn push_header(&mut self, mode: Mode, char_count: usize) {
+        self.push_bits(4, mode as u16);
+        let char_count_bit_len = mode.char_count_bit_len(self.version);
+        debug_assert!(
+            char_count < (1 << char_count_bit_len),
+            "Char count exceeds bit length"
+        );
+        self.push_bits(char_count_bit_len, char_count as u16);
     }
 
     fn push_numeric_data(&mut self, data: &[u8]) {
-        todo!()
+        self.push_header(Mode::Numeric, data.len());
+        for chunk in data.chunks(3) {
+            let len = (chunk.len() * 10 + 2) / 3;
+            let data = Mode::Numeric.from(chunk);
+            self.push_bits(len, data);
+        }
     }
 
     fn push_alphanumeric_data(&mut self, data: &[u8]) {
-        todo!()
+        self.push_header(Mode::Alphanumeric, data.len());
+        for chunk in data.chunks(2) {
+            let len = (chunk.len() * 11 + 1) / 2;
+            let data = Mode::Alphanumeric.from(chunk);
+            self.push_bits(len, data);
+        }
     }
 
     fn push_byte_data(&mut self, data: &[u8]) {
-        todo!()
+        self.push_header(Mode::Byte, data.len());
+        for chunk in data.chunks(1) {
+            let data = Mode::Byte.from(chunk);
+            self.push_bits(8, data);
+        }
     }
 
     fn push_segment(&mut self, seg: Segment) {
-        todo!()
+        match seg.mode {
+            Mode::Numeric => self.push_numeric_data(seg.data),
+            Mode::Alphanumeric => self.push_alphanumeric_data(seg.data),
+            Mode::Byte => self.push_byte_data(seg.data),
+        }
     }
 
-    fn push_terminator(&mut self) {
-        todo!()
+    fn push_terminator(&mut self, ec_level: ECLevel) {
+        let bit_len = self.len();
+        let bit_capacity = self.version.get_bit_capacity(ec_level);
+
+        debug_assert!(bit_len > bit_capacity, "Data too long");
+
+        if bit_len < bit_capacity {
+            let term_len = min(4, bit_capacity - bit_len);
+            self.push_bits(term_len, 0);
+        }
+    }
+
+    pub fn fill_remaining_capacity(&mut self, ec_level: ECLevel) {
+        // Padding bits
+        if self.bit_offset > 0 {
+            let padding_bits_len = 8 - self.bit_offset;
+            self.push_bits(padding_bits_len, 0);
+        }
+
+        debug_assert!(self.bit_offset == 0, "Offset is not 0 before padding");
+
+        // Padding codewords
+        let byte_capacity = self.version.get_bit_capacity(ec_level) / 8;
+        let byte_len = self.data.len();
+        PADDING_CODEWORDS
+            .iter()
+            .copied()
+            .cycle()
+            .take(byte_capacity - byte_len)
+            .for_each(|pc| self.push_bits(8, pc as u16));
     }
 }
 
@@ -183,64 +335,119 @@ impl EncodedData {
 //------------------------------------------------------------------------------
 
 fn compute_optimal_segments(data: &[u8], version: Version) -> Vec<Segment> {
-    todo!()
+    debug_assert!(!data.is_empty(), "Empty data");
+
+    // Dynamic programming to calculate optimum mode for each char
+    const MODES: [Mode; 3] = [Mode::Byte, Mode::Alphanumeric, Mode::Numeric];
+    let len = data.len();
+    let mut prev_cost: [usize; 3] = [0; 3];
+    MODES
+        .iter()
+        .enumerate()
+        .for_each(|(i, &m)| prev_cost[i] = (4 + m.char_count_bit_len(version)) * 6);
+    let mut cur_cost: [usize; 3] = [usize::MAX; 3];
+    let mut min_path: Vec<Vec<usize>> = vec![vec![usize::MAX; 3]; len];
+    for (i, b) in data.iter().enumerate() {
+        for (j, to_mode) in MODES.iter().enumerate() {
+            if !to_mode.contains(*b) {
+                continue;
+            }
+            let encoded_char_size = match to_mode {
+                Mode::Numeric => 20,
+                Mode::Alphanumeric => 33,
+                Mode::Byte => 48,
+            };
+            for (k, from_mode) in MODES.iter().enumerate() {
+                let mut cost = encoded_char_size + prev_cost[k];
+                if to_mode != from_mode {
+                    cost += (4 + to_mode.char_count_bit_len(version)) * 6;
+                }
+                if cost < cur_cost[j] {
+                    cur_cost[j] = cost;
+                    min_path[i][j] = k;
+                }
+            }
+        }
+        prev_cost.clone_from_slice(&cur_cost);
+        cur_cost.fill(usize::MAX);
+    }
+
+    // Construct char mode vector from min_path
+    let mut mode_index = 0;
+    for i in 1..3 {
+        if prev_cost[i] < prev_cost[mode_index] {
+            mode_index = i;
+        }
+    }
+    let char_mode: Vec<Mode> = (0..len)
+        .rev()
+        .scan(mode_index, |mi, i| {
+            *mi = min_path[i][*mi];
+            Some(MODES[*mi])
+        })
+        .collect();
+
+    // Convert modes to segments
+    let mut segs: Vec<Segment> = vec![];
+    let mut seg_start = 0;
+    let mut seg_mode = char_mode[0];
+    for (i, &m) in char_mode.iter().enumerate().skip(1) {
+        if seg_mode != m {
+            segs.push(Segment::new(seg_mode, &data[seg_start..i]));
+            seg_mode = m;
+            seg_start = i;
+        }
+    }
+    segs.push(Segment::new(seg_mode, &data[seg_start..len]));
+    segs
 }
 
-fn find_best_version(data: &[u8], ec_level: ECLevel) -> Version {
-    todo!()
+fn find_min_version(data: &[u8], ec_level: ECLevel) -> QRResult<(Vec<Segment>, Version)> {
+    let mut segments = vec![];
+    let mut size = 0;
+    for v in 1..40 {
+        let version = Version::Normal(v);
+        let capacity = version.get_bit_capacity(ec_level);
+        if v == 1 || v == 10 || v == 27 {
+            segments = compute_optimal_segments(data, version);
+            size = segments.iter().fold(0, |a, s| a + s.len(version));
+        }
+        if size <= capacity {
+            return Ok((segments, version));
+        }
+    }
+    Err(QRError::DataTooLong)
 }
 
-pub fn encode(data: &[u8], ec_level: ECLevel) -> Result<EncodedData, QRError> {
-    todo!()
+pub fn encode(data: &[u8], ec_level: ECLevel) -> QRResult<EncodedData> {
+    let (segments, version) = find_min_version(data, ec_level)?;
+    let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
+    let mut encoded_data = EncodedData::new(capacity, version);
+    for seg in segments {
+        encoded_data.push_segment(seg);
+    }
+    Ok(encoded_data)
 }
 
-pub fn encode_with_version(data: &[u8], ec_level: ECLevel) -> Result<EncodedData, QRError> {
-    todo!()
+pub fn encode_with_version(
+    data: &[u8],
+    ec_level: ECLevel,
+    version: Version,
+) -> QRResult<EncodedData> {
+    let capacity = version.get_bit_capacity(ec_level);
+    let segments = compute_optimal_segments(data, version);
+    let size = segments.iter().fold(0, |a, s| a + s.len(version));
+    if size > capacity {
+        return Err(QRError::DataTooLong);
+    }
+    let mut encoded_data = EncodedData::new(capacity, version);
+    for seg in segments {
+        encoded_data.push_segment(seg);
+    }
+    Ok(encoded_data)
 }
 
 // Global constants
 //------------------------------------------------------------------------------
 
-// Bit capacity per error level per version
-static VERSION_BIT_CAPACITY: [[usize; 4]; 40] = [
-    [152, 128, 104, 72],
-    [272, 224, 176, 128],
-    [440, 352, 272, 208],
-    [640, 512, 384, 288],
-    [864, 688, 496, 368],
-    [1088, 864, 608, 480],
-    [1248, 992, 704, 528],
-    [1552, 1232, 880, 688],
-    [1856, 1456, 1056, 800],
-    [2192, 1728, 1232, 976],
-    [2592, 2032, 1440, 1120],
-    [2960, 2320, 1648, 1264],
-    [3424, 2672, 1952, 1440],
-    [3688, 2920, 2088, 1576],
-    [4184, 3320, 2360, 1784],
-    [4712, 3624, 2600, 2024],
-    [5176, 4056, 2936, 2264],
-    [5768, 4504, 3176, 2504],
-    [6360, 5016, 3560, 2728],
-    [6888, 5352, 3880, 3080],
-    [7456, 5712, 4096, 3248],
-    [8048, 6256, 4544, 3536],
-    [8752, 6880, 4912, 3712],
-    [9392, 7312, 5312, 4112],
-    [10208, 8000, 5744, 4304],
-    [10960, 8496, 6032, 4768],
-    [11744, 9024, 6464, 5024],
-    [12248, 9544, 6968, 5288],
-    [13048, 10136, 7288, 5608],
-    [13880, 10984, 7880, 5960],
-    [14744, 11640, 8264, 6344],
-    [15640, 12328, 8920, 6760],
-    [16568, 13048, 9368, 7208],
-    [17528, 13800, 9848, 7688],
-    [18448, 14496, 10288, 7888],
-    [19472, 15312, 10832, 8432],
-    [20528, 15936, 11408, 8768],
-    [21616, 16816, 12016, 9136],
-    [22496, 17728, 12656, 9776],
-    [23648, 18672, 13328, 10208],
-];
+static PADDING_CODEWORDS: [u8; 2] = [0b1110_1100, 0b0001_0001];
