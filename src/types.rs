@@ -9,7 +9,9 @@ use crate::mask::MaskingPattern;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum QRError {
+    EmptyData,
     DataTooLong,
+    CapacityOverflow,
     InvalidVersion,
     InvalidECLevel,
     InvalidPalette,
@@ -21,7 +23,9 @@ pub enum QRError {
 impl Display for QRError {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
         let msg = match *self {
+            Self::EmptyData => "empty data",
             Self::DataTooLong => "data too long",
+            Self::CapacityOverflow => "capacity overflow",
             Self::InvalidVersion => "invalid version",
             Self::InvalidECLevel => "invalid error correction level",
             Self::InvalidPalette => "invalid color palette",
@@ -96,8 +100,8 @@ impl Version {
 
     pub fn get_bit_capacity(self, ec_level: ECLevel) -> usize {
         match self {
-            Version::Micro(v) => VERSION_BIT_CAPACITY[40 + v][ec_level as usize],
-            Version::Normal(v) => VERSION_BIT_CAPACITY[v][ec_level as usize],
+            Version::Micro(v) => VERSION_BIT_CAPACITY[39 + v][ec_level as usize],
+            Version::Normal(v) => VERSION_BIT_CAPACITY[v - 1][ec_level as usize],
         }
     }
 }
