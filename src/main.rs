@@ -3,10 +3,11 @@
 
 use std::error::Error;
 
-pub mod encode;
-pub mod error_correction;
+mod builder;
+mod encode;
+mod error_correction;
 pub mod mask;
-pub mod render;
+pub mod qr;
 pub mod types;
 
 // TODO: Remove rqrr and clean up main function after testing

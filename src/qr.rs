@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use crate::{
     mask::MaskingPattern,
-    types::{get_format_info, Color, ECLevel, Palette, Version},
+    types::{format_info, Color, ECLevel, Palette, Version},
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -46,23 +46,23 @@ impl QR {
         );
         debug_assert!(0 < *palette && *palette < 17, "Invalid palette");
 
-        let width = version.get_width();
+        let width = version.width();
         Self { version, width, ec_level, palette, grid: vec![Module::Empty; width * width] }
     }
 
-    pub fn get_version(&self) -> Version {
+    pub fn version(&self) -> Version {
         self.version
     }
 
-    pub fn get_width(&self) -> usize {
+    pub fn width(&self) -> usize {
         self.width
     }
 
-    pub fn get_ec_level(&self) -> ECLevel {
+    pub fn ec_level(&self) -> ECLevel {
         self.ec_level
     }
 
-    pub fn get_palette(&self) -> Palette {
+    pub fn palette(&self) -> Palette {
         self.palette
     }
 
@@ -124,7 +124,7 @@ impl QR {
 #[cfg(test)]
 mod qr_util_tests {
     use crate::{
-        render::{Module, QR},
+        qr::{Module, QR},
         types::{Color, ECLevel, Palette, Version},
     };
 
@@ -172,6 +172,17 @@ mod qr_util_tests {
 }
 
 impl QR {
+    fn draw_finder_patterns(&mut self) {
+        self.draw_finder_pattern_at(3, 3);
+        match self.version {
+            Version::Micro(_) => {}
+            Version::Normal(_) => {
+                self.draw_finder_pattern_at(3, -4);
+                self.draw_finder_pattern_at(-4, 3);
+            }
+        }
+    }
+
     fn draw_finder_pattern_at(&mut self, r: i16, c: i16) {
         let (dr_left, dr_right) = if r > 0 { (-3, 4) } else { (-4, 3) };
         let (dc_top, dc_bottom) = if c > 0 { (-3, 4) } else { (-4, 3) };
@@ -190,23 +201,12 @@ impl QR {
             }
         }
     }
-
-    fn draw_finder_patterns(&mut self) {
-        self.draw_finder_pattern_at(3, 3);
-        match self.version {
-            Version::Micro(_) => {}
-            Version::Normal(_) => {
-                self.draw_finder_pattern_at(3, -4);
-                self.draw_finder_pattern_at(-4, 3);
-            }
-        }
-    }
 }
 
 #[cfg(test)]
 mod finder_pattern_tests {
     use crate::{
-        render::QR,
+        qr::QR,
         types::{ECLevel, Palette, Version},
     };
 
@@ -243,6 +243,16 @@ mod finder_pattern_tests {
 }
 
 impl QR {
+    fn draw_timing_pattern(&mut self) {
+        let w = self.width as i16;
+        let (offset, last) = match self.version {
+            Version::Micro(_) => (0, w - 1),
+            Version::Normal(_) => (6, w - 9),
+        };
+        self.draw_line(offset, 8, offset, last);
+        self.draw_line(8, offset, last, offset);
+    }
+
     fn draw_line(&mut self, r1: i16, c1: i16, r2: i16, c2: i16) {
         debug_assert!(r1 == r2 || c1 == c2, "Line is neither vertical nor horizontal");
 
@@ -264,22 +274,12 @@ impl QR {
             }
         }
     }
-
-    fn draw_timing_pattern(&mut self) {
-        let w = self.width as i16;
-        let (offset, last) = match self.version {
-            Version::Micro(_) => (0, w - 1),
-            Version::Normal(_) => (6, w - 9),
-        };
-        self.draw_line(offset, 8, offset, last);
-        self.draw_line(8, offset, last, offset);
-    }
 }
 
 #[cfg(test)]
 mod timing_pattern_tests {
     use crate::{
-        render::QR,
+        qr::QR,
         types::{ECLevel, Palette, Version},
     };
 
@@ -316,6 +316,15 @@ mod timing_pattern_tests {
 }
 
 impl QR {
+    fn draw_alignment_patterns(&mut self) {
+        let positions = self.version.alignment_pattern();
+        for &r in positions {
+            for &c in positions {
+                self.draw_alignment_pattern_at(r, c)
+            }
+        }
+    }
+
     fn draw_alignment_pattern_at(&mut self, r: i16, c: i16) {
         let w = self.width as i16;
         if (r == 6 && (c == 6 || c - w == -7)) || (r - w == -7 && c == 6) {
@@ -334,21 +343,12 @@ impl QR {
             }
         }
     }
-
-    fn draw_alignment_patterns(&mut self) {
-        let positions = self.version.get_alignment_pattern();
-        for &r in positions {
-            for &c in positions {
-                self.draw_alignment_pattern_at(r, c)
-            }
-        }
-    }
 }
 
 #[cfg(test)]
 mod alignment_pattern_tests {
     use crate::{
-        render::QR,
+        qr::QR,
         types::{ECLevel, Palette, Version},
     };
 
@@ -492,7 +492,7 @@ impl QR {
 #[cfg(test)]
 mod all_function_patterns_test {
     use crate::{
-        render::QR,
+        qr::QR,
         types::{ECLevel, Palette, Version},
     };
 
@@ -537,23 +537,8 @@ mod all_function_patterns_test {
 }
 
 impl QR {
-    fn draw_number(
-        &mut self,
-        number: u32,
-        bit_len: usize,
-        off_color: Module,
-        on_color: Module,
-        coords: &[(i16, i16)],
-    ) {
-        let mut mask = 1 << (bit_len - 1);
-        for (r, c) in coords {
-            if number & mask == 0 {
-                self.set(*r, *c, off_color);
-            } else {
-                self.set(*r, *c, on_color);
-            }
-            mask >>= 1;
-        }
+    fn reserve_format_area(&mut self) {
+        self.draw_format_info((1 << FORMAT_INFO_BIT_LEN) - 1);
     }
 
     fn draw_format_info(&mut self, format_info: u32) {
@@ -579,15 +564,11 @@ impl QR {
         }
     }
 
-    fn reserve_format_area(&mut self) {
-        self.draw_format_info((1 << FORMAT_INFO_BIT_LEN) - 1);
-    }
-
     fn draw_version_info(&mut self) {
         match self.version {
             Version::Micro(_) | Version::Normal(1..=6) => {}
             Version::Normal(7..=40) => {
-                let version_info = self.version.get_version_info();
+                let version_info = self.version.version_info();
                 self.draw_number(
                     version_info,
                     VERSION_INFO_BIT_LEN,
@@ -613,7 +594,7 @@ impl QR {
             Version::Normal(_) => match self.palette {
                 Palette::Monochrome => {}
                 Palette::Polychrome(2..=16) => {
-                    let palette_info = self.palette.get_palette_info();
+                    let palette_info = self.palette.palette_info();
                     self.draw_number(
                         palette_info,
                         PALETTE_INFO_BIT_LEN,
@@ -636,12 +617,31 @@ impl QR {
             },
         }
     }
+
+    fn draw_number(
+        &mut self,
+        number: u32,
+        bit_len: usize,
+        off_color: Module,
+        on_color: Module,
+        coords: &[(i16, i16)],
+    ) {
+        let mut mask = 1 << (bit_len - 1);
+        for (r, c) in coords {
+            if number & mask == 0 {
+                self.set(*r, *c, off_color);
+            } else {
+                self.set(*r, *c, on_color);
+            }
+            mask >>= 1;
+        }
+    }
 }
 
 #[cfg(test)]
 mod qr_information_tests {
     use crate::{
-        render::QR,
+        qr::QR,
         types::{ECLevel, Palette, Version},
     };
 
@@ -861,7 +861,7 @@ struct DataModIter {
 
 impl DataModIter {
     const fn new(version: Version) -> Self {
-        let w = version.get_width() as i16;
+        let w = version.width() as i16;
         let vert_timing_col = match version {
             Version::Micro(_) => 0,
             Version::Normal(_) => 6,
@@ -900,23 +900,33 @@ impl Iterator for DataModIter {
 }
 
 impl QR {
-    fn draw_codeword(&mut self) {
-        todo!();
+    fn draw_codeword(&mut self, codeword: u8, iterator: &mut DataModIter) {
+        for i in (0..8).rev() {
+            let bit = (codeword >> i) & 1;
+            let module =
+                if bit & 1 == 0 { Module::Data(Color::Dark) } else { Module::Data(Color::Light) };
+            let (r, c) = iterator.next().expect("QR capacity overflow while drawing data");
+            self.set(r, c, module)
+        }
     }
 
-    fn draw_data(&mut self) {
-        todo!();
+    fn draw_payload(&mut self, payload: &[u8], iterator: &mut DataModIter) {
+        for &codeword in payload.iter() {
+            self.draw_codeword(codeword, iterator);
+        }
     }
 
-    pub fn draw_encoding_region(&mut self) {
+    pub fn draw_encoding_region(&mut self, data: &[u8], ecc: &[u8]) {
         self.reserve_format_area();
         self.draw_version_info();
         self.draw_palette_info();
-        self.draw_data();
+        let mut payload_idx_iter = DataModIter::new(self.version);
+        self.draw_payload(data, &mut payload_idx_iter);
+        self.draw_payload(ecc, &mut payload_idx_iter);
     }
 
     pub fn draw_mask_pattern(&mut self, pattern: MaskingPattern) {
-        let mask_function = pattern.get_mask_functions();
+        let mask_function = pattern.mask_functions();
         let w = self.width as i16;
         for r in 0..w {
             for c in 0..w {
@@ -927,7 +937,7 @@ impl QR {
                 }
             }
         }
-        let format_info = get_format_info(self.version, self.ec_level, pattern);
+        let format_info = format_info(self.version, self.ec_level, pattern);
         self.draw_format_info(format_info);
     }
 }

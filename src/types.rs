@@ -61,7 +61,7 @@ impl Deref for Version {
 }
 
 impl Version {
-    pub const fn get_width(self) -> usize {
+    pub const fn width(self) -> usize {
         debug_assert!(matches!(self, Self::Micro(1..=4) | Self::Normal(1..=40)), "Invalid version");
         match self {
             Self::Micro(v) => v * 2 + 9,
@@ -69,7 +69,7 @@ impl Version {
         }
     }
 
-    pub fn get_alignment_pattern(self) -> &'static [i16] {
+    pub fn alignment_pattern(self) -> &'static [i16] {
         debug_assert!(matches!(self, Self::Micro(1..=4) | Self::Normal(1..=40)), "Invalid version");
         match self {
             Self::Micro(_) => &[],
@@ -77,7 +77,7 @@ impl Version {
         }
     }
 
-    pub fn get_version_info(self) -> u32 {
+    pub fn version_info(self) -> u32 {
         debug_assert!(matches!(self, Self::Normal(7..=40)), "Invalid version");
         match self {
             Self::Normal(v) => VERSION_INFOS[v - 7],
@@ -85,28 +85,28 @@ impl Version {
         }
     }
 
-    pub fn get_mode_len(self) -> usize {
+    pub fn mode_len(self) -> usize {
         match self {
             Version::Micro(v) => v - 1,
             Version::Normal(_) => 4,
         }
     }
 
-    pub fn get_bit_capacity(self, ec_level: ECLevel) -> usize {
+    pub fn bit_capacity(self, ec_level: ECLevel) -> usize {
         match self {
             Version::Micro(v) => VERSION_BIT_CAPACITY[39 + v][ec_level as usize],
             Version::Normal(v) => VERSION_BIT_CAPACITY[v - 1][ec_level as usize],
         }
     }
 
-    pub fn get_data_codewords_per_block(self, ec_level: ECLevel) -> (usize, usize, usize, usize) {
+    pub fn data_codewords_per_block(self, ec_level: ECLevel) -> (usize, usize, usize, usize) {
         match self {
             Version::Micro(v) => DATA_CODEWORDS_PER_BLOCK[39 + v][ec_level as usize],
             Version::Normal(v) => DATA_CODEWORDS_PER_BLOCK[v - 1][ec_level as usize],
         }
     }
 
-    pub fn get_ecc_per_block(self, ec_level: ECLevel) -> usize {
+    pub fn ecc_per_block(self, ec_level: ECLevel) -> usize {
         match self {
             Version::Micro(v) => ECC_PER_BLOCK[39 + v][ec_level as usize],
             Version::Normal(v) => ECC_PER_BLOCK[v - 1][ec_level as usize],
@@ -122,42 +122,42 @@ mod version_tests {
     #[should_panic(expected = "Invalid version")]
     fn test_width_invalid_micro_version_low() {
         let invalid_version = Micro(0);
-        invalid_version.get_alignment_pattern();
+        invalid_version.alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_width_invalid_micro_version_high() {
         let invalid_version = Micro(5);
-        invalid_version.get_alignment_pattern();
+        invalid_version.alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_width_invalid_normal_version_low() {
         let invalid_version = Normal(0);
-        invalid_version.get_alignment_pattern();
+        invalid_version.alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_width_invalid_normal_version_high() {
         let invalid_version = Normal(41);
-        invalid_version.get_alignment_pattern();
+        invalid_version.alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_version_info_invalid_version_low() {
         let invalid_version = Normal(0);
-        invalid_version.get_alignment_pattern();
+        invalid_version.alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_version_info_invalid_version_high() {
         let invalid_version = Normal(41);
-        invalid_version.get_alignment_pattern();
+        invalid_version.alignment_pattern();
     }
 }
 
@@ -192,7 +192,7 @@ impl Deref for Palette {
 }
 
 impl Palette {
-    pub fn get_palette_info(self) -> u32 {
+    pub fn palette_info(self) -> u32 {
         debug_assert!(0 < *self && *self < 17, "Invalid palette");
 
         match self {
@@ -238,7 +238,7 @@ impl Color {
 // Format information
 //------------------------------------------------------------------------------
 
-pub fn get_format_info(version: Version, ec_level: ECLevel, mask_pattern: MaskingPattern) -> u32 {
+pub fn format_info(version: Version, ec_level: ECLevel, mask_pattern: MaskingPattern) -> u32 {
     match version {
         Version::Micro(_) => todo!(),
         Version::Normal(_) => {
