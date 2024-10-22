@@ -4,6 +4,7 @@
 use std::error::Error;
 
 pub mod encode;
+pub mod error_correction;
 pub mod mask;
 pub mod render;
 pub mod types;

@@ -47,13 +47,7 @@ impl QR {
         debug_assert!(0 < *palette && *palette < 17, "Invalid palette");
 
         let width = version.get_width();
-        Self {
-            version,
-            width,
-            ec_level,
-            palette,
-            grid: vec![Module::Empty; width * width],
-        }
+        Self { version, width, ec_level, palette, grid: vec![Module::Empty; width * width] }
     }
 
     pub fn get_version(&self) -> Version {
@@ -73,10 +67,7 @@ impl QR {
     }
 
     pub fn count_dark_modules(&self) -> usize {
-        self.grid
-            .iter()
-            .filter(|&m| matches!(**m, Color::Dark))
-            .count()
+        self.grid.iter().filter(|&m| matches!(**m, Color::Dark)).count()
     }
 
     #[cfg(test)]
@@ -108,14 +99,8 @@ impl QR {
 
     fn coord_to_index(&self, r: i16, c: i16) -> usize {
         let w = self.width as i16;
-        debug_assert!(
-            -w <= r && r < w,
-            "row should be greater than or equal to width"
-        );
-        debug_assert!(
-            -w <= c && c < w,
-            "column should be greater than or equal to width"
-        );
+        debug_assert!(-w <= r && r < w, "row should be greater than or equal to width");
+        debug_assert!(-w <= c && c < w, "column should be greater than or equal to width");
 
         let r = if r < 0 { r + w } else { r };
         let c = if c < 0 { c + w } else { c };
@@ -259,21 +244,14 @@ mod finder_pattern_tests {
 
 impl QR {
     fn draw_line(&mut self, r1: i16, c1: i16, r2: i16, c2: i16) {
-        debug_assert!(
-            r1 == r2 || c1 == c2,
-            "Line is neither vertical nor horizontal"
-        );
+        debug_assert!(r1 == r2 || c1 == c2, "Line is neither vertical nor horizontal");
 
         if r1 == r2 {
             for j in c1..=c2 {
                 self.set(
                     r1,
                     j,
-                    if j & 1 == 0 {
-                        Module::Func(Color::Dark)
-                    } else {
-                        Module::Func(Color::Light)
-                    },
+                    if j & 1 == 0 { Module::Func(Color::Dark) } else { Module::Func(Color::Light) },
                 );
             }
         } else {
@@ -281,11 +259,7 @@ impl QR {
                 self.set(
                     i,
                     c1,
-                    if i & 1 == 0 {
-                        Module::Func(Color::Dark)
-                    } else {
-                        Module::Func(Color::Light)
-                    },
+                    if i & 1 == 0 { Module::Func(Color::Dark) } else { Module::Func(Color::Light) },
                 );
             }
         }
@@ -892,23 +866,14 @@ impl DataModIter {
             Version::Micro(_) => 0,
             Version::Normal(_) => 6,
         };
-        Self {
-            r: w - 1,
-            c: w - 1,
-            width: w,
-            vert_timing_col,
-        }
+        Self { r: w - 1, c: w - 1, width: w, vert_timing_col }
     }
 }
 
 impl Iterator for DataModIter {
     type Item = (i16, i16);
     fn next(&mut self) -> Option<Self::Item> {
-        let adjusted_col = if self.c <= self.vert_timing_col {
-            self.c + 1
-        } else {
-            self.c
-        };
+        let adjusted_col = if self.c <= self.vert_timing_col { self.c + 1 } else { self.c };
         if self.c < 0 {
             return None;
         }

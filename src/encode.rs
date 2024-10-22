@@ -40,10 +40,7 @@ impl Mode {
 
     #[inline]
     fn alphanumeric_digit(char: u8) -> u16 {
-        debug_assert!(
-            Mode::Alphanumeric.contains(char),
-            "Invalid alphanumeric data: {char}"
-        );
+        debug_assert!(Mode::Alphanumeric.contains(char), "Invalid alphanumeric data: {char}");
         match char {
             b'0'..=b'9' => (char - b'0') as u16,
             b'A'..=b'Z' => (char - b'A' + 10) as u16,
@@ -65,16 +62,11 @@ impl Mode {
         match self {
             Self::Numeric => {
                 debug_assert!(len <= 3, "Data is too long for numeric conversion: {len}");
-                data.iter()
-                    .fold(0_u16, |n, b| n * 10 + Self::numeric_digit(*b))
+                data.iter().fold(0_u16, |n, b| n * 10 + Self::numeric_digit(*b))
             }
             Self::Alphanumeric => {
-                debug_assert!(
-                    len <= 2,
-                    "Data is too long for alphanumeric conversion: {len}"
-                );
-                data.iter()
-                    .fold(0_u16, |n, b| n * 45 + Self::alphanumeric_digit(*b))
+                debug_assert!(len <= 2, "Data is too long for alphanumeric conversion: {len}");
+                data.iter().fold(0_u16, |n, b| n * 45 + Self::alphanumeric_digit(*b))
             }
             Self::Byte => {
                 debug_assert!(len == 1, "Data is too long for byte conversion: {len}");
@@ -256,22 +248,10 @@ mod mode_tests {
         assert_eq!(Mode::Numeric.char_count_bit_len(Version::Normal(40)), 14);
         assert_eq!(Mode::Alphanumeric.char_count_bit_len(Version::Normal(1)), 9);
         assert_eq!(Mode::Alphanumeric.char_count_bit_len(Version::Normal(9)), 9);
-        assert_eq!(
-            Mode::Alphanumeric.char_count_bit_len(Version::Normal(10)),
-            11
-        );
-        assert_eq!(
-            Mode::Alphanumeric.char_count_bit_len(Version::Normal(26)),
-            11
-        );
-        assert_eq!(
-            Mode::Alphanumeric.char_count_bit_len(Version::Normal(27)),
-            13
-        );
-        assert_eq!(
-            Mode::Alphanumeric.char_count_bit_len(Version::Normal(40)),
-            13
-        );
+        assert_eq!(Mode::Alphanumeric.char_count_bit_len(Version::Normal(10)), 11);
+        assert_eq!(Mode::Alphanumeric.char_count_bit_len(Version::Normal(26)), 11);
+        assert_eq!(Mode::Alphanumeric.char_count_bit_len(Version::Normal(27)), 13);
+        assert_eq!(Mode::Alphanumeric.char_count_bit_len(Version::Normal(40)), 13);
         assert_eq!(Mode::Byte.char_count_bit_len(Version::Normal(1)), 8);
         assert_eq!(Mode::Byte.char_count_bit_len(Version::Normal(9)), 8);
         assert_eq!(Mode::Byte.char_count_bit_len(Version::Normal(10)), 16);
@@ -390,82 +370,48 @@ mod segment_tests {
     }
 }
 
-// Encoded data
+// Encoded Blob
 //------------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
-pub struct EncodingRegion {
-    data: Vec<u8>,
+pub struct EncodedBlob {
+    payload: Vec<u8>,
     bit_offset: usize,
     version: Version,
-    ec_level: ECLevel,
+    bit_capacity: usize,
 }
 
-impl EncodingRegion {
+impl EncodedBlob {
     fn new(version: Version, ec_level: ECLevel) -> Self {
-        let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
+        let bit_capacity = version.get_bit_capacity(ec_level);
         Self {
-            data: Vec::with_capacity(capacity),
+            payload: Vec::with_capacity((bit_capacity + 7) / 8),
             bit_offset: 0,
             version,
-            ec_level,
+            bit_capacity,
         }
     }
 
     fn bit_len(&self) -> usize {
         match self.bit_offset {
-            0 => self.data.len() * 8,
-            o => (self.data.len() - 1) * 8 + o,
+            0 => self.payload.len() * 8,
+            o => (self.payload.len() - 1) * 8 + o,
         }
-    }
-
-    fn push_bits(&mut self, bit_len: usize, bits: u16) {
-        debug_assert!(
-            bit_len >= (16 - bits.leading_zeros()) as usize,
-            "Bit length shouldn't be less than bits count: Length {bit_len}, Bits {bits}"
-        );
-        if bit_len == 0 {
-            return;
-        }
-        debug_assert!(
-            self.bit_len() + bit_len <= self.version.get_bit_capacity(self.ec_level),
-            "Capacity overflow: capacity {}, size {}",
-            self.version.get_bit_capacity(self.ec_level),
-            self.bit_len() + bit_len
-        );
-
-        let shifted_len = self.bit_offset + bit_len;
-        if self.bit_offset == 0 {
-            if shifted_len <= 8 {
-                self.data.push((bits << (8 - shifted_len)) as u8);
-            } else {
-                self.data.push((bits >> (shifted_len - 8)) as u8);
-                self.data.push((bits << (16 - shifted_len)) as u8);
-            }
-        } else {
-            let last = self.data.len() - 1;
-            if shifted_len <= 8 {
-                self.data[last] |= (bits << (8 - shifted_len)) as u8;
-            } else if shifted_len <= 16 {
-                self.data[last] |= (bits >> (shifted_len - 8)) as u8;
-                self.data.push((bits << (16 - shifted_len)) as u8);
-            } else {
-                self.data[last] |= (bits >> (shifted_len - 8)) as u8;
-                self.data.push((bits >> (shifted_len - 16)) as u8);
-                self.data.push((bits << (24 - shifted_len)) as u8);
-            }
-        }
-        self.bit_offset = shifted_len & 7;
     }
 
     fn push_header(&mut self, mode: Mode, char_count: usize) {
         self.push_bits(4, mode as u16);
         let char_count_bit_len = mode.char_count_bit_len(self.version);
-        debug_assert!(
-            char_count < (1 << char_count_bit_len),
-            "Char count exceeds bit length"
-        );
+        debug_assert!(char_count < (1 << char_count_bit_len), "Char count exceeds bit length");
         self.push_bits(char_count_bit_len, char_count as u16);
+    }
+
+    fn push_segment(&mut self, seg: Segment) {
+        match seg.mode {
+            Mode::Numeric => self.push_numeric_data(seg.data),
+            Mode::Alphanumeric => self.push_alphanumeric_data(seg.data),
+            Mode::Byte => self.push_byte_data(seg.data),
+        }
     }
 
     fn push_numeric_data(&mut self, data: &[u8]) {
@@ -494,21 +440,18 @@ impl EncodingRegion {
         }
     }
 
-    fn push_segment(&mut self, seg: Segment) {
-        match seg.mode {
-            Mode::Numeric => self.push_numeric_data(seg.data),
-            Mode::Alphanumeric => self.push_alphanumeric_data(seg.data),
-            Mode::Byte => self.push_byte_data(seg.data),
+    pub fn push_terminator(&mut self) {
+        let bit_len = self.bit_len();
+        if bit_len < self.bit_capacity {
+            let term_len = min(4, self.bit_capacity - bit_len);
+            self.push_bits(term_len, 0);
         }
     }
 
-    fn push_terminator(&mut self) {
-        let bit_len = self.bit_len();
-        let bit_capacity = self.version.get_bit_capacity(self.ec_level);
-        if bit_len < bit_capacity {
-            let term_len = min(4, bit_capacity - bit_len);
-            self.push_bits(term_len, 0);
-        }
+    // TODO: Maybe this function should be moved to builder
+    pub fn pad_remaining_capacity(&mut self) {
+        self.push_padding_bits();
+        self.push_padding_codewords();
     }
 
     fn push_padding_bits(&mut self) {
@@ -525,22 +468,49 @@ impl EncodingRegion {
             self.bit_offset
         );
 
-        let byte_capacity = self.version.get_bit_capacity(self.ec_level) / 8;
-        let byte_len = self.bit_len() / 8;
-        PADDING_CODEWORDS
-            .iter()
-            .copied()
-            .cycle()
-            .take(byte_capacity - byte_len)
-            .for_each(|pc| {
-                self.push_bits(8, pc as u16);
-            });
+        let remain_byte_capacity = (self.bit_capacity - self.bit_len()) / 8;
+        PADDING_CODEWORDS.iter().copied().cycle().take(remain_byte_capacity).for_each(|pc| {
+            self.push_bits(8, pc as u16);
+        });
     }
 
-    // TODO: Maybe this function should be moved to builder
-    pub fn pad_remaining_capacity(&mut self) {
-        self.push_padding_bits();
-        self.push_padding_codewords();
+    fn push_bits(&mut self, bit_len: usize, bits: u16) {
+        debug_assert!(
+            bit_len >= (16 - bits.leading_zeros()) as usize,
+            "Bit count shouldn't exceed bit length: Length {bit_len}, Bits {bits}"
+        );
+        if bit_len == 0 {
+            return;
+        }
+        debug_assert!(
+            self.bit_len() + bit_len <= self.bit_capacity,
+            "Capacity overflow: Capacity {}, Size {}",
+            self.bit_capacity,
+            self.bit_len() + bit_len
+        );
+
+        let shifted_len = self.bit_offset + bit_len;
+        if self.bit_offset == 0 {
+            if shifted_len <= 8 {
+                self.payload.push((bits << (8 - shifted_len)) as u8);
+            } else {
+                self.payload.push((bits >> (shifted_len - 8)) as u8);
+                self.payload.push((bits << (16 - shifted_len)) as u8);
+            }
+        } else {
+            let last = self.payload.len() - 1;
+            if shifted_len <= 8 {
+                self.payload[last] |= (bits << (8 - shifted_len)) as u8;
+            } else if shifted_len <= 16 {
+                self.payload[last] |= (bits >> (shifted_len - 8)) as u8;
+                self.payload.push((bits << (16 - shifted_len)) as u8);
+            } else {
+                self.payload[last] |= (bits >> (shifted_len - 8)) as u8;
+                self.payload.push((bits >> (shifted_len - 16)) as u8);
+                self.payload.push((bits << (24 - shifted_len)) as u8);
+            }
+        }
+        self.bit_offset = shifted_len & 7;
     }
 }
 
@@ -551,14 +521,13 @@ mod encoding_region_tests {
         types::{ECLevel, Version},
     };
 
-    use super::EncodingRegion;
+    use super::EncodedBlob;
 
     #[test]
     fn test_len() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
-        let mut eb = EncodingRegion::new(version, ec_level);
+        let mut eb = EncodedBlob::new(version, ec_level);
         assert_eq!(eb.bit_len(), 0);
         eb.push_bits(0, 0);
         assert_eq!(eb.bit_len(), 0);
@@ -576,38 +545,34 @@ mod encoding_region_tests {
     fn test_push_bits() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
-        let mut eb = EncodingRegion::new(version, ec_level);
+        let mut eb = EncodedBlob::new(version, ec_level);
         eb.push_bits(0, 0);
-        assert_eq!(eb.data, vec![]);
+        assert_eq!(eb.payload, vec![]);
         eb.push_bits(4, 0b1000);
-        assert_eq!(eb.data, vec![0b10000000]);
+        assert_eq!(eb.payload, vec![0b10000000]);
         eb.push_bits(4, 0b1000);
-        assert_eq!(eb.data, vec![0b10001000]);
+        assert_eq!(eb.payload, vec![0b10001000]);
         eb.push_bits(8, 0b1000);
-        assert_eq!(eb.data, vec![0b10001000, 0b00001000]);
+        assert_eq!(eb.payload, vec![0b10001000, 0b00001000]);
         eb.push_bits(9, 0b1000);
-        assert_eq!(eb.data, vec![0b10001000, 0b00001000, 0b00000100, 0b0]);
+        assert_eq!(eb.payload, vec![0b10001000, 0b00001000, 0b00000100, 0b0]);
         eb.push_bits(7, 0b1000);
-        assert_eq!(
-            eb.data,
-            vec![0b10001000, 0b00001000, 0b00000100, 0b00001000]
-        );
+        assert_eq!(eb.payload, vec![0b10001000, 0b00001000, 0b00000100, 0b00001000]);
         eb.push_bits(16, 0b1111111111111111);
         assert_eq!(
-            eb.data,
+            eb.payload,
             vec![0b10001000, 0b00001000, 0b00000100, 0b00001000, 0b11111111, 0b11111111]
         );
         eb.push_bits(1, 0b1);
         assert_eq!(
-            eb.data,
+            eb.payload,
             vec![
                 0b10001000, 0b00001000, 0b00000100, 0b00001000, 0b11111111, 0b11111111, 0b10000000
             ]
         );
         eb.push_bits(11, 0b100);
         assert_eq!(
-            eb.data,
+            eb.payload,
             vec![
                 0b10001000, 0b00001000, 0b00000100, 0b00001000, 0b11111111, 0b11111111, 0b10000000,
                 0b01000000
@@ -615,7 +580,7 @@ mod encoding_region_tests {
         );
         eb.push_bits(16, 0b100);
         assert_eq!(
-            eb.data,
+            eb.payload,
             vec![
                 0b10001000, 0b00001000, 0b00000100, 0b00001000, 0b11111111, 0b11111111, 0b10000000,
                 0b01000000, 0b00000000, 0b01000000
@@ -629,8 +594,8 @@ mod encoding_region_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
         let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
-        let mut eb = EncodingRegion::new(version, ec_level);
-        for i in 0..capacity {
+        let mut eb = EncodedBlob::new(version, ec_level);
+        for _ in 0..capacity {
             eb.push_bits(8, 0b1);
         }
         eb.push_bits(1, 0b1)
@@ -640,38 +605,27 @@ mod encoding_region_tests {
     fn test_push_header_v1() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
-        let mut eb = EncodingRegion::new(version, ec_level);
+        let mut eb = EncodedBlob::new(version, ec_level);
         eb.push_header(Mode::Numeric, 0b11_1111_1111);
-        assert_eq!(eb.data, vec![0b00011111, 0b11111100]);
+        assert_eq!(eb.payload, vec![0b00011111, 0b11111100]);
         eb.push_header(Mode::Alphanumeric, 0b1_1111_1111);
-        assert_eq!(
-            eb.data,
-            vec![0b00011111, 0b11111100, 0b10111111, 0b11100000]
-        );
+        assert_eq!(eb.payload, vec![0b00011111, 0b11111100, 0b10111111, 0b11100000]);
         eb.push_header(Mode::Byte, 0b11111111);
-        assert_eq!(
-            eb.data,
-            vec![0b00011111, 0b11111100, 0b10111111, 0b11101001, 0b11111110]
-        );
+        assert_eq!(eb.payload, vec![0b00011111, 0b11111100, 0b10111111, 0b11101001, 0b11111110]);
     }
 
     #[test]
     fn test_push_header_v10() {
         let version = Version::Normal(10);
         let ec_level = ECLevel::L;
-        let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
-        let mut eb = EncodingRegion::new(version, ec_level);
+        let mut eb = EncodedBlob::new(version, ec_level);
         eb.push_header(Mode::Numeric, 0b1111_1111_1111);
-        assert_eq!(eb.data, vec![0b00011111, 0b11111111]);
+        assert_eq!(eb.payload, vec![0b00011111, 0b11111111]);
         eb.push_header(Mode::Alphanumeric, 0b111_1111_1111);
-        assert_eq!(
-            eb.data,
-            vec![0b00011111, 0b11111111, 0b00101111, 0b11111110]
-        );
+        assert_eq!(eb.payload, vec![0b00011111, 0b11111111, 0b00101111, 0b11111110]);
         eb.push_header(Mode::Byte, 0b11111111_11111111);
         assert_eq!(
-            eb.data,
+            eb.payload,
             vec![
                 0b00011111, 0b11111111, 0b00101111, 0b11111110, 0b10011111, 0b11111111, 0b11100000
             ]
@@ -682,18 +636,14 @@ mod encoding_region_tests {
     fn test_push_header_v27() {
         let version = Version::Normal(27);
         let ec_level = ECLevel::L;
-        let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
-        let mut eb = EncodingRegion::new(version, ec_level);
+        let mut eb = EncodedBlob::new(version, ec_level);
         eb.push_header(Mode::Numeric, 0b11_1111_1111_1111);
-        assert_eq!(eb.data, vec![0b00011111, 0b11111111, 0b11000000]);
+        assert_eq!(eb.payload, vec![0b00011111, 0b11111111, 0b11000000]);
         eb.push_header(Mode::Alphanumeric, 0b1_1111_1111_1111);
-        assert_eq!(
-            eb.data,
-            vec![0b00011111, 0b11111111, 0b11001011, 0b11111111, 0b11100000]
-        );
+        assert_eq!(eb.payload, vec![0b00011111, 0b11111111, 0b11001011, 0b11111111, 0b11100000]);
         eb.push_header(Mode::Byte, 0b11111111_11111111);
         assert_eq!(
-            eb.data,
+            eb.payload,
             vec![
                 0b00011111, 0b11111111, 0b11001011, 0b11111111, 0b11101001, 0b11111111, 0b11111110
             ]
@@ -704,27 +654,25 @@ mod encoding_region_tests {
     fn test_push_numeric_data() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
-        let mut eb = EncodingRegion::new(version, ec_level);
+        let mut eb = EncodedBlob::new(version, ec_level);
         eb.push_numeric_data("01234567".as_bytes());
         assert_eq!(
-            eb.data,
+            eb.payload,
             vec![0b00010000, 0b00100000, 0b00001100, 0b01010110, 0b01100001, 0b10000000]
         );
-        let mut eb = EncodingRegion::new(version, ec_level);
+        let mut eb = EncodedBlob::new(version, ec_level);
         eb.push_numeric_data("8".as_bytes());
-        assert_eq!(eb.data, vec![0b00010000, 0b00000110, 0b00]);
+        assert_eq!(eb.payload, vec![0b00010000, 0b00000110, 0b00]);
     }
 
     #[test]
     fn test_push_alphanumeric_data() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
-        let mut eb = EncodingRegion::new(version, ec_level);
+        let mut eb = EncodedBlob::new(version, ec_level);
         eb.push_alphanumeric_data("AC-42".as_bytes());
         assert_eq!(
-            eb.data,
+            eb.payload,
             vec![0b00100000, 0b00101001, 0b11001110, 0b11100111, 0b00100001, 0b00000000]
         )
     }
@@ -733,21 +681,19 @@ mod encoding_region_tests {
     fn test_push_byte_data() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
-        let mut eb = EncodingRegion::new(version, ec_level);
+        let mut eb = EncodedBlob::new(version, ec_level);
         eb.push_byte_data("a".as_bytes());
-        assert_eq!(eb.data, vec![0b01000000, 0b00010110, 0b00010000])
+        assert_eq!(eb.payload, vec![0b01000000, 0b00010110, 0b00010000])
     }
 
     #[test]
     fn test_push_terminator() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
-        let mut eb = EncodingRegion::new(version, ec_level);
+        let mut eb = EncodedBlob::new(version, ec_level);
         eb.push_bits(1, 0b1);
         eb.push_terminator();
-        assert_eq!(eb.data, vec![0b10000000]);
+        assert_eq!(eb.payload, vec![0b10000000]);
         assert_eq!(eb.bit_offset, 5);
     }
 
@@ -755,11 +701,10 @@ mod encoding_region_tests {
     fn test_push_padding_bits() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
-        let mut eb = EncodingRegion::new(version, ec_level);
+        let mut eb = EncodedBlob::new(version, ec_level);
         eb.push_bits(1, 0b1);
         eb.push_padding_bits();
-        assert_eq!(eb.data, vec![0b10000000]);
+        assert_eq!(eb.payload, vec![0b10000000]);
         assert_eq!(eb.bit_offset, 0);
     }
 
@@ -767,21 +712,118 @@ mod encoding_region_tests {
     fn test_push_padding_codewords() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
-        let mut eb = EncodingRegion::new(version, ec_level);
+        let mut eb = EncodedBlob::new(version, ec_level);
         eb.push_bits(1, 0b1);
         eb.push_padding_bits();
         eb.push_padding_codewords();
         let mut output = vec![0b10000000];
         output.extend(PADDING_CODEWORDS.iter().cycle().take(18));
-        assert_eq!(eb.data, output);
+        assert_eq!(eb.payload, output);
     }
 }
 
 // Encoder
 //------------------------------------------------------------------------------
 
-// Backtrack min_path and construct optimal char mode
+// TODO: Write testcases
+pub fn encode(data: &[u8], ec_level: ECLevel) -> QRResult<EncodedBlob> {
+    let (version, segments) = find_optimal_version_and_segments(data, ec_level)?;
+    let mut encoded_data = EncodedBlob::new(version, ec_level);
+    for seg in segments {
+        encoded_data.push_segment(seg);
+    }
+    Ok(encoded_data)
+}
+
+// TODO: Write testcases
+pub fn encode_with_version(
+    data: &[u8],
+    ec_level: ECLevel,
+    version: Version,
+) -> QRResult<EncodedBlob> {
+    let capacity = version.get_bit_capacity(ec_level);
+    let segments = compute_optimal_segments(data, version);
+    let size: usize = segments.iter().map(|s| s.bit_len(version)).sum();
+    if size > capacity {
+        return Err(QRError::DataTooLong);
+    }
+    let mut encoded_data = EncodedBlob::new(version, ec_level);
+    for seg in segments {
+        encoded_data.push_segment(seg);
+    }
+    Ok(encoded_data)
+}
+
+fn find_optimal_version_and_segments(
+    data: &[u8],
+    ec_level: ECLevel,
+) -> QRResult<(Version, Vec<Segment>)> {
+    let mut segments = vec![];
+    let mut size = 0;
+    for v in 1..=40 {
+        let version = Version::Normal(v);
+        let capacity = version.get_bit_capacity(ec_level);
+        if v == 1 || v == 10 || v == 27 {
+            segments = compute_optimal_segments(data, version);
+            size = segments.iter().map(|s| s.bit_len(version)).sum();
+        }
+        if size <= capacity {
+            return Ok((version, segments));
+        }
+    }
+    Err(QRError::DataTooLong)
+}
+
+// Dynamic programming to compute optimum mode segments
+fn compute_optimal_segments(data: &[u8], version: Version) -> Vec<Segment> {
+    debug_assert!(!data.is_empty(), "Empty data");
+
+    let len = data.len();
+    let mut prev_cost: [usize; 3] = [0; 3];
+    MODES
+        .iter()
+        .enumerate()
+        .for_each(|(i, &m)| prev_cost[i] = (4 + m.char_count_bit_len(version)) * 6);
+    let mut cur_cost: [usize; 3] = [usize::MAX; 3];
+    let mut min_path: Vec<Vec<usize>> = vec![vec![usize::MAX; 3]; len];
+    for (i, b) in data.iter().enumerate() {
+        for (j, to_mode) in MODES.iter().enumerate() {
+            if !to_mode.contains(*b) {
+                continue;
+            }
+            let encoded_char_size = match to_mode {
+                Mode::Numeric => 20,
+                Mode::Alphanumeric => 33,
+                Mode::Byte => 48,
+            };
+            for (k, from_mode) in MODES.iter().enumerate() {
+                if prev_cost[k] == usize::MAX {
+                    continue;
+                }
+                let mut cost = 0;
+                if to_mode != from_mode {
+                    cost += (prev_cost[k] + 5) / 6 * 6;
+                    cost += (4 + to_mode.char_count_bit_len(version)) * 6;
+                } else {
+                    cost += prev_cost[k];
+                }
+                cost += encoded_char_size;
+                if cost < cur_cost[j] {
+                    cur_cost[j] = cost;
+                    min_path[i][j] = k;
+                }
+            }
+        }
+        swap(&mut prev_cost, &mut cur_cost);
+        cur_cost.fill(usize::MAX);
+    }
+
+    let char_modes = trace_optimal_modes(min_path, prev_cost);
+    build_segments(char_modes, data)
+}
+
+// Backtrack min_path and identify optimal char mode
+// TODO: Write testcases
 fn trace_optimal_modes(min_path: Vec<Vec<usize>>, prev_cost: [usize; 3]) -> Vec<Mode> {
     let len = min_path.len();
     let mut mode_index = 0;
@@ -820,102 +862,13 @@ fn build_segments(char_modes: Vec<Mode>, data: &[u8]) -> Vec<Segment> {
     segs
 }
 
-// Dynamic programming to calculate optimum mode for each char
-fn compute_optimal_segments(data: &[u8], version: Version) -> Vec<Segment> {
-    debug_assert!(!data.is_empty(), "Empty data");
-
-    let len = data.len();
-    let mut prev_cost: [usize; 3] = [0; 3];
-    MODES
-        .iter()
-        .enumerate()
-        .for_each(|(i, &m)| prev_cost[i] = (4 + m.char_count_bit_len(version)) * 6);
-    let mut cur_cost: [usize; 3] = [usize::MAX; 3];
-    let mut min_path: Vec<Vec<usize>> = vec![vec![usize::MAX; 3]; len];
-    for (i, b) in data.iter().enumerate() {
-        for (j, to_mode) in MODES.iter().enumerate() {
-            if !to_mode.contains(*b) {
-                continue;
-            }
-            let encoded_char_size = match to_mode {
-                Mode::Numeric => 20,
-                Mode::Alphanumeric => 33,
-                Mode::Byte => 48,
-            };
-            for (k, from_mode) in MODES.iter().enumerate() {
-                if prev_cost[k] == usize::MAX {
-                    continue;
-                }
-                let mut cost = encoded_char_size + prev_cost[k];
-                if to_mode != from_mode {
-                    cost += (4 + to_mode.char_count_bit_len(version)) * 6;
-                }
-                if cost < cur_cost[j] {
-                    cur_cost[j] = cost;
-                    min_path[i][j] = k;
-                }
-            }
-        }
-        swap(&mut prev_cost, &mut cur_cost);
-        cur_cost.fill(usize::MAX);
-    }
-    println!("Prev: {prev_cost:?}");
-    println!("Min path: {min_path:?}");
-
-    let char_modes = trace_optimal_modes(min_path, prev_cost);
-    println!("Char modes: {char_modes:?}");
-    build_segments(char_modes, data)
-}
-
-fn find_min_version(data: &[u8], ec_level: ECLevel) -> QRResult<(Vec<Segment>, Version)> {
-    let mut segments = vec![];
-    let mut size = 0;
-    for v in 1..40 {
-        let version = Version::Normal(v);
-        let capacity = version.get_bit_capacity(ec_level);
-        if v == 1 || v == 10 || v == 27 {
-            segments = compute_optimal_segments(data, version);
-            size = segments.iter().map(|s| s.bit_len(version)).sum();
-        }
-        if size <= capacity {
-            return Ok((segments, version));
-        }
-    }
-    Err(QRError::DataTooLong)
-}
-
-pub fn encode(data: &[u8], ec_level: ECLevel) -> QRResult<EncodingRegion> {
-    let (segments, version) = find_min_version(data, ec_level)?;
-    let capacity = (version.get_bit_capacity(ec_level) + 7) / 8;
-    let mut encoded_data = EncodingRegion::new(version, ec_level);
-    for seg in segments {
-        encoded_data.push_segment(seg);
-    }
-    Ok(encoded_data)
-}
-
-pub fn encode_with_version(
-    data: &[u8],
-    ec_level: ECLevel,
-    version: Version,
-) -> QRResult<EncodingRegion> {
-    let capacity = version.get_bit_capacity(ec_level);
-    let segments = compute_optimal_segments(data, version);
-    let size: usize = segments.iter().map(|s| s.bit_len(version)).sum();
-    if size > capacity {
-        return Err(QRError::DataTooLong);
-    }
-    let mut encoded_data = EncodingRegion::new(version, ec_level);
-    for seg in segments {
-        encoded_data.push_segment(seg);
-    }
-    Ok(encoded_data)
-}
-
 #[cfg(test)]
 mod encoder_tests {
-    use super::{compute_optimal_segments, Mode, Segment};
-    use crate::{encode::build_segments, types::Version};
+    use super::{compute_optimal_segments, find_optimal_version_and_segments, Mode, Segment};
+    use crate::{
+        encode::build_segments,
+        types::{ECLevel, Version},
+    };
 
     #[test]
     fn test_build_segments() {
@@ -1043,6 +996,100 @@ mod encoder_tests {
         assert_eq!(segs[0], seg_1);
         assert_eq!(segs[1], seg_2);
         assert_eq!(segs[2], seg_3);
+    }
+
+    #[test]
+    fn test_compute_optimal_segments_11() {
+        let data = "A11111111111111".repeat(23) + "A";
+        let version = Version::Normal(10);
+        let segs = compute_optimal_segments(data.as_bytes(), version);
+        let seg_1 = Segment::new(Mode::Alphanumeric, data[..].as_bytes());
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0], seg_1);
+    }
+
+    #[test]
+    fn test_compute_optimal_segments_12() {
+        let data = "A11111111111111".repeat(23);
+        let version = Version::Normal(9);
+        let segs = compute_optimal_segments(data.as_bytes(), version);
+        assert_eq!(segs.len(), 46);
+        for (i, c) in data.as_bytes().chunks(15).enumerate() {
+            let seg_1 = Segment::new(Mode::Alphanumeric, &c[..1]);
+            assert_eq!(segs[i * 2], seg_1);
+            let seg_2 = Segment::new(Mode::Numeric, &c[1..]);
+            assert_eq!(segs[i * 2 + 1], seg_2);
+        }
+    }
+
+    #[test]
+    fn test_compute_optimal_segments_13() {
+        let data = "Golden ratio φ = 1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072072041893911374......";
+        let version = Version::Normal(9);
+        let segs = compute_optimal_segments(data.as_bytes(), version);
+        assert_eq!(segs.len(), 3);
+        let seg_1 = Segment::new(Mode::Byte, data[..20].as_bytes());
+        let seg_2 = Segment::new(Mode::Numeric, data[20..120].as_bytes());
+        let seg_3 = Segment::new(Mode::Alphanumeric, data[120..126].as_bytes());
+        assert_eq!(segs[0], seg_1);
+        assert_eq!(segs[1], seg_2);
+        assert_eq!(segs[2], seg_3);
+    }
+
+    #[test]
+    fn test_find_optimal_version_and_segments_1() {
+        let data = "aaaaa11111AAA";
+        let ec_level = ECLevel::L;
+        let (version, _) = find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
+        assert_eq!(version, Version::Normal(1));
+    }
+
+    #[test]
+    fn test_find_optimal_version_and_segments_2() {
+        let data = "A11111111111111".repeat(2);
+        let ec_level = ECLevel::L;
+        let (version, _) = find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
+        assert_eq!(version, Version::Normal(2));
+    }
+
+    #[test]
+    fn test_find_optimal_version_and_segments_3() {
+        let data = "A11111111111111".repeat(4);
+        let ec_level = ECLevel::L;
+        let (version, _) = find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
+        assert_eq!(version, Version::Normal(3));
+    }
+
+    #[test]
+    fn test_find_optimal_version_and_segments_4() {
+        let data = "aAAAAAAAAAAA".repeat(5) + "a";
+        let ec_level = ECLevel::L;
+        let (version, _) = find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
+        assert_eq!(version, Version::Normal(4));
+    }
+
+    #[test]
+    fn test_find_optimal_version_and_segments_5() {
+        let data = "aAAAAAAAAAAA".repeat(21) + "a";
+        let ec_level = ECLevel::L;
+        let (version, _) = find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
+        assert_eq!(version, Version::Normal(10));
+    }
+
+    #[test]
+    fn test_find_optimal_version_and_segments_max_capacity() {
+        let data = "a".repeat(2953);
+        let ec_level = ECLevel::L;
+        let (version, _) = find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
+        assert_eq!(version, Version::Normal(40));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_find_optimal_version_and_segments_panic() {
+        let data = "a".repeat(2954);
+        let ec_level = ECLevel::L;
+        find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
     }
 }
 
