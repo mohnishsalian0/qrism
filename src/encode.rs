@@ -448,7 +448,6 @@ impl EncodedBlob {
         }
     }
 
-    // TODO: Maybe this function should be moved to builder
     pub fn pad_remaining_capacity(&mut self) {
         self.push_padding_bits();
         self.push_padding_codewords();
@@ -865,8 +864,6 @@ fn build_segments(char_modes: Vec<Mode>, data: &[u8]) -> Vec<Segment> {
     }
     segs.push(Segment::new(seg_mode, &data[seg_start..len]));
 
-    // WARN: remove
-    println!("{:?}", segs);
     segs
 }
 

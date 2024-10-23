@@ -1058,7 +1058,6 @@ static FORMAT_INFO_COORDS_QR_SIDE: [(i16, i16); 15] = [
 
 static VERSION_INFO_BIT_LEN: usize = 18;
 
-// TODO: Reverse version info coords
 static VERSION_INFO_COORDS_BL: [(i16, i16); 18] = [
     (-9, 5),
     (-10, 5),

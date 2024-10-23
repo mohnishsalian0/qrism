@@ -59,7 +59,6 @@ fn ecc_per_block(block: &[u8], ecc_count: usize) -> Vec<u8> {
     res.split_off(len)
 }
 
-// TODO: Max allowed errors
 pub fn error_correction_capacity(version: Version, ec_level: ECLevel) -> usize {
     let p = match (version, ec_level) {
         (Version::Micro(2) | Version::Normal(1), ECLevel::L) => 3,
