@@ -8,6 +8,13 @@ use crate::{
 #[derive(Debug, PartialEq, Eq, Copy, Clone, PartialOrd, Ord)]
 pub struct MaskingPattern(u8);
 
+impl MaskingPattern {
+    pub fn new(pattern: u8) -> Self {
+        debug_assert!(pattern < 8, "Invalid masking pattern");
+        Self(pattern)
+    }
+}
+
 impl Deref for MaskingPattern {
     type Target = u8;
     fn deref(&self) -> &Self::Target {
@@ -78,6 +85,11 @@ pub fn apply_best_mask(qr: &mut QR) -> MaskingPattern {
     let best_mask = MaskingPattern(best_mask);
     qr.apply_mask_pattern(best_mask);
     best_mask
+}
+
+pub fn apply_mask(qr: &mut QR, pattern: MaskingPattern) -> MaskingPattern {
+    qr.apply_mask_pattern(pattern);
+    pattern
 }
 
 pub fn compute_total_penalty(qr: &QR) -> u16 {

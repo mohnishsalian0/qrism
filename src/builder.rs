@@ -3,7 +3,7 @@ use std::ops::Deref;
 use crate::{
     encode::{encode, encode_with_version},
     error_correction::{ecc, error_correction_capacity},
-    mask::apply_best_mask,
+    mask::{apply_best_mask, apply_mask, MaskingPattern},
     qr::QR,
     types::{ECLevel, Palette, QRError, QRResult, Version},
 };
@@ -133,7 +133,8 @@ impl<'a> QRBuilder<'a> {
         qr.draw_encoding_region(&payload);
 
         println!("Finding & applying best mask...");
-        let best_mask = apply_best_mask(&mut qr);
+        // WARN: Change this back to apply best mask
+        let best_mask = apply_mask(&mut qr, MaskingPattern::new(2));
 
         println!("\x1b[1;32mQR generated successfully!\n \x1b[0m");
 

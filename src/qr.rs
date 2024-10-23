@@ -921,9 +921,9 @@ impl QR {
             for i in (0..8).rev() {
                 let bit = (codeword >> i) & 1;
                 let module = if bit & 1 == 0 {
-                    Module::Data(Color::Dark)
-                } else {
                     Module::Data(Color::Light)
+                } else {
+                    Module::Data(Color::Dark)
                 };
                 let (mut r, mut c) =
                     coords.next().expect("QR capacity overflow while drawing data");
