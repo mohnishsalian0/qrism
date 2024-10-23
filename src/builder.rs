@@ -3,7 +3,7 @@ use std::ops::Deref;
 use crate::{
     encode::{encode, encode_with_version},
     error_correction::{ecc, error_correction_capacity},
-    mask::{apply_best_mask, apply_mask, MaskingPattern},
+    mask::apply_best_mask,
     qr::QR,
     types::{ECLevel, Palette, QRError, QRResult, Version},
 };
@@ -57,11 +57,11 @@ impl<'a> QRBuilder<'a> {
     pub fn get_metadata(&self) -> String {
         match self.version {
             Some(v) => format!(
-                "Metadata {{ Version: {:?}, Ec level: {:?}, Palette: {:?} }}",
+                "{{ Version: {:?}, Ec level: {:?}, Palette: {:?} }}",
                 *v, self.ec_level, self.palette
             ),
             None => format!(
-                "Metadata {{ Version: None, Ec level: {:?}, Palette: {:?} }}",
+                "{{ Version: None, Ec level: {:?}, Palette: {:?} }}",
                 self.ec_level, self.palette
             ),
         }
@@ -80,14 +80,11 @@ mod qrbuilder_util_tests {
         let ec_level = ECLevel::L;
         let palette = Palette::Monochrome;
         let mut qr_builder = QRBuilder::new_with_version(data, version, ec_level, palette);
-        assert_eq!(
-            qr_builder.get_metadata(),
-            "Metadata { Version: 1, Ec level: L, Palette: Monochrome }"
-        );
+        assert_eq!(qr_builder.get_metadata(), "{ Version: 1, Ec level: L, Palette: Monochrome }");
         qr_builder.unset_version();
         assert_eq!(
             qr_builder.get_metadata(),
-            "Metadata { Version: None, Ec level: L, Palette: Monochrome }"
+            "{ Version: None, Ec level: L, Palette: Monochrome }"
         );
     }
 }
@@ -96,26 +93,24 @@ impl<'a> QRBuilder<'a> {
     pub fn build(&self) -> QRResult<QR> {
         let data_len = self.data.len();
 
-        println!("\nGenerating QR with {}...", self.get_metadata());
+        println!("\nGenerating QR {}...", self.get_metadata());
         if self.data.is_empty() {
             return Err(QRError::EmptyData);
         }
 
         // Encode data optimally
         println!("Encoding data...");
-        let (encoded_blob, encoded_len) = match self.version {
+        let (encoded_data, encoded_len, version) = match self.version {
             Some(v) => encode_with_version(self.data, self.ec_level, v)?,
             None => encode(self.data, self.ec_level)?,
         };
 
-        let version = encoded_blob.version();
         let version_capacity = version.bit_capacity(self.ec_level) / 8;
         let err_corr_cap = error_correction_capacity(version, self.ec_level);
-        let encoded_data = encoded_blob.data();
 
         // Compute error correction codewords
         println!("Computing ecc...");
-        let (data_blocks, ecc_blocks) = ecc(encoded_data, version, self.ec_level);
+        let (data_blocks, ecc_blocks) = ecc(&encoded_data, version, self.ec_level);
 
         // Interleave data and error correction codewords
         println!("Interleaving and chaining data & ecc...");
@@ -133,8 +128,7 @@ impl<'a> QRBuilder<'a> {
         qr.draw_encoding_region(&payload);
 
         println!("Finding & applying best mask...");
-        // WARN: Change this back to apply best mask
-        let best_mask = apply_mask(&mut qr, MaskingPattern::new(2));
+        let best_mask = apply_best_mask(&mut qr);
 
         println!("\x1b[1;32mQR generated successfully!\n \x1b[0m");
 

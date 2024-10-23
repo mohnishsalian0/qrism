@@ -70,8 +70,7 @@ impl QR {
         self.grid.iter().filter(|&m| matches!(**m, Color::Dark)).count()
     }
 
-    // WARN: Tracing error, uncomment below after use
-    // #[cfg(test)]
+    #[cfg(test)]
     fn to_debug_str(&self) -> String {
         let w = self.width as i16;
         let mut res = String::with_capacity((w * (w + 1)) as usize);

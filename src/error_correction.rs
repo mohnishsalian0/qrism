@@ -107,7 +107,7 @@ mod ec_tests {
     fn test_add_ec_simple() {
         let msg = b" [\x0bx\xd1r\xdcMC@\xec\x11\xec\x11\xec\x11";
         let expected_ecc = [b"\xc4\x23\x27\x77\xeb\xd7\xe7\xe2\x5d\x17"];
-        let (data, ecc) = ecc(msg, Version::Normal(1), ECLevel::M);
+        let (_, ecc) = ecc(msg, Version::Normal(1), ECLevel::M);
         assert_eq!(&*ecc, expected_ecc);
     }
 
@@ -122,7 +122,7 @@ mod ec_tests {
             b"\x94\x74\xb1\xd4\x4c\x85\x4b\xf2\xee\x4c\xc3\xe6\xbd\x0a\x6c\xf0\xc0\x8d",
             b"\xeb\x9f\x05\xad\x18\x93\x3b\x21\x6a\x28\xff\xac\x52\x02\x83\x20\xb2\xec",
         ];
-        let (data, ecc) = ecc(msg, Version::Normal(5), ECLevel::Q);
+        let (_, ecc) = ecc(msg, Version::Normal(5), ECLevel::Q);
         assert_eq!(&*ecc, &expected_ec[..]);
     }
 }
