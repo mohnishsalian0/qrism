@@ -8,7 +8,6 @@ pub fn ecc(data: &[u8], version: Version, ec_level: ECLevel) -> (Vec<&[u8]>, Vec
     let total_blocks = block1_count + block2_count;
     let total_block1_size = block1_size * block1_count;
     let total_size = total_block1_size + block2_size * block2_count;
-    let total_blocks = block1_count + block2_count;
 
     debug_assert!(
         total_size == data.len(),
@@ -26,6 +25,7 @@ pub fn ecc(data: &[u8], version: Version, ec_level: ECLevel) -> (Vec<&[u8]>, Vec
     let ecc_size_per_block = version.ecc_per_block(ec_level);
     let ecc_blocks =
         data_blocks.iter().map(|b| ecc_per_block(b, ecc_size_per_block)).collect::<Vec<_>>();
+
     (data_blocks, ecc_blocks)
 }
 
@@ -59,6 +59,23 @@ fn ecc_per_block(block: &[u8], ecc_count: usize) -> Vec<u8> {
     res.split_off(len)
 }
 
+// TODO: Max allowed errors
+pub fn error_correction_capacity(version: Version, ec_level: ECLevel) -> usize {
+    let p = match (version, ec_level) {
+        (Version::Micro(2) | Version::Normal(1), ECLevel::L) => 3,
+        (Version::Micro(_) | Version::Normal(2), ECLevel::L)
+        | (Version::Micro(2) | Version::Normal(1), ECLevel::M) => 2,
+        (Version::Normal(1), _) | (Version::Normal(3), ECLevel::L) => 1,
+        _ => 0,
+    };
+
+    let ec_bytes_per_block = version.ecc_per_block(ec_level);
+    let (_, count1, _, count2) = version.data_codewords_per_block(ec_level);
+    let ec_bytes = (count1 + count2) * ec_bytes_per_block;
+
+    (ec_bytes - p) / 2
+}
+
 #[cfg(test)]
 mod ec_tests {
 
@@ -85,11 +102,12 @@ mod ec_tests {
         assert_eq!(&*res, b"\xd5\xc7\x0b-s\xf7\xf1\xdf\xe5\xf8\x9au\x9aoV\xa1o'");
     }
 
+    // TODO: assert data blocks as well
     #[test]
     fn test_add_ec_simple() {
         let msg = b" [\x0bx\xd1r\xdcMC@\xec\x11\xec\x11\xec\x11";
         let expected_ecc = [b"\xc4\x23\x27\x77\xeb\xd7\xe7\xe2\x5d\x17"];
-        let ecc = ecc(msg, Version::Normal(1), ECLevel::M);
+        let (data, ecc) = ecc(msg, Version::Normal(1), ECLevel::M);
         assert_eq!(&*ecc, expected_ecc);
     }
 
@@ -104,7 +122,7 @@ mod ec_tests {
             b"\x94\x74\xb1\xd4\x4c\x85\x4b\xf2\xee\x4c\xc3\xe6\xbd\x0a\x6c\xf0\xc0\x8d",
             b"\xeb\x9f\x05\xad\x18\x93\x3b\x21\x6a\x28\xff\xac\x52\x02\x83\x20\xb2\xec",
         ];
-        let ecc = ecc(msg, Version::Normal(5), ECLevel::Q);
+        let (data, ecc) = ecc(msg, Version::Normal(5), ECLevel::Q);
         assert_eq!(&*ecc, &expected_ec[..]);
     }
 }

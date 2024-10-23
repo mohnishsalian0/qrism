@@ -392,7 +392,7 @@ impl EncodedBlob {
         }
     }
 
-    fn bit_len(&self) -> usize {
+    pub fn bit_len(&self) -> usize {
         match self.bit_offset {
             0 => self.data.len() * 8,
             o => (self.data.len() - 1) * 8 + o,
@@ -734,14 +734,15 @@ mod encoding_region_tests {
 //------------------------------------------------------------------------------
 
 // TODO: Write testcases
-pub fn encode(data: &[u8], ec_level: ECLevel) -> QRResult<EncodedBlob> {
+pub fn encode(data: &[u8], ec_level: ECLevel) -> QRResult<(EncodedBlob, usize)> {
     let (version, segments) = find_optimal_version_and_segments(data, ec_level)?;
     let mut encoded_blob = EncodedBlob::new(version, ec_level);
     for seg in segments {
         encoded_blob.push_segment(seg);
     }
+    let encoded_len = (encoded_blob.bit_len() + 7) / 8;
     encoded_blob.pad_remaining_capacity();
-    Ok(encoded_blob)
+    Ok((encoded_blob, encoded_len))
 }
 
 // TODO: Write testcases
@@ -749,7 +750,7 @@ pub fn encode_with_version(
     data: &[u8],
     ec_level: ECLevel,
     version: Version,
-) -> QRResult<EncodedBlob> {
+) -> QRResult<(EncodedBlob, usize)> {
     let capacity = version.bit_capacity(ec_level);
     let segments = compute_optimal_segments(data, version);
     let size: usize = segments.iter().map(|s| s.bit_len(version)).sum();
@@ -760,8 +761,9 @@ pub fn encode_with_version(
     for seg in segments {
         encoded_blob.push_segment(seg);
     }
+    let encoded_len = (encoded_blob.bit_len() + 7) / 8;
     encoded_blob.pad_remaining_capacity();
-    Ok(encoded_blob)
+    Ok((encoded_blob, encoded_len))
 }
 
 fn find_optimal_version_and_segments(
@@ -869,6 +871,9 @@ fn build_segments(char_modes: Vec<Mode>, data: &[u8]) -> Vec<Segment> {
         }
     }
     segs.push(Segment::new(seg_mode, &data[seg_start..len]));
+
+    // WARN: remove
+    println!("{:?}", segs);
     segs
 }
 

@@ -70,7 +70,8 @@ impl QR {
         self.grid.iter().filter(|&m| matches!(**m, Color::Dark)).count()
     }
 
-    #[cfg(test)]
+    // WARN: Tracing error, uncomment below after use
+    // #[cfg(test)]
     fn to_debug_str(&self) -> String {
         let w = self.width as i16;
         let mut res = String::with_capacity((w * (w + 1)) as usize);
@@ -559,7 +560,7 @@ impl QR {
                     Module::Format(Color::Dark),
                     &FORMAT_INFO_COORDS_QR_SIDE,
                 );
-                self.set(8, -8, Module::Format(Color::Dark));
+                self.set(-8, 8, Module::Format(Color::Dark));
             }
         }
     }
@@ -900,32 +901,63 @@ impl Iterator for DataModIter {
 }
 
 impl QR {
-    fn draw_codeword(&mut self, codeword: u8, iterator: &mut DataModIter) {
-        for i in (0..8).rev() {
-            let bit = (codeword >> i) & 1;
-            let module =
-                if bit & 1 == 0 { Module::Data(Color::Dark) } else { Module::Data(Color::Light) };
-            let (r, c) = iterator.next().expect("QR capacity overflow while drawing data");
-            self.set(r, c, module)
-        }
-    }
-
-    fn draw_payload(&mut self, payload: &[u8], iterator: &mut DataModIter) {
-        for &codeword in payload.iter() {
-            self.draw_codeword(codeword, iterator);
-        }
-    }
-
-    pub fn draw_encoding_region(&mut self, data: &[u8], ecc: &[u8]) {
+    pub fn draw_encoding_region(&mut self, payload: &[u8]) {
         self.reserve_format_area();
         self.draw_version_info();
         self.draw_palette_info();
-        let mut payload_idx_iter = DataModIter::new(self.version);
-        self.draw_payload(data, &mut payload_idx_iter);
-        self.draw_payload(ecc, &mut payload_idx_iter);
+        self.draw_payload(payload);
+
+        debug_assert!(!self.grid.contains(&Module::Empty), "Empty module found in debug");
     }
 
-    pub fn draw_mask_pattern(&mut self, pattern: MaskingPattern) {
+    fn draw_payload(&mut self, payload: &[u8]) {
+        let mut coords = DataModIter::new(self.version);
+        self.draw_codewords(payload, &mut coords);
+        self.fill_remainder_bits(&mut coords);
+    }
+
+    fn draw_codewords(&mut self, codewords: &[u8], coords: &mut DataModIter) {
+        for &codeword in codewords.iter() {
+            for i in (0..8).rev() {
+                let bit = (codeword >> i) & 1;
+                let module = if bit & 1 == 0 {
+                    Module::Data(Color::Dark)
+                } else {
+                    Module::Data(Color::Light)
+                };
+                let (mut r, mut c) =
+                    coords.next().expect("QR capacity overflow while drawing data");
+                while self.get(r, c) != Module::Empty {
+                    (r, c) = coords.next().expect("QR capacity overflow while drawing data");
+                }
+                self.set(r, c, module)
+            }
+        }
+    }
+
+    fn fill_remainder_bits(&mut self, coords: &mut DataModIter) {
+        let empty_modules =
+            coords.filter(|(r, c)| self.get(*r, *c) == Module::Empty).collect::<Vec<_>>();
+        debug_assert!(
+            matches!(
+                (self.version, empty_modules.len()),
+                (Version::Micro(_), 0)
+                    | (Version::Normal(1), 0)
+                    | (Version::Normal(2..=6), 7)
+                    | (Version::Normal(7..=14), 0)
+                    | (Version::Normal(15..=20), 3)
+                    | (Version::Normal(21..=27), 4)
+                    | (Version::Normal(28..=34), 3)
+                    | (Version::Normal(35..=40), 0)
+            ),
+            "Incorrect number of empty modules for remainder bits: Version {:?}, Empty bits {}",
+            self.version,
+            empty_modules.len()
+        );
+        empty_modules.iter().for_each(|(r, c)| self.set(*r, *c, Module::Data(Color::Light)));
+    }
+
+    pub fn apply_mask_pattern(&mut self, pattern: MaskingPattern) {
         let mask_function = pattern.mask_functions();
         let w = self.width as i16;
         for r in 0..w {
@@ -942,71 +974,93 @@ impl QR {
     }
 }
 
+// Render
+//------------------------------------------------------------------------------
+
+impl QR {
+    pub fn render_as_string(&self, module_size: usize) -> String {
+        let qz_size = if let Version::Normal(_) = self.version { 4 } else { 2 } * module_size;
+        let qr_size = self.width * module_size;
+        let total_size = qz_size + qr_size + qz_size;
+
+        let mut canvas = String::new();
+        for i in 0..total_size {
+            for j in 0..total_size {
+                if i < qz_size || i >= qz_size + qr_size || j < qz_size || j >= qz_size + qr_size {
+                    canvas.push('█');
+                    continue;
+                }
+                let r = ((i - qz_size) / module_size) as i16;
+                let c = ((j - qz_size) / module_size) as i16;
+
+                let color = match self.get(r, c) {
+                    Module::Func(c)
+                    | Module::Format(c)
+                    | Module::Version(c)
+                    | Module::Palette(c)
+                    | Module::Data(c) => c,
+                    Module::Empty => panic!("Empty module found at: {r} {c}"),
+                };
+
+                let pixel = match color {
+                    Color::Dark => ' ',
+                    Color::Light | Color::Hue(_) => '█',
+                };
+
+                canvas.push(pixel);
+            }
+            canvas.push('\n');
+        }
+
+        canvas
+    }
+}
+
 // Global constants
 //------------------------------------------------------------------------------
 
 static FORMAT_INFO_BIT_LEN: usize = 15;
 
 static FORMAT_INFO_COORDS_QR_MAIN: [(i16, i16); 15] = [
-    (0, 8),
-    (1, 8),
-    (2, 8),
-    (3, 8),
-    (4, 8),
-    (5, 8),
-    (7, 8),
-    (8, 8),
-    (8, 7),
-    (8, 5),
-    (8, 4),
-    (8, 3),
-    (8, 2),
-    (8, 1),
     (8, 0),
+    (8, 1),
+    (8, 2),
+    (8, 3),
+    (8, 4),
+    (8, 5),
+    (8, 7),
+    (8, 8),
+    (7, 8),
+    (5, 8),
+    (4, 8),
+    (3, 8),
+    (2, 8),
+    (1, 8),
+    (0, 8),
 ];
 
 static FORMAT_INFO_COORDS_QR_SIDE: [(i16, i16); 15] = [
-    (8, -1),
-    (8, -2),
-    (8, -3),
-    (8, -4),
-    (8, -5),
-    (8, -6),
-    (8, -7),
-    (-8, 8),
-    (-7, 8),
-    (-6, 8),
-    (-5, 8),
-    (-4, 8),
-    (-3, 8),
-    (-2, 8),
     (-1, 8),
+    (-2, 8),
+    (-3, 8),
+    (-4, 8),
+    (-5, 8),
+    (-6, 8),
+    (-7, 8),
+    (8, -8),
+    (8, -7),
+    (8, -6),
+    (8, -5),
+    (8, -4),
+    (8, -3),
+    (8, -2),
+    (8, -1),
 ];
 
 static VERSION_INFO_BIT_LEN: usize = 18;
 
+// TODO: Reverse version info coords
 static VERSION_INFO_COORDS_BL: [(i16, i16); 18] = [
-    (5, -9),
-    (5, -10),
-    (5, -11),
-    (4, -9),
-    (4, -10),
-    (4, -11),
-    (3, -9),
-    (3, -10),
-    (3, -11),
-    (2, -9),
-    (2, -10),
-    (2, -11),
-    (1, -9),
-    (1, -10),
-    (1, -11),
-    (0, -9),
-    (0, -10),
-    (0, -11),
-];
-
-static VERSION_INFO_COORDS_TR: [(i16, i16); 18] = [
     (-9, 5),
     (-10, 5),
     (-11, 5),
@@ -1025,6 +1079,27 @@ static VERSION_INFO_COORDS_TR: [(i16, i16); 18] = [
     (-9, 0),
     (-10, 0),
     (-11, 0),
+];
+
+static VERSION_INFO_COORDS_TR: [(i16, i16); 18] = [
+    (5, -9),
+    (5, -10),
+    (5, -11),
+    (4, -9),
+    (4, -10),
+    (4, -11),
+    (3, -9),
+    (3, -10),
+    (3, -11),
+    (2, -9),
+    (2, -10),
+    (2, -11),
+    (1, -9),
+    (1, -10),
+    (1, -11),
+    (0, -9),
+    (0, -10),
+    (0, -11),
 ];
 
 static PALETTE_INFO_BIT_LEN: usize = 12;
