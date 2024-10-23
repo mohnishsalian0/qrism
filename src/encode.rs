@@ -689,11 +689,18 @@ mod encoding_region_tests {
     fn test_push_terminator() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
+        let capacity = version.bit_capacity(ec_level) / 8;
         let mut eb = EncodedBlob::new(version, ec_level);
         eb.push_bits(1, 0b1);
         eb.push_terminator();
         assert_eq!(eb.data, vec![0b10000000]);
         assert_eq!(eb.bit_offset, 5);
+        for i in 0..capacity - 1 {
+            eb.push_bits(8, 0b11111111);
+        }
+        println!("{}", eb.bit_offset);
+        eb.push_terminator();
+        assert_eq!(eb.bit_offset, 0);
     }
 
     #[test]
