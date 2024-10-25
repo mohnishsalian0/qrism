@@ -57,7 +57,32 @@ impl Mode {
         }
     }
 
-    pub fn from(&self, data: &[u8]) -> u16 {
+    #[inline]
+    fn byte(&self, mode_digit: u8) -> u8 {
+        match self {
+            Self::Numeric => match mode_digit {
+                md @ 0..=9 => md + b'0',
+                _ => unreachable!("Invalid numeric digit {mode_digit}"),
+            },
+            Self::Alphanumeric => match mode_digit {
+                md @ 0..=9 => md + b'0',
+                md @ 10..=35 => md - 10 + b'A',
+                36 => b' ',
+                37 => b'$',
+                38 => b'%',
+                39 => b'*',
+                40 => b'+',
+                41 => b'-',
+                42 => b'.',
+                43 => b'/',
+                44 => b':',
+                _ => unreachable!("Invalid alphanumeric digit {mode_digit}"),
+            },
+            Self::Byte => mode_digit,
+        }
+    }
+
+    pub fn encode_chunk(&self, data: &[u8]) -> u16 {
         let len = data.len();
         match self {
             Self::Numeric => {
@@ -75,6 +100,48 @@ impl Mode {
         }
     }
 
+    fn decode_numeric_chunk(mut data: u16, bit_len: usize) -> Vec<u8> {
+        debug_assert!(
+            bit_len == 10 || bit_len == 7 || bit_len == 4,
+            "Invalid numeric encoded length: {bit_len}"
+        );
+
+        let len = bit_len / 3;
+        let mut res = vec![0; len];
+        for i in 0..len {
+            res[len - 1 - i] = Mode::Numeric.byte((data % 10) as u8);
+            data /= 10;
+        }
+        res
+    }
+
+    fn decode_alphanumeric_chunk(mut data: u16, bit_len: usize) -> Vec<u8> {
+        debug_assert!(
+            bit_len == 11 || bit_len == 6,
+            "Invalid alphanumeric encoded length: {bit_len}"
+        );
+
+        let len = bit_len / 5;
+        let mut res = vec![0; len];
+        for i in 0..len {
+            res[len - 1 - i] = Mode::Numeric.byte((data % 45) as u8);
+            data /= 45;
+        }
+        res
+    }
+
+    pub fn decode_chunk(&self, data: u16, bit_len: usize) -> Vec<u8> {
+        match self {
+            Self::Numeric => Self::decode_numeric_chunk(data, bit_len),
+            Self::Alphanumeric => Self::decode_alphanumeric_chunk(data, bit_len),
+            Self::Byte => {
+                debug_assert!(bit_len == 1, "Invalid byte encoded length: {bit_len}");
+
+                vec![data as u8]
+            }
+        }
+    }
+
     pub fn contains(&self, byte: u8) -> bool {
         match self {
             Self::Numeric => byte.is_ascii_digit(),
@@ -82,36 +149,6 @@ impl Mode {
                 matches!(byte, b'0'..=b'9' | b'A'..=b'Z' | b' ' | b'$' | b'%' | b'*' | b'+' | b'-' | b'.' | b'/' | b':')
             }
             Self::Byte => true,
-        }
-    }
-
-    pub fn char_count_bit_len(&self, version: Version) -> usize {
-        debug_assert!(
-            matches!(version, Version::Micro(1..=4) | Version::Normal(1..=40)),
-            "Invalid version"
-        );
-
-        match version {
-            Version::Micro(v) => match *self {
-                Self::Numeric => v + 2,
-                Self::Alphanumeric => v + 1,
-                Self::Byte => v + 1,
-            },
-            Version::Normal(1..=9) => match *self {
-                Self::Numeric => 10,
-                Self::Alphanumeric => 9,
-                Self::Byte => 8,
-            },
-            Version::Normal(10..=26) => match *self {
-                Self::Numeric => 12,
-                Self::Alphanumeric => 11,
-                Self::Byte => 16,
-            },
-            Version::Normal(_) => match *self {
-                Self::Numeric => 14,
-                Self::Alphanumeric => 13,
-                Self::Byte => 16,
-            },
         }
     }
 
@@ -126,29 +163,10 @@ impl Mode {
 
 #[cfg(test)]
 mod mode_tests {
+
     use crate::encode::Mode;
-    use crate::types::Version;
 
     use super::Mode::*;
-    use super::Version::*;
-
-    #[test]
-    #[should_panic]
-    fn test_char_count_bit_len_invalid_version_low() {
-        Numeric.char_count_bit_len(Normal(0));
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_char_count_bit_len_invalid_version_high() {
-        Alphanumeric.char_count_bit_len(Normal(41));
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_char_count_bit_len_invalid_version_max() {
-        Alphanumeric.char_count_bit_len(Normal(usize::MAX));
-    }
 
     #[test]
     fn test_comparison() {
@@ -189,85 +207,123 @@ mod mode_tests {
     }
 
     #[test]
-    fn test_numeric_conversion() {
-        assert_eq!(Mode::Numeric.from("012".as_bytes()), 0b0000001100);
-        assert_eq!(Mode::Numeric.from("345".as_bytes()), 0b0101011001);
-        assert_eq!(Mode::Numeric.from("901".as_bytes()), 0b1110000101);
-        assert_eq!(Mode::Numeric.from("67".as_bytes()), 0b1000011);
-        assert_eq!(Mode::Numeric.from("8".as_bytes()), 0b1000);
+    fn test_numeric_to_byte() {
+        assert_eq!(Numeric.byte(0), b'0');
+        assert_eq!(Numeric.byte(9), b'9');
     }
 
     #[test]
     #[should_panic]
-    fn test_invalid_numeric_conversion() {
-        Mode::Numeric.from("1234".as_bytes());
+    fn test_invalid_numeric_digit_to_byte() {
+        Numeric.byte(b'A');
     }
 
     #[test]
-    fn test_alphanumeric_conversion() {
-        assert_eq!(Mode::Alphanumeric.from("AC".as_bytes()), 0b00111001110);
-        assert_eq!(Mode::Alphanumeric.from("-4".as_bytes()), 0b11100111001);
-        assert_eq!(Mode::Alphanumeric.from("2".as_bytes()), 0b000010);
+    fn test_alphanumeric_to_byte() {
+        assert_eq!(Alphanumeric.byte(0), b'0');
+        assert_eq!(Alphanumeric.byte(9), b'9');
+        assert_eq!(Alphanumeric.byte(10), b'A');
+        assert_eq!(Alphanumeric.byte(35), b'Z');
+        assert_eq!(Alphanumeric.byte(36), b' ');
+        assert_eq!(Alphanumeric.byte(44), b':');
     }
 
     #[test]
     #[should_panic]
-    fn test_invalid_alphanumeric_conversion() {
-        Mode::Alphanumeric.from("1234".as_bytes());
+    fn test_invalid_alphanumeric_digit_to_byte() {
+        Alphanumeric.byte(b'a');
+    }
+
+    #[test]
+    fn test_numeric_encoding() {
+        assert_eq!(Numeric.encode_chunk("012".as_bytes()), 0b0000001100);
+        assert_eq!(Numeric.encode_chunk("345".as_bytes()), 0b0101011001);
+        assert_eq!(Numeric.encode_chunk("901".as_bytes()), 0b1110000101);
+        assert_eq!(Numeric.encode_chunk("67".as_bytes()), 0b1000011);
+        assert_eq!(Numeric.encode_chunk("8".as_bytes()), 0b1000);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_numeric_encoding() {
+        Numeric.encode_chunk("1234".as_bytes());
+    }
+
+    #[test]
+    fn test_numeric_decoding() {
+        let data = "012".as_bytes();
+        let encoded_data = Numeric.encode_chunk(data);
+        assert_eq!(Numeric.decode_chunk(encoded_data, 10), data);
+        let data = "345".as_bytes();
+        let encoded_data = Numeric.encode_chunk(data);
+        assert_eq!(Numeric.decode_chunk(encoded_data, 10), data);
+        let data = "901".as_bytes();
+        let encoded_data = Numeric.encode_chunk(data);
+        assert_eq!(Numeric.decode_chunk(encoded_data, 10), data);
+        let data = "67".as_bytes();
+        let encoded_data = Numeric.encode_chunk(data);
+        assert_eq!(Numeric.decode_chunk(encoded_data, 7), data);
+        let data = "8".as_bytes();
+        let encoded_data = Numeric.encode_chunk(data);
+        assert_eq!(Numeric.decode_chunk(encoded_data, 4), data);
+    }
+
+    #[test]
+    fn test_alphanumeric_encoding() {
+        assert_eq!(Alphanumeric.encode_chunk("AC".as_bytes()), 0b00111001110);
+        assert_eq!(Alphanumeric.encode_chunk("-4".as_bytes()), 0b11100111001);
+        assert_eq!(Alphanumeric.encode_chunk("2".as_bytes()), 0b000010);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_alphanumeric_encoding() {
+        Alphanumeric.encode_chunk("1234".as_bytes());
+    }
+
+    #[test]
+    fn test_alphanumeric_decoding() {
+        let data = "AC".as_bytes();
+        let encoded_data = Alphanumeric.encode_chunk(data);
+        assert_eq!(Alphanumeric.decode_chunk(encoded_data, 11), data);
+        let data = "-4".as_bytes();
+        let encoded_data = Alphanumeric.encode_chunk(data);
+        assert_eq!(Alphanumeric.decode_chunk(encoded_data, 11), data);
+        let data = "2".as_bytes();
+        let encoded_data = Alphanumeric.encode_chunk(data);
+        assert_eq!(Alphanumeric.decode_chunk(encoded_data, 6), data);
     }
 
     #[test]
     fn test_is_numeric() {
-        assert!(Mode::Numeric.contains(b'0'));
-        assert!(Mode::Numeric.contains(b'9'));
-        assert!(!Mode::Numeric.contains(b'A'));
-        assert!(!Mode::Numeric.contains(b'Z'));
-        assert!(!Mode::Numeric.contains(b' '));
-        assert!(!Mode::Numeric.contains(b':'));
+        assert!(Numeric.contains(b'0'));
+        assert!(Numeric.contains(b'9'));
+        assert!(!Numeric.contains(b'A'));
+        assert!(!Numeric.contains(b'Z'));
+        assert!(!Numeric.contains(b' '));
+        assert!(!Numeric.contains(b':'));
     }
 
     #[test]
     fn test_is_alphanumeric() {
-        assert!(Mode::Alphanumeric.contains(b'0'));
-        assert!(Mode::Alphanumeric.contains(b'9'));
-        assert!(Mode::Alphanumeric.contains(b'A'));
-        assert!(Mode::Alphanumeric.contains(b'Z'));
-        assert!(Mode::Alphanumeric.contains(b' '));
-        assert!(Mode::Alphanumeric.contains(b':'));
-        assert!(!Mode::Alphanumeric.contains(b'@'));
-        assert!(!Mode::Alphanumeric.contains(b'('));
-    }
-
-    #[test]
-    fn test_char_count_bit_len() {
-        assert_eq!(Mode::Numeric.char_count_bit_len(Version::Normal(1)), 10);
-        assert_eq!(Mode::Numeric.char_count_bit_len(Version::Normal(9)), 10);
-        assert_eq!(Mode::Numeric.char_count_bit_len(Version::Normal(10)), 12);
-        assert_eq!(Mode::Numeric.char_count_bit_len(Version::Normal(26)), 12);
-        assert_eq!(Mode::Numeric.char_count_bit_len(Version::Normal(27)), 14);
-        assert_eq!(Mode::Numeric.char_count_bit_len(Version::Normal(40)), 14);
-        assert_eq!(Mode::Alphanumeric.char_count_bit_len(Version::Normal(1)), 9);
-        assert_eq!(Mode::Alphanumeric.char_count_bit_len(Version::Normal(9)), 9);
-        assert_eq!(Mode::Alphanumeric.char_count_bit_len(Version::Normal(10)), 11);
-        assert_eq!(Mode::Alphanumeric.char_count_bit_len(Version::Normal(26)), 11);
-        assert_eq!(Mode::Alphanumeric.char_count_bit_len(Version::Normal(27)), 13);
-        assert_eq!(Mode::Alphanumeric.char_count_bit_len(Version::Normal(40)), 13);
-        assert_eq!(Mode::Byte.char_count_bit_len(Version::Normal(1)), 8);
-        assert_eq!(Mode::Byte.char_count_bit_len(Version::Normal(9)), 8);
-        assert_eq!(Mode::Byte.char_count_bit_len(Version::Normal(10)), 16);
-        assert_eq!(Mode::Byte.char_count_bit_len(Version::Normal(26)), 16);
-        assert_eq!(Mode::Byte.char_count_bit_len(Version::Normal(27)), 16);
-        assert_eq!(Mode::Byte.char_count_bit_len(Version::Normal(40)), 16);
+        assert!(Alphanumeric.contains(b'0'));
+        assert!(Alphanumeric.contains(b'9'));
+        assert!(Alphanumeric.contains(b'A'));
+        assert!(Alphanumeric.contains(b'Z'));
+        assert!(Alphanumeric.contains(b' '));
+        assert!(Alphanumeric.contains(b':'));
+        assert!(!Alphanumeric.contains(b'@'));
+        assert!(!Alphanumeric.contains(b'('));
     }
 
     #[test]
     fn test_encoded_len() {
-        assert_eq!(Mode::Numeric.encoded_len(3), 10);
-        assert_eq!(Mode::Numeric.encoded_len(2), 7);
-        assert_eq!(Mode::Numeric.encoded_len(1), 4);
-        assert_eq!(Mode::Alphanumeric.encoded_len(2), 11);
-        assert_eq!(Mode::Alphanumeric.encoded_len(1), 6);
-        assert_eq!(Mode::Byte.encoded_len(1), 8);
+        assert_eq!(Numeric.encoded_len(3), 10);
+        assert_eq!(Numeric.encoded_len(2), 7);
+        assert_eq!(Numeric.encoded_len(1), 4);
+        assert_eq!(Alphanumeric.encoded_len(2), 11);
+        assert_eq!(Alphanumeric.encoded_len(1), 6);
+        assert_eq!(Byte.encoded_len(1), 8);
     }
 }
 
@@ -287,7 +343,7 @@ impl<'a> Segment<'a> {
 
     pub fn bit_len(&self, version: Version) -> usize {
         let mode_len = version.mode_len();
-        let char_count_len = self.mode.char_count_bit_len(version);
+        let char_count_len = version.char_count_bit_len(self.mode);
         let encoded_len = self.mode.encoded_len(self.data.len());
         mode_len + char_count_len + encoded_len
     }
@@ -374,12 +430,16 @@ mod segment_tests {
 //------------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
-pub struct EncodedBlob {
+struct EncodedBlob {
     data: Vec<u8>,
     bit_offset: usize,
     version: Version,
     bit_capacity: usize,
+    bit_cursor: usize,
 }
+
+// Encoder methods for encoding
+//------------------------------------------------------------------------------
 
 impl EncodedBlob {
     fn new(version: Version, ec_level: ECLevel) -> Self {
@@ -389,6 +449,7 @@ impl EncodedBlob {
             bit_offset: 0,
             version,
             bit_capacity,
+            bit_cursor: 0,
         }
     }
 
@@ -401,7 +462,7 @@ impl EncodedBlob {
 
     fn push_header(&mut self, mode: Mode, char_count: usize) {
         self.push_bits(4, mode as u16);
-        let char_count_bit_len = mode.char_count_bit_len(self.version);
+        let char_count_bit_len = self.version.char_count_bit_len(mode);
         debug_assert!(char_count < (1 << char_count_bit_len), "Char count exceeds bit length");
         self.push_bits(char_count_bit_len, char_count as u16);
     }
@@ -418,7 +479,7 @@ impl EncodedBlob {
         self.push_header(Mode::Numeric, data.len());
         for chunk in data.chunks(3) {
             let len = (chunk.len() * 10 + 2) / 3;
-            let data = Mode::Numeric.from(chunk);
+            let data = Mode::Numeric.encode_chunk(chunk);
             self.push_bits(len, data);
         }
     }
@@ -427,7 +488,7 @@ impl EncodedBlob {
         self.push_header(Mode::Alphanumeric, data.len());
         for chunk in data.chunks(2) {
             let len = (chunk.len() * 11 + 1) / 2;
-            let data = Mode::Alphanumeric.from(chunk);
+            let data = Mode::Alphanumeric.encode_chunk(chunk);
             self.push_bits(len, data);
         }
     }
@@ -435,7 +496,7 @@ impl EncodedBlob {
     fn push_byte_data(&mut self, data: &[u8]) {
         self.push_header(Mode::Byte, data.len());
         for chunk in data.chunks(1) {
-            let data = Mode::Byte.from(chunk);
+            let data = Mode::Byte.encode_chunk(chunk);
             self.push_bits(8, data);
         }
     }
@@ -483,7 +544,7 @@ impl EncodedBlob {
         }
         debug_assert!(
             self.bit_len() + bit_len <= self.bit_capacity,
-            "Capacity overflow: Capacity {}, Size {}",
+            "Insufficient capacity: Capacity {}, Size {}",
             self.bit_capacity,
             self.bit_len() + bit_len
         );
@@ -514,7 +575,7 @@ impl EncodedBlob {
 }
 
 #[cfg(test)]
-mod encoding_region_tests {
+mod encoded_blob_tests {
     use crate::{
         encode::{Mode, PADDING_CODEWORDS},
         types::{ECLevel, Version},
@@ -795,7 +856,7 @@ fn compute_optimal_segments(data: &[u8], version: Version) -> Vec<Segment> {
     MODES
         .iter()
         .enumerate()
-        .for_each(|(i, &m)| prev_cost[i] = (4 + m.char_count_bit_len(version)) * 6);
+        .for_each(|(i, &m)| prev_cost[i] = (4 + version.char_count_bit_len(m)) * 6);
     let mut cur_cost: [usize; 3] = [usize::MAX; 3];
     let mut min_path: Vec<Vec<usize>> = vec![vec![usize::MAX; 3]; len];
     for (i, b) in data.iter().enumerate() {
@@ -815,7 +876,7 @@ fn compute_optimal_segments(data: &[u8], version: Version) -> Vec<Segment> {
                 let mut cost = 0;
                 if to_mode != from_mode {
                     cost += (prev_cost[k] + 5) / 6 * 6;
-                    cost += (4 + to_mode.char_count_bit_len(version)) * 6;
+                    cost += (4 + version.char_count_bit_len(*to_mode)) * 6;
                 } else {
                     cost += prev_cost[k];
                 }
@@ -857,7 +918,7 @@ fn trace_optimal_modes(min_path: Vec<Vec<usize>>, prev_cost: [usize; 3]) -> Vec<
         .collect()
 }
 
-// Build segments from char modes
+// Build segments encode char modes
 fn build_segments(char_modes: Vec<Mode>, data: &[u8]) -> Vec<Segment> {
     let len = data.len();
     let mut segs: Vec<Segment> = vec![];
@@ -876,7 +937,7 @@ fn build_segments(char_modes: Vec<Mode>, data: &[u8]) -> Vec<Segment> {
 }
 
 #[cfg(test)]
-mod encoder_tests {
+mod encoder_encode_tests {
     use super::{compute_optimal_segments, find_optimal_version_and_segments, Mode, Segment};
     use crate::{
         encode::build_segments,
@@ -1104,6 +1165,122 @@ mod encoder_tests {
         let ec_level = ECLevel::L;
         find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
     }
+}
+
+// Encoder methods for decoding
+//------------------------------------------------------------------------------
+
+impl EncodedBlob {
+    fn new_with_data(data: Vec<u8>, version: Version) -> Self {
+        let bit_capacity = data.len() * 8;
+        Self { data, bit_offset: 0, version, bit_capacity, bit_cursor: 0 }
+    }
+
+    fn take_segment(&mut self) -> Option<Vec<u8>> {
+        let (mode, char_count) = self.take_header()?;
+        let byte_data = match mode {
+            Mode::Numeric => self.take_numeric_data(char_count),
+            Mode::Alphanumeric => self.take_alphanumeric_data(char_count),
+            Mode::Byte => self.take_byte_data(char_count),
+        };
+        Some(byte_data)
+    }
+
+    fn take_header(&mut self) -> Option<(Mode, usize)> {
+        let mode_bits = self.take_bits(4);
+        let mode = match mode_bits {
+            0 => return None,
+            1 => Mode::Numeric,
+            2 => Mode::Alphanumeric,
+            4 => Mode::Byte,
+            _ => unreachable!("Invalid Mode"),
+        };
+        let char_count_bit_len = self.version.char_count_bit_len(mode);
+        let char_count = self.take_bits(char_count_bit_len);
+        Some((mode, char_count.into()))
+    }
+
+    fn take_numeric_data(&mut self, mut char_count: usize) -> Vec<u8> {
+        let mut res = Vec::with_capacity(char_count);
+        while char_count > 0 {
+            let bit_len = if char_count > 2 { 10 } else { (char_count % 3) * 3 + 1 };
+            let chunk = self.take_bits(bit_len);
+            let bytes = Mode::Numeric.decode_chunk(chunk, bit_len);
+            res.extend(bytes);
+            char_count -= min(3, char_count);
+        }
+        res
+    }
+
+    fn take_alphanumeric_data(&mut self, mut char_count: usize) -> Vec<u8> {
+        let mut res = Vec::with_capacity(char_count);
+        while char_count > 0 {
+            let bit_len = if char_count > 1 { 11 } else { 6 };
+            let chunk = self.take_bits(bit_len);
+            let bytes = Mode::Numeric.decode_chunk(chunk, bit_len);
+            res.extend(bytes);
+            char_count -= min(2, char_count);
+        }
+        res
+    }
+
+    fn take_byte_data(&mut self, mut char_count: usize) -> Vec<u8> {
+        let mut res = Vec::with_capacity(char_count);
+        while char_count > 0 {
+            let chunk = self.take_bits(8);
+            let bytes = Mode::Numeric.decode_chunk(chunk, 8);
+            res.extend(bytes);
+            char_count -= 8;
+        }
+        res
+    }
+
+    fn take_bits(&mut self, bit_len: usize) -> u16 {
+        let remaining_bits = self.bit_capacity - self.bit_cursor + 1;
+        debug_assert!(
+            bit_len <= remaining_bits,
+            "Insufficient bits to take: Remaining bits {remaining_bits}, Bit len {bit_len}",
+        );
+
+        let index = self.bit_cursor / 8 - 1;
+        let offset = self.bit_cursor % 8;
+        let shifted_len = offset + bit_len;
+        let mut res = ((self.data[index] << offset) >> offset) as u16;
+        if shifted_len <= 8 {
+            res >>= 8 - shifted_len;
+        } else if shifted_len <= 16 {
+            res <<= shifted_len - 8;
+            res |= (self.data[index + 1] >> (16 - shifted_len)) as u16;
+        } else {
+            res <<= shifted_len - 8;
+            res |= self.data[index + 1] as u16;
+            res <<= shifted_len - 16;
+            res |= (self.data[index + 2] >> (24 - shifted_len)) as u16;
+        };
+        self.bit_cursor += bit_len;
+        res
+    }
+}
+
+// FIX: Remove
+#[cfg(test)]
+mod encoder_decode_tests {
+    #[test]
+    fn test1() {
+        assert_eq!((128_u8 as u16) << 2, 0);
+    }
+}
+
+// Decoder
+//------------------------------------------------------------------------------
+
+pub fn decode(data: &[u8], version: Version) -> Vec<u8> {
+    let mut encoded_blob = EncodedBlob::new_with_data(data.to_vec(), version);
+    let mut res = Vec::with_capacity(data.len());
+    while let Some(decoded_seg) = encoded_blob.take_segment() {
+        res.extend(decoded_seg);
+    }
+    res
 }
 
 // Global constants

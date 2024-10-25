@@ -2,6 +2,7 @@ use std::cmp::PartialOrd;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::{Deref, Not};
 
+use crate::encode::Mode;
 use crate::mask::MaskingPattern;
 
 // Error
@@ -92,6 +93,36 @@ impl Version {
         }
     }
 
+    pub fn char_count_bit_len(&self, mode: Mode) -> usize {
+        debug_assert!(
+            matches!(self, Version::Micro(1..=4) | Version::Normal(1..=40)),
+            "Invalid version"
+        );
+
+        match self {
+            Version::Micro(v) => match mode {
+                Mode::Numeric => v + 2,
+                Mode::Alphanumeric => v + 1,
+                Mode::Byte => v + 1,
+            },
+            Version::Normal(1..=9) => match mode {
+                Mode::Numeric => 10,
+                Mode::Alphanumeric => 9,
+                Mode::Byte => 8,
+            },
+            Version::Normal(10..=26) => match mode {
+                Mode::Numeric => 12,
+                Mode::Alphanumeric => 11,
+                Mode::Byte => 16,
+            },
+            Version::Normal(_) => match mode {
+                Mode::Numeric => 14,
+                Mode::Alphanumeric => 13,
+                Mode::Byte => 16,
+            },
+        }
+    }
+
     pub fn bit_capacity(self, ec_level: ECLevel) -> usize {
         match self {
             Version::Micro(v) => VERSION_BIT_CAPACITY[39 + v][ec_level as usize],
@@ -116,6 +147,8 @@ impl Version {
 
 #[cfg(test)]
 mod version_tests {
+    use crate::encode::Mode;
+
     use super::Version::*;
 
     #[test]
@@ -159,6 +192,46 @@ mod version_tests {
         let invalid_version = Normal(41);
         invalid_version.alignment_pattern();
     }
+
+    #[test]
+    fn test_char_count_bit_len() {
+        assert_eq!(Normal(1).char_count_bit_len(Mode::Numeric), 10);
+        assert_eq!(Normal(9).char_count_bit_len(Mode::Numeric), 10);
+        assert_eq!(Normal(10).char_count_bit_len(Mode::Numeric), 12);
+        assert_eq!(Normal(26).char_count_bit_len(Mode::Numeric), 12);
+        assert_eq!(Normal(27).char_count_bit_len(Mode::Numeric), 14);
+        assert_eq!(Normal(40).char_count_bit_len(Mode::Numeric), 14);
+        assert_eq!(Normal(1).char_count_bit_len(Mode::Alphanumeric), 9);
+        assert_eq!(Normal(9).char_count_bit_len(Mode::Alphanumeric), 9);
+        assert_eq!(Normal(10).char_count_bit_len(Mode::Alphanumeric), 11);
+        assert_eq!(Normal(26).char_count_bit_len(Mode::Alphanumeric), 11);
+        assert_eq!(Normal(27).char_count_bit_len(Mode::Alphanumeric), 13);
+        assert_eq!(Normal(40).char_count_bit_len(Mode::Alphanumeric), 13);
+        assert_eq!(Normal(1).char_count_bit_len(Mode::Byte), 8);
+        assert_eq!(Normal(9).char_count_bit_len(Mode::Byte), 8);
+        assert_eq!(Normal(10).char_count_bit_len(Mode::Byte), 16);
+        assert_eq!(Normal(26).char_count_bit_len(Mode::Byte), 16);
+        assert_eq!(Normal(27).char_count_bit_len(Mode::Byte), 16);
+        assert_eq!(Normal(40).char_count_bit_len(Mode::Byte), 16);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_char_count_bit_len_invalid_version_low() {
+        Normal(0).char_count_bit_len(Mode::Numeric);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_char_count_bit_len_invalid_version_high() {
+        Normal(41).char_count_bit_len(Mode::Alphanumeric);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_char_count_bit_len_invalid_version_max() {
+        Normal(usize::MAX).char_count_bit_len(Mode::Alphanumeric);
+    }
 }
 
 // Error correction level
@@ -170,18 +243,6 @@ pub enum ECLevel {
     M = 1,
     Q = 2,
     H = 3,
-}
-
-impl Deref for ECLevel {
-    type Target = usize;
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::L => &0,
-            Self::M => &1,
-            Self::Q => &2,
-            Self::H => &3,
-        }
-    }
 }
 
 // Palette

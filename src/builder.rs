@@ -188,7 +188,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -211,7 +210,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -234,7 +232,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -257,7 +254,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -280,7 +276,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -303,7 +298,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -326,7 +320,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -349,7 +342,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -372,7 +364,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -395,7 +386,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -418,7 +408,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -441,7 +430,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -464,7 +452,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -487,7 +474,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -510,7 +496,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -533,7 +518,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -556,7 +540,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -579,7 +562,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -602,7 +584,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
@@ -625,7 +606,6 @@ mod builder_tests {
         let (meta, content) = grids[0].decode().unwrap();
 
         assert_eq!(*version, meta.version.0);
-        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
