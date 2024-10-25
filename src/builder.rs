@@ -20,15 +20,6 @@ impl<'a> QRBuilder<'a> {
         Self { data, version: None, ec_level: ECLevel::M, palette: Palette::Monochrome }
     }
 
-    pub fn new_with_version(
-        data: &'a [u8],
-        version: Version,
-        ec_level: ECLevel,
-        palette: Palette,
-    ) -> Self {
-        Self { data, version: Some(version), ec_level, palette }
-    }
-
     pub fn data(&mut self, data: &'a [u8]) -> &mut Self {
         self.data = data;
         self
@@ -79,7 +70,8 @@ mod qrbuilder_util_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
         let palette = Palette::Monochrome;
-        let mut qr_builder = QRBuilder::new_with_version(data, version, ec_level, palette);
+        let mut qr_builder = QRBuilder::new(data);
+        qr_builder.version(version).ec_level(ec_level).palette(palette);
         assert_eq!(qr_builder.metadata(), "{ Version: 1, Ec level: L, Palette: Monochrome }");
         qr_builder.unset_version();
         assert_eq!(qr_builder.metadata(), "{ Version: None, Ec level: L, Palette: Monochrome }");
@@ -180,10 +172,12 @@ mod builder_tests {
     #[test]
     fn test_builder_1() {
         let data = "Hello, world!🌏".to_string();
+        let version = Version::Normal(1);
+        let ec_level = ECLevel::L;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(1))
-            .ec_level(ECLevel::L)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -193,16 +187,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_2() {
         let data = "TEST".to_string();
+        let version = Version::Normal(1);
+        let ec_level = ECLevel::M;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(1))
-            .ec_level(ECLevel::M)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -212,16 +210,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_3() {
         let data = "12345".to_string();
+        let version = Version::Normal(1);
+        let ec_level = ECLevel::Q;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(1))
-            .ec_level(ECLevel::Q)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -231,16 +233,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_4() {
         let data = "OK".to_string();
+        let version = Version::Normal(1);
+        let ec_level = ECLevel::H;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(1))
-            .ec_level(ECLevel::H)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -250,16 +256,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_5() {
         let data = "B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(3).to_string();
+        let version = Version::Normal(7);
+        let ec_level = ECLevel::L;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(7))
-            .ec_level(ECLevel::L)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -269,16 +279,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_6() {
         let data = "A11111111111111".repeat(11).to_string();
+        let version = Version::Normal(7);
+        let ec_level = ECLevel::M;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(7))
-            .ec_level(ECLevel::M)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -288,16 +302,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_7() {
         let data = "aAAAAAA1111111111111AAAAAAa".repeat(3).to_string();
+        let version = Version::Normal(7);
+        let ec_level = ECLevel::Q;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(7))
-            .ec_level(ECLevel::Q)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -307,16 +325,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_8() {
         let data = "1234567890".repeat(15).to_string();
+        let version = Version::Normal(7);
+        let ec_level = ECLevel::H;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(7))
-            .ec_level(ECLevel::H)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -326,16 +348,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_9() {
         let data = "B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(4).to_string();
+        let version = Version::Normal(10);
+        let ec_level = ECLevel::L;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(10))
-            .ec_level(ECLevel::L)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -345,16 +371,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_10() {
         let data = "A11111111111111".repeat(20).to_string();
+        let version = Version::Normal(10);
+        let ec_level = ECLevel::M;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(10))
-            .ec_level(ECLevel::M)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -364,16 +394,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_11() {
         let data = "aAAAAAAAAA1111111111111111AAAAAAAAAAa".repeat(4).to_string();
+        let version = Version::Normal(10);
+        let ec_level = ECLevel::Q;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(10))
-            .ec_level(ECLevel::Q)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -383,16 +417,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_12() {
         let data = "1234567890".repeat(28).to_string();
+        let version = Version::Normal(10);
+        let ec_level = ECLevel::H;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(10))
-            .ec_level(ECLevel::H)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -402,16 +440,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_13() {
         let data = "B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(22).to_string();
+        let version = Version::Normal(27);
+        let ec_level = ECLevel::L;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(27))
-            .ec_level(ECLevel::L)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -421,16 +463,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_14() {
         let data = "A111111111111111".repeat(100).to_string();
+        let version = Version::Normal(27);
+        let ec_level = ECLevel::M;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(27))
-            .ec_level(ECLevel::M)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -440,16 +486,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_15() {
         let data = "aAAAAAAAAA111111111111111111AAAAAAAAAAa".repeat(20).to_string();
+        let version = Version::Normal(27);
+        let ec_level = ECLevel::Q;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(27))
-            .ec_level(ECLevel::Q)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -459,16 +509,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_16() {
         let data = "1234567890".repeat(145).to_string();
+        let version = Version::Normal(27);
+        let ec_level = ECLevel::H;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(27))
-            .ec_level(ECLevel::H)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -478,16 +532,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_17() {
         let data = "B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(57).to_string();
+        let version = Version::Normal(40);
+        let ec_level = ECLevel::L;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(40))
-            .ec_level(ECLevel::L)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -497,16 +555,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_18() {
         let data = "A111111111111111".repeat(97).to_string();
+        let version = Version::Normal(40);
+        let ec_level = ECLevel::M;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(40))
-            .ec_level(ECLevel::M)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -516,16 +578,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_19() {
         let data = "aAAAAAAAAA111111111111111111AAAAAAAAAAa".repeat(42).to_string();
+        let version = Version::Normal(40);
+        let ec_level = ECLevel::Q;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(40))
-            .ec_level(ECLevel::Q)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -535,16 +601,20 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
     }
 
     #[test]
     fn test_builder_20() {
         let data = "1234567890".repeat(305).to_string();
+        let version = Version::Normal(40);
+        let ec_level = ECLevel::H;
 
         let qr = QRBuilder::new(data.as_bytes())
-            .version(Version::Normal(40))
-            .ec_level(ECLevel::H)
+            .version(version)
+            .ec_level(ec_level)
             .build()
             .unwrap()
             .render(10);
@@ -554,6 +624,21 @@ mod builder_tests {
         assert_eq!(grids.len(), 1);
         let (meta, content) = grids[0].decode().unwrap();
 
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(*ec_level, meta.ecc_level.into());
         assert_eq!(data, content);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_builder_21() {
+        let data = "1234567890".repeat(306).to_string();
+
+        QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(40))
+            .ec_level(ECLevel::H)
+            .build()
+            .unwrap()
+            .render(10);
     }
 }

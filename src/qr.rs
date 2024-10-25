@@ -1040,14 +1040,7 @@ impl QR {
                     | Module::Data(c) => c,
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
                 };
-
-                let pixel = match color {
-                    Color::Dark => ' ',
-                    Color::Light => '█',
-                    Color::Hue(_) => todo!(),
-                };
-
-                canvas.push(pixel);
+                canvas.push(color.select('█', ' '));
             }
             canvas.push('\n');
         }

@@ -1,5 +1,6 @@
 // TODO: Remember to remove unused_variables & dead_code
-#![allow(clippy::items_after_test_module, unused_variables, dead_code)]
+// #![allow(clippy::items_after_test_module, unused_variables, dead_code)]
+#![allow(clippy::items_after_test_module)]
 
 use std::error::Error;
 
@@ -13,12 +14,11 @@ pub mod mask;
 pub mod qr;
 pub mod types;
 
-// TODO: Remove rqrr and clean up main function after testing
 fn main() -> Result<(), Box<dyn Error>> {
-    let data = "OK";
+    let data = "Hello, world! 🌏";
 
     let qr = QRBuilder::new(data.as_bytes())
-        .version(Version::Normal(1))
+        .version(Version::Normal(3))
         .ec_level(ECLevel::H)
         .build()
         .unwrap()

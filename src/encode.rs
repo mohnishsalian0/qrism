@@ -695,7 +695,7 @@ mod encoding_region_tests {
         eb.push_terminator();
         assert_eq!(eb.data, vec![0b10000000]);
         assert_eq!(eb.bit_offset, 5);
-        for i in 0..capacity - 1 {
+        for _ in 0..capacity - 1 {
             eb.push_bits(8, 0b11111111);
         }
         println!("{}", eb.bit_offset);

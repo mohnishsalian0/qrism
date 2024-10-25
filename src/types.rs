@@ -172,6 +172,18 @@ pub enum ECLevel {
     H = 3,
 }
 
+impl Deref for ECLevel {
+    type Target = usize;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::L => &0,
+            Self::M => &1,
+            Self::Q => &2,
+            Self::H => &3,
+        }
+    }
+}
+
 // Palette
 //------------------------------------------------------------------------------
 
@@ -226,11 +238,11 @@ impl Not for Color {
 
 // TODO: Figure out how to handle hue
 impl Color {
-    pub fn select<T: Debug>(&self, light: T, dark: T, hue: T) -> T {
+    pub fn select<T: Debug>(&self, light: T, dark: T) -> T {
         match self {
             Self::Light => light,
             Self::Dark => dark,
-            Self::Hue(_) => hue,
+            Self::Hue(_) => todo!(),
         }
     }
 }
