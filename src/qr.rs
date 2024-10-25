@@ -1,5 +1,7 @@
 use std::ops::Deref;
 
+use image::{GrayImage, Luma};
+
 use crate::{
     mask::MaskingPattern,
     types::{format_info, Color, ECLevel, Palette, Version},
@@ -976,7 +978,45 @@ impl QR {
 // Render
 //------------------------------------------------------------------------------
 
+// TODO: Write testcases
 impl QR {
+    pub fn render(&self, module_size: u32) -> GrayImage {
+        let qz_size = if let Version::Normal(_) = self.version { 4 } else { 2 } * module_size;
+        let qr_size = self.width as u32 * module_size;
+        let total_size = qz_size + qr_size + qz_size;
+
+        let mut canvas = GrayImage::new(total_size, total_size);
+        for i in 0..total_size {
+            for j in 0..total_size {
+                if i < qz_size || i >= qz_size + qr_size || j < qz_size || j >= qz_size + qr_size {
+                    canvas.put_pixel(j, i, Luma([255]));
+                    continue;
+                }
+                let r = (i - qz_size) / module_size;
+                let c = (j - qz_size) / module_size;
+
+                let color = match self.get(r as i16, c as i16) {
+                    Module::Func(c)
+                    | Module::Format(c)
+                    | Module::Version(c)
+                    | Module::Palette(c)
+                    | Module::Data(c) => c,
+                    Module::Empty => panic!("Empty module found at: {r} {c}"),
+                };
+
+                let pixel = match color {
+                    Color::Dark => Luma([0]),
+                    Color::Light => Luma([255]),
+                    Color::Hue(_) => todo!(),
+                };
+
+                canvas.put_pixel(j, i, pixel);
+            }
+        }
+
+        canvas
+    }
+
     pub fn render_as_string(&self, module_size: usize) -> String {
         let qz_size = if let Version::Normal(_) = self.version { 4 } else { 2 } * module_size;
         let qr_size = self.width * module_size;
@@ -1003,7 +1043,8 @@ impl QR {
 
                 let pixel = match color {
                     Color::Dark => ' ',
-                    Color::Light | Color::Hue(_) => '█',
+                    Color::Light => '█',
+                    Color::Hue(_) => todo!(),
                 };
 
                 canvas.push(pixel);

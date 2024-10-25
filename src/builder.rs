@@ -54,7 +54,7 @@ impl<'a> QRBuilder<'a> {
         self
     }
 
-    pub fn get_metadata(&self) -> String {
+    pub fn metadata(&self) -> String {
         match self.version {
             Some(v) => format!(
                 "{{ Version: {:?}, Ec level: {:?}, Palette: {:?} }}",
@@ -80,12 +80,9 @@ mod qrbuilder_util_tests {
         let ec_level = ECLevel::L;
         let palette = Palette::Monochrome;
         let mut qr_builder = QRBuilder::new_with_version(data, version, ec_level, palette);
-        assert_eq!(qr_builder.get_metadata(), "{ Version: 1, Ec level: L, Palette: Monochrome }");
+        assert_eq!(qr_builder.metadata(), "{ Version: 1, Ec level: L, Palette: Monochrome }");
         qr_builder.unset_version();
-        assert_eq!(
-            qr_builder.get_metadata(),
-            "{ Version: None, Ec level: L, Palette: Monochrome }"
-        );
+        assert_eq!(qr_builder.metadata(), "{ Version: None, Ec level: L, Palette: Monochrome }");
     }
 }
 
@@ -93,7 +90,7 @@ impl<'a> QRBuilder<'a> {
     pub fn build(&self) -> QRResult<QR> {
         let data_len = self.data.len();
 
-        println!("\nGenerating QR {}...", self.get_metadata());
+        println!("\nGenerating QR {}...", self.metadata());
         if self.data.is_empty() {
             return Err(QRError::EmptyData);
         }
@@ -170,5 +167,393 @@ impl<'a> QRBuilder<'a> {
             }
         }
         res
+    }
+}
+
+#[cfg(test)]
+mod builder_tests {
+    use crate::{
+        builder::QRBuilder,
+        types::{ECLevel, Version},
+    };
+
+    #[test]
+    fn test_builder_1() {
+        let data = "Hello, world!🌏".to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(1))
+            .ec_level(ECLevel::L)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_2() {
+        let data = "TEST".to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(1))
+            .ec_level(ECLevel::M)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_3() {
+        let data = "12345".to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(1))
+            .ec_level(ECLevel::Q)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_4() {
+        let data = "OK".to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(1))
+            .ec_level(ECLevel::H)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_5() {
+        let data = "B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(3).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(7))
+            .ec_level(ECLevel::L)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_6() {
+        let data = "A11111111111111".repeat(11).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(7))
+            .ec_level(ECLevel::M)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_7() {
+        let data = "aAAAAAA1111111111111AAAAAAa".repeat(3).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(7))
+            .ec_level(ECLevel::Q)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_8() {
+        let data = "1234567890".repeat(15).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(7))
+            .ec_level(ECLevel::H)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_9() {
+        let data = "B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(4).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(10))
+            .ec_level(ECLevel::L)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_10() {
+        let data = "A11111111111111".repeat(20).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(10))
+            .ec_level(ECLevel::M)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_11() {
+        let data = "aAAAAAAAAA1111111111111111AAAAAAAAAAa".repeat(4).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(10))
+            .ec_level(ECLevel::Q)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_12() {
+        let data = "1234567890".repeat(28).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(10))
+            .ec_level(ECLevel::H)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_13() {
+        let data = "B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(22).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(27))
+            .ec_level(ECLevel::L)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_14() {
+        let data = "A111111111111111".repeat(100).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(27))
+            .ec_level(ECLevel::M)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_15() {
+        let data = "aAAAAAAAAA111111111111111111AAAAAAAAAAa".repeat(20).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(27))
+            .ec_level(ECLevel::Q)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_16() {
+        let data = "1234567890".repeat(145).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(27))
+            .ec_level(ECLevel::H)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_17() {
+        let data = "B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(57).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(40))
+            .ec_level(ECLevel::L)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_18() {
+        let data = "A111111111111111".repeat(97).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(40))
+            .ec_level(ECLevel::M)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_19() {
+        let data = "aAAAAAAAAA111111111111111111AAAAAAAAAAa".repeat(42).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(40))
+            .ec_level(ECLevel::Q)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
+    }
+
+    #[test]
+    fn test_builder_20() {
+        let data = "1234567890".repeat(305).to_string();
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(Version::Normal(40))
+            .ec_level(ECLevel::H)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(data, content);
     }
 }

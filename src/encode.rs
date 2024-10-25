@@ -761,6 +761,7 @@ pub fn encode_with_version(
         encoded_blob.push_segment(seg);
     }
     let encoded_len = (encoded_blob.bit_len() + 7) / 8;
+    encoded_blob.push_terminator();
     encoded_blob.pad_remaining_capacity();
     Ok((encoded_blob.data, encoded_len, encoded_blob.version))
 }

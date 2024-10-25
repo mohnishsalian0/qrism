@@ -92,7 +92,7 @@ pub fn apply_mask(qr: &mut QR, pattern: MaskingPattern) -> MaskingPattern {
     pattern
 }
 
-pub fn compute_total_penalty(qr: &QR) -> u16 {
+pub fn compute_total_penalty(qr: &QR) -> u32 {
     match qr.version() {
         Version::Micro(_) => todo!(),
         Version::Normal(_) => {
@@ -110,7 +110,7 @@ pub fn compute_total_penalty(qr: &QR) -> u16 {
     }
 }
 
-fn compute_adjacent_penalty(qr: &QR) -> u16 {
+fn compute_adjacent_penalty(qr: &QR) -> u32 {
     let mut penalty = 0;
     let w = qr.width();
     let mut cols = vec![(Color::Dark, 0); w];
@@ -125,7 +125,7 @@ fn compute_adjacent_penalty(qr: &QR) -> u16 {
             }
             consecutive_row_len += 1;
             if consecutive_row_len >= 5 {
-                penalty += consecutive_row_len as u16 - 2;
+                penalty += consecutive_row_len as u32 - 2;
             }
             if col.0 != color {
                 col.0 = color;
@@ -133,14 +133,14 @@ fn compute_adjacent_penalty(qr: &QR) -> u16 {
             }
             col.1 += 1;
             if col.1 >= 5 {
-                penalty += col.1 as u16 - 2;
+                penalty += col.1 as u32 - 2;
             }
         }
     }
     penalty
 }
 
-fn compute_block_penalty(qr: &QR) -> u16 {
+fn compute_block_penalty(qr: &QR) -> u32 {
     let mut penalty = 0;
     let w = qr.width() as i16;
     for r in 0..w - 1 {
@@ -157,7 +157,7 @@ fn compute_block_penalty(qr: &QR) -> u16 {
     penalty
 }
 
-fn compute_finder_pattern_penalty(qr: &QR, is_horizontal: bool) -> u16 {
+fn compute_finder_pattern_penalty(qr: &QR, is_horizontal: bool) -> u32 {
     let mut penalty = 0;
     let w = qr.width() as i16;
     static PATTERN: [Color; 7] = [
@@ -187,7 +187,7 @@ fn compute_finder_pattern_penalty(qr: &QR, is_horizontal: bool) -> u16 {
     penalty
 }
 
-fn compute_balance_penalty(qr: &QR) -> u16 {
+fn compute_balance_penalty(qr: &QR) -> u32 {
     let dark_count = qr.count_dark_modules();
     let w = qr.width();
     let total_count = w * w;
