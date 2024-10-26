@@ -443,7 +443,7 @@ struct EncodedBlob {
 impl EncodedBlob {
     fn new(version: Version, bit_capacity: usize) -> Self {
         Self {
-            data: Vec::with_capacity((bit_capacity + 7) / 8),
+            data: Vec::with_capacity((bit_capacity + 7) >> 3),
             bit_offset: 0,
             version,
             bit_capacity,
@@ -526,7 +526,7 @@ impl EncodedBlob {
             self.bit_offset
         );
 
-        let remain_byte_capacity = (self.bit_capacity - self.bit_len()) / 8;
+        let remain_byte_capacity = (self.bit_capacity - self.bit_len()) >> 3;
         PADDING_CODEWORDS.iter().copied().cycle().take(remain_byte_capacity).for_each(|pc| {
             self.push_bits(8, pc as u16);
         });
@@ -658,7 +658,7 @@ mod encoded_blob_encode_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
         let bit_capacity = version.bit_capacity(ec_level);
-        let capacity = (bit_capacity + 7) / 8;
+        let capacity = (bit_capacity + 7) >> 3;
         let mut eb = EncodedBlob::new(version, bit_capacity);
         for _ in 0..capacity {
             eb.push_bits(8, 0b1);
@@ -762,7 +762,7 @@ mod encoded_blob_encode_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
         let bit_capacity = version.bit_capacity(ec_level);
-        let capacity = (bit_capacity + 7) / 8;
+        let capacity = (bit_capacity + 7) >> 3;
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_bits(1, 0b1);
         eb.push_terminator();
@@ -814,7 +814,7 @@ pub fn encode(data: &[u8], ec_level: ECLevel) -> QRResult<(Vec<u8>, usize, Versi
     for seg in segments {
         encoded_blob.push_segment(seg);
     }
-    let encoded_len = (encoded_blob.bit_len() + 7) / 8;
+    let encoded_len = (encoded_blob.bit_len() + 7) >> 3;
     encoded_blob.push_terminator();
     encoded_blob.pad_remaining_capacity();
     Ok((encoded_blob.data, encoded_len, encoded_blob.version))
@@ -837,7 +837,7 @@ pub fn encode_with_version(
     for seg in segments {
         eb.push_segment(seg);
     }
-    let encoded_len = (eb.bit_len() + 7) / 8;
+    let encoded_len = (eb.bit_len() + 7) >> 3;
     eb.push_terminator();
     eb.pad_remaining_capacity();
     Ok((eb.data, encoded_len, eb.version))
@@ -1256,11 +1256,11 @@ impl EncodedBlob {
         let remaining_bits = self.bit_capacity - self.bit_cursor;
         debug_assert!(
             bit_len <= remaining_bits + 4,
-            "Insufficient bits to take: Remaining bits {remaining_bits}, Bit len {bit_len}",
+            "Insufficient bits: Remaining bits {remaining_bits}, Bit len {bit_len}",
         );
 
-        let index = self.bit_cursor / 8;
-        let offset = self.bit_cursor % 8;
+        let index = self.bit_cursor >> 3;
+        let offset = self.bit_cursor & 7;
         let shifted_len = offset + bit_len;
         let mut res = if index < self.data.len() {
             ((self.data[index] << offset) >> offset) as u16

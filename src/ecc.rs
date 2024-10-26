@@ -1,6 +1,6 @@
 use crate::types::{ECLevel, Version};
 
-// ECC: Error Correction Codeword
+// ECC: Error Correction Codeword generator
 pub fn ecc(data: &[u8], version: Version, ec_level: ECLevel) -> (Vec<&[u8]>, Vec<Vec<u8>>) {
     let (block1_size, block1_count, block2_size, block2_count) =
         version.data_codewords_per_block(ec_level);
@@ -124,6 +124,16 @@ mod ec_tests {
         let (_, ecc) = ecc(msg, Version::Normal(5), ECLevel::Q);
         assert_eq!(&*ecc, &expected_ec[..]);
     }
+}
+
+// Rectifier
+//------------------------------------------------------------------------------
+pub fn rectify(data_blocks: Vec<Vec<u8>>, ecc_blocks: Vec<Vec<u8>>) -> Vec<u8> {
+    todo!()
+}
+
+pub fn rectify_per_block(data: Vec<u8>, ecc: Vec<u8>) -> Vec<u8> {
+    todo!()
 }
 
 // Global constants
