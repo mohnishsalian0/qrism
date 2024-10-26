@@ -441,8 +441,7 @@ struct EncodedBlob {
 //------------------------------------------------------------------------------
 
 impl EncodedBlob {
-    fn new(version: Version, ec_level: ECLevel) -> Self {
-        let bit_capacity = version.bit_capacity(ec_level);
+    fn new(version: Version, bit_capacity: usize) -> Self {
         Self {
             data: Vec::with_capacity((bit_capacity + 7) / 8),
             bit_offset: 0,
@@ -582,7 +581,8 @@ mod encoded_blob_encode_tests {
     fn test_len() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let mut eb = EncodedBlob::new(version, ec_level);
+        let bit_capacity = version.bit_capacity(ec_level);
+        let mut eb = EncodedBlob::new(version, bit_capacity);
         assert_eq!(eb.bit_len(), 0);
         eb.push_bits(0, 0);
         assert_eq!(eb.bit_len(), 0);
@@ -600,7 +600,8 @@ mod encoded_blob_encode_tests {
     fn test_push_bits() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let mut eb = EncodedBlob::new(version, ec_level);
+        let bit_capacity = version.bit_capacity(ec_level);
+        let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_bits(0, 0);
         assert_eq!(eb.data, vec![]);
         eb.push_bits(4, 0b1101);
@@ -656,8 +657,9 @@ mod encoded_blob_encode_tests {
     fn test_push_bits_capacity_overflow() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let capacity = (version.bit_capacity(ec_level) + 7) / 8;
-        let mut eb = EncodedBlob::new(version, ec_level);
+        let bit_capacity = version.bit_capacity(ec_level);
+        let capacity = (bit_capacity + 7) / 8;
+        let mut eb = EncodedBlob::new(version, bit_capacity);
         for _ in 0..capacity {
             eb.push_bits(8, 0b1);
         }
@@ -668,7 +670,8 @@ mod encoded_blob_encode_tests {
     fn test_push_header_v1() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let mut eb = EncodedBlob::new(version, ec_level);
+        let bit_capacity = version.bit_capacity(ec_level);
+        let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_header(Mode::Numeric, 0b11_1111_1111);
         assert_eq!(eb.data, vec![0b00011111, 0b11111100]);
         eb.push_header(Mode::Alphanumeric, 0b1_1111_1111);
@@ -681,7 +684,8 @@ mod encoded_blob_encode_tests {
     fn test_push_header_v10() {
         let version = Version::Normal(10);
         let ec_level = ECLevel::L;
-        let mut eb = EncodedBlob::new(version, ec_level);
+        let bit_capacity = version.bit_capacity(ec_level);
+        let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_header(Mode::Numeric, 0b1111_1111_1111);
         assert_eq!(eb.data, vec![0b00011111, 0b11111111]);
         eb.push_header(Mode::Alphanumeric, 0b111_1111_1111);
@@ -699,7 +703,8 @@ mod encoded_blob_encode_tests {
     fn test_push_header_v27() {
         let version = Version::Normal(27);
         let ec_level = ECLevel::L;
-        let mut eb = EncodedBlob::new(version, ec_level);
+        let bit_capacity = version.bit_capacity(ec_level);
+        let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_header(Mode::Numeric, 0b11_1111_1111_1111);
         assert_eq!(eb.data, vec![0b00011111, 0b11111111, 0b11000000]);
         eb.push_header(Mode::Alphanumeric, 0b1_1111_1111_1111);
@@ -717,13 +722,14 @@ mod encoded_blob_encode_tests {
     fn test_push_numeric_data() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let mut eb = EncodedBlob::new(version, ec_level);
+        let bit_capacity = version.bit_capacity(ec_level);
+        let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_numeric_data("01234567".as_bytes());
         assert_eq!(
             eb.data,
             vec![0b00010000, 0b00100000, 0b00001100, 0b01010110, 0b01100001, 0b10000000]
         );
-        let mut eb = EncodedBlob::new(version, ec_level);
+        let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_numeric_data("8".as_bytes());
         assert_eq!(eb.data, vec![0b00010000, 0b00000110, 0b00]);
     }
@@ -732,7 +738,8 @@ mod encoded_blob_encode_tests {
     fn test_push_alphanumeric_data() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let mut eb = EncodedBlob::new(version, ec_level);
+        let bit_capacity = version.bit_capacity(ec_level);
+        let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_alphanumeric_data("AC-42".as_bytes());
         assert_eq!(
             eb.data,
@@ -744,7 +751,8 @@ mod encoded_blob_encode_tests {
     fn test_push_byte_data() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let mut eb = EncodedBlob::new(version, ec_level);
+        let bit_capacity = version.bit_capacity(ec_level);
+        let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_byte_data("a".as_bytes());
         assert_eq!(eb.data, vec![0b01000000, 0b00010110, 0b00010000])
     }
@@ -753,8 +761,9 @@ mod encoded_blob_encode_tests {
     fn test_push_terminator() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let capacity = version.bit_capacity(ec_level) / 8;
-        let mut eb = EncodedBlob::new(version, ec_level);
+        let bit_capacity = version.bit_capacity(ec_level);
+        let capacity = (bit_capacity + 7) / 8;
+        let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_bits(1, 0b1);
         eb.push_terminator();
         assert_eq!(eb.data, vec![0b10000000]);
@@ -771,7 +780,8 @@ mod encoded_blob_encode_tests {
     fn test_push_padding_bits() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let mut eb = EncodedBlob::new(version, ec_level);
+        let bit_capacity = version.bit_capacity(ec_level);
+        let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_bits(1, 0b1);
         eb.push_padding_bits();
         assert_eq!(eb.data, vec![0b10000000]);
@@ -782,7 +792,8 @@ mod encoded_blob_encode_tests {
     fn test_push_padding_codewords() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let mut eb = EncodedBlob::new(version, ec_level);
+        let bit_capacity = version.bit_capacity(ec_level);
+        let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_bits(1, 0b1);
         eb.push_padding_bits();
         eb.push_padding_codewords();
@@ -798,7 +809,8 @@ mod encoded_blob_encode_tests {
 // TODO: Write testcases
 pub fn encode(data: &[u8], ec_level: ECLevel) -> QRResult<(Vec<u8>, usize, Version)> {
     let (version, segments) = find_optimal_version_and_segments(data, ec_level)?;
-    let mut encoded_blob = EncodedBlob::new(version, ec_level);
+    let bit_capacity = version.bit_capacity(ec_level);
+    let mut encoded_blob = EncodedBlob::new(version, bit_capacity);
     for seg in segments {
         encoded_blob.push_segment(seg);
     }
@@ -820,14 +832,15 @@ pub fn encode_with_version(
     if size > capacity {
         return Err(QRError::DataTooLong);
     }
-    let mut encoded_blob = EncodedBlob::new(version, ec_level);
+    let bit_capacity = version.bit_capacity(ec_level);
+    let mut eb = EncodedBlob::new(version, bit_capacity);
     for seg in segments {
-        encoded_blob.push_segment(seg);
+        eb.push_segment(seg);
     }
-    let encoded_len = (encoded_blob.bit_len() + 7) / 8;
-    encoded_blob.push_terminator();
-    encoded_blob.pad_remaining_capacity();
-    Ok((encoded_blob.data, encoded_len, encoded_blob.version))
+    let encoded_len = (eb.bit_len() + 7) / 8;
+    eb.push_terminator();
+    eb.pad_remaining_capacity();
+    Ok((eb.data, encoded_len, eb.version))
 }
 
 fn find_optimal_version_and_segments(
