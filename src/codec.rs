@@ -545,27 +545,25 @@ impl EncodedBlob {
             self.bit_len() + bit_len
         );
 
+        if bit_len == 0 {
+            return;
+        }
+
         let shifted_len = self.bit_offset + bit_len;
 
         if self.bit_offset == 0 {
-            if shifted_len <= 8 {
-                self.data.push((bits << (8 - shifted_len)) as u8);
-            } else {
-                self.data.push((bits >> (shifted_len - 8)) as u8);
-                self.data.push((bits << (16 - shifted_len)) as u8);
-            }
-        } else {
-            let last = self.data.len() - 1;
-            if shifted_len <= 8 {
-                self.data[last] |= (bits << (8 - shifted_len)) as u8;
-            } else if shifted_len <= 16 {
-                self.data[last] |= (bits >> (shifted_len - 8)) as u8;
-                self.data.push((bits << (16 - shifted_len)) as u8);
-            } else {
-                self.data[last] |= (bits >> (shifted_len - 8)) as u8;
-                self.data.push((bits >> (shifted_len - 16)) as u8);
-                self.data.push((bits << (24 - shifted_len)) as u8);
-            }
+            self.data.push(0);
+        }
+        let last = self.data.len() - 1;
+        if shifted_len <= 8 {
+            self.data[last] |= (bits << (8 - shifted_len)) as u8;
+        } else if shifted_len <= 16 {
+            self.data[last] |= (bits >> (shifted_len - 8)) as u8;
+            self.data.push((bits << (16 - shifted_len)) as u8);
+        } else if shifted_len < 24 {
+            self.data[last] |= (bits >> (shifted_len - 8)) as u8;
+            self.data.push((bits >> (shifted_len - 16)) as u8);
+            self.data.push((bits << (24 - shifted_len)) as u8);
         }
         self.bit_offset = shifted_len & 7;
     }
