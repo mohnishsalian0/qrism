@@ -7,6 +7,7 @@ use builder::QRBuilder;
 use types::{ECLevel, Version};
 
 mod builder;
+mod decode;
 mod encode;
 mod error_correction;
 pub mod mask;

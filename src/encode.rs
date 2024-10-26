@@ -124,7 +124,7 @@ impl Mode {
         let len = bit_len / 5;
         let mut res = vec![0; len];
         for i in 0..len {
-            res[len - 1 - i] = Mode::Numeric.byte((data % 45) as u8);
+            res[len - 1 - i] = Mode::Alphanumeric.byte((data % 45) as u8);
             data /= 45;
         }
         res
@@ -135,7 +135,7 @@ impl Mode {
             Self::Numeric => Self::decode_numeric_chunk(data, bit_len),
             Self::Alphanumeric => Self::decode_alphanumeric_chunk(data, bit_len),
             Self::Byte => {
-                debug_assert!(bit_len == 1, "Invalid byte encoded length: {bit_len}");
+                debug_assert!(bit_len == 8, "Invalid byte encoded length: {bit_len}");
 
                 vec![data as u8]
             }
@@ -438,7 +438,7 @@ struct EncodedBlob {
     bit_cursor: usize,
 }
 
-// Encoder methods for encoding
+// EncodedBlob methods for encoding
 //------------------------------------------------------------------------------
 
 impl EncodedBlob {
@@ -575,7 +575,7 @@ impl EncodedBlob {
 }
 
 #[cfg(test)]
-mod encoded_blob_tests {
+mod encoded_blob_encode_tests {
     use crate::{
         encode::{Mode, PADDING_CODEWORDS},
         types::{ECLevel, Version},
@@ -937,7 +937,7 @@ fn build_segments(char_modes: Vec<Mode>, data: &[u8]) -> Vec<Segment> {
 }
 
 #[cfg(test)]
-mod encoder_encode_tests {
+mod encode_tests {
     use super::{compute_optimal_segments, find_optimal_version_and_segments, Mode, Segment};
     use crate::{
         encode::build_segments,
@@ -1167,7 +1167,7 @@ mod encoder_encode_tests {
     }
 }
 
-// Encoder methods for decoding
+// EncodedBlob methods for decoding
 //------------------------------------------------------------------------------
 
 impl EncodedBlob {
@@ -1205,6 +1205,7 @@ impl EncodedBlob {
         while char_count > 0 {
             let bit_len = if char_count > 2 { 10 } else { (char_count % 3) * 3 + 1 };
             let chunk = self.take_bits(bit_len);
+            println!("Chunk: {chunk} {bit_len}");
             let bytes = Mode::Numeric.decode_chunk(chunk, bit_len);
             res.extend(bytes);
             char_count -= min(3, char_count);
@@ -1217,7 +1218,7 @@ impl EncodedBlob {
         while char_count > 0 {
             let bit_len = if char_count > 1 { 11 } else { 6 };
             let chunk = self.take_bits(bit_len);
-            let bytes = Mode::Numeric.decode_chunk(chunk, bit_len);
+            let bytes = Mode::Alphanumeric.decode_chunk(chunk, bit_len);
             res.extend(bytes);
             char_count -= min(2, char_count);
         }
@@ -1228,46 +1229,215 @@ impl EncodedBlob {
         let mut res = Vec::with_capacity(char_count);
         while char_count > 0 {
             let chunk = self.take_bits(8);
-            let bytes = Mode::Numeric.decode_chunk(chunk, 8);
+            let bytes = Mode::Byte.decode_chunk(chunk, 8);
             res.extend(bytes);
-            char_count -= 8;
+            char_count -= 1;
         }
         res
     }
 
     fn take_bits(&mut self, bit_len: usize) -> u16 {
-        let remaining_bits = self.bit_capacity - self.bit_cursor + 1;
+        let remaining_bits = self.bit_capacity - self.bit_cursor;
         debug_assert!(
-            bit_len <= remaining_bits,
+            bit_len <= remaining_bits + 4,
             "Insufficient bits to take: Remaining bits {remaining_bits}, Bit len {bit_len}",
         );
 
-        let index = self.bit_cursor / 8 - 1;
+        let index = self.bit_cursor / 8;
         let offset = self.bit_cursor % 8;
         let shifted_len = offset + bit_len;
-        let mut res = ((self.data[index] << offset) >> offset) as u16;
+        let mut res = if index < self.data.len() {
+            ((self.data[index] << offset) >> offset) as u16
+        } else {
+            0
+        };
         if shifted_len <= 8 {
             res >>= 8 - shifted_len;
-        } else if shifted_len <= 16 {
+        } else if shifted_len <= 16 && index + 1 < self.data.len() {
             res <<= shifted_len - 8;
             res |= (self.data[index + 1] >> (16 - shifted_len)) as u16;
-        } else {
-            res <<= shifted_len - 8;
+        } else if index + 2 < self.data.len() {
+            res <<= 8;
             res |= self.data[index + 1] as u16;
             res <<= shifted_len - 16;
             res |= (self.data[index + 2] >> (24 - shifted_len)) as u16;
         };
-        self.bit_cursor += bit_len;
+        self.bit_cursor += min(bit_len, remaining_bits);
         res
     }
 }
 
-// FIX: Remove
 #[cfg(test)]
-mod encoder_decode_tests {
+mod encoded_blob_decode_tests {
+    use crate::{
+        encode::{encode_with_version, EncodedBlob, Mode},
+        types::{ECLevel, Version},
+    };
+
     #[test]
-    fn test1() {
-        assert_eq!((128_u8 as u16) << 2, 0);
+    fn test_take_bits() {
+        let data = vec![
+            0b10001000, 0b00001000, 0b00000100, 0b00001000, 0b11111111, 0b11111111, 0b10000000,
+            0b01010100, 0b10001001, 0b11000000, 0b10010001, 0b11000100, 0b10000000,
+        ];
+        let version = Version::Normal(1);
+        let mut eb = EncodedBlob::new_with_data(data, version);
+        let bits = eb.take_bits(0);
+        assert_eq!(bits, 0);
+        let bits = eb.take_bits(4);
+        assert_eq!(bits, 0b1000);
+        let bits = eb.take_bits(4);
+        assert_eq!(bits, 0b1000);
+        let bits = eb.take_bits(8);
+        assert_eq!(bits, 0b00001000);
+        let bits = eb.take_bits(9);
+        assert_eq!(bits, 0b1000);
+        let bits = eb.take_bits(7);
+        assert_eq!(bits, 0b1000);
+        let bits = eb.take_bits(16);
+        assert_eq!(bits, 0b1111111111111111);
+        let bits = eb.take_bits(1);
+        assert_eq!(bits, 0b1);
+        let bits = eb.take_bits(11);
+        assert_eq!(bits, 0b101);
+        let bits = eb.take_bits(14);
+        assert_eq!(bits, 0b1001000100111);
+        let bits = eb.take_bits(16);
+        assert_eq!(bits, 0b0000001001000111);
+        let bits = eb.take_bits(4);
+        assert_eq!(bits, 0b0001);
+        let bits = eb.take_bits(4);
+        assert_eq!(bits, 0b0010);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_take_bits_over_capacity() {
+        let data = vec![];
+        let version = Version::Normal(1);
+        let mut eb = EncodedBlob::new_with_data(data, version);
+        eb.take_bits(5);
+    }
+
+    #[test]
+    fn test_take_header_v1() {
+        let data = vec![0b00011111, 0b11111100, 0b10111111, 0b11101001, 0b11111110];
+        let version = Version::Normal(1);
+        let mut eb = EncodedBlob::new_with_data(data, version);
+        let (mode, char_count) = eb.take_header().unwrap();
+        assert_eq!(mode, Mode::Numeric);
+        assert_eq!(char_count, 0b11_1111_1111);
+        let (mode, char_count) = eb.take_header().unwrap();
+        assert_eq!(mode, Mode::Alphanumeric);
+        assert_eq!(char_count, 0b1_1111_1111);
+        let (mode, char_count) = eb.take_header().unwrap();
+        assert_eq!(mode, Mode::Byte);
+        assert_eq!(char_count, 0b11111111);
+    }
+
+    #[test]
+    fn test_take_header_v10() {
+        let data = vec![
+            0b00011111, 0b11111111, 0b00101111, 0b11111110, 0b10011111, 0b11111111, 0b11100000,
+        ];
+        let version = Version::Normal(10);
+        let mut eb = EncodedBlob::new_with_data(data, version);
+        let (mode, char_count) = eb.take_header().unwrap();
+        assert_eq!(mode, Mode::Numeric);
+        assert_eq!(char_count, 0b1111_1111_1111);
+        let (mode, char_count) = eb.take_header().unwrap();
+        assert_eq!(mode, Mode::Alphanumeric);
+        assert_eq!(char_count, 0b111_1111_1111);
+        let (mode, char_count) = eb.take_header().unwrap();
+        assert_eq!(mode, Mode::Byte);
+        assert_eq!(char_count, 0b11111111_11111111);
+    }
+
+    #[test]
+    fn test_take_header_v27() {
+        let data = vec![
+            0b00011111, 0b11111111, 0b11001011, 0b11111111, 0b11101001, 0b11111111, 0b11111110,
+        ];
+        let version = Version::Normal(27);
+        let mut eb = EncodedBlob::new_with_data(data, version);
+        let (mode, char_count) = eb.take_header().unwrap();
+        assert_eq!(mode, Mode::Numeric);
+        assert_eq!(char_count, 0b11_1111_1111_1111);
+        let (mode, char_count) = eb.take_header().unwrap();
+        assert_eq!(mode, Mode::Alphanumeric);
+        assert_eq!(char_count, 0b1_1111_1111_1111);
+        let (mode, char_count) = eb.take_header().unwrap();
+        assert_eq!(mode, Mode::Byte);
+        assert_eq!(char_count, 0b11111111_11111111);
+    }
+
+    #[test]
+    fn test_take_numeric_data() {
+        let data = "12345".as_bytes();
+        let version = Version::Normal(1);
+        let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
+        let mut eb = EncodedBlob::new_with_data(encoded_data, version);
+        eb.take_header().unwrap();
+        let numeric_data = eb.take_numeric_data(3);
+        assert_eq!(numeric_data, "123".as_bytes().to_vec());
+        let numeric_data = eb.take_numeric_data(2);
+        assert_eq!(numeric_data, "45".as_bytes().to_vec());
+        let data = "6".as_bytes();
+        let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
+        let mut eb = EncodedBlob::new_with_data(encoded_data, version);
+        eb.take_header().unwrap();
+        let numeric_data = eb.take_numeric_data(1);
+        assert_eq!(numeric_data, "6".as_bytes().to_vec());
+    }
+
+    #[test]
+    fn test_take_alphanumeric_data() {
+        let data = "AC-".as_bytes();
+        let version = Version::Normal(1);
+        let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
+        let mut eb = EncodedBlob::new_with_data(encoded_data, version);
+        eb.take_header().unwrap();
+        let alphanumeric_data = eb.take_alphanumeric_data(2);
+        assert_eq!(alphanumeric_data, "AC".as_bytes().to_vec());
+        let alphanumeric_data = eb.take_alphanumeric_data(1);
+        assert_eq!(alphanumeric_data, "-".as_bytes().to_vec());
+        let data = "%".as_bytes();
+        let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
+        let mut eb = EncodedBlob::new_with_data(encoded_data, version);
+        eb.take_header().unwrap();
+        let alphanumeric_data = eb.take_alphanumeric_data(1);
+        assert_eq!(alphanumeric_data, "%".as_bytes().to_vec());
+    }
+
+    #[test]
+    fn test_take_byte_data() {
+        let data = "abc".as_bytes();
+        let version = Version::Normal(1);
+        let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
+        let mut eb = EncodedBlob::new_with_data(encoded_data, version);
+        eb.take_header().unwrap();
+        let byte_data = eb.take_byte_data(2);
+        assert_eq!(byte_data, "ab".as_bytes().to_vec());
+        let byte_data = eb.take_byte_data(1);
+        assert_eq!(byte_data, "c".as_bytes().to_vec());
+    }
+
+    #[test]
+    fn test_take_segment() {
+        let data = "abcABCDEF1234567890123ABCDEFabc".as_bytes();
+        let version = Version::Normal(2);
+        let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
+        let mut eb = EncodedBlob::new_with_data(encoded_data, version);
+        let seg_data = eb.take_segment().unwrap();
+        assert_eq!(seg_data, "abc".as_bytes().to_vec());
+        let seg_data = eb.take_segment().unwrap();
+        assert_eq!(seg_data, "ABCDEF".as_bytes().to_vec());
+        let seg_data = eb.take_segment().unwrap();
+        assert_eq!(seg_data, "1234567890123".as_bytes().to_vec());
+        let seg_data = eb.take_segment().unwrap();
+        assert_eq!(seg_data, "ABCDEF".as_bytes().to_vec());
+        let seg_data = eb.take_segment().unwrap();
+        assert_eq!(seg_data, "abc".as_bytes().to_vec());
     }
 }
 
@@ -1281,6 +1451,24 @@ pub fn decode(data: &[u8], version: Version) -> Vec<u8> {
         res.extend(decoded_seg);
     }
     res
+}
+
+#[cfg(test)]
+mod decode_tests {
+    use super::decode;
+    use crate::{
+        encode::encode_with_version,
+        types::{ECLevel, Version},
+    };
+
+    #[test]
+    fn test_decode() {
+        let data = "abcABCDEF1234567890123ABCDEFabc".as_bytes();
+        let version = Version::Normal(2);
+        let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
+        let decoded_data = decode(&encoded_data, version);
+        assert_eq!(decoded_data, data);
+    }
 }
 
 // Global constants
