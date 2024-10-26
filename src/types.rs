@@ -2,7 +2,7 @@ use std::cmp::PartialOrd;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::{Deref, Not};
 
-use crate::encode::Mode;
+use crate::codec::Mode;
 use crate::mask::MaskingPattern;
 
 // Error
@@ -147,7 +147,7 @@ impl Version {
 
 #[cfg(test)]
 mod version_tests {
-    use crate::encode::Mode;
+    use crate::codec::Mode;
 
     use super::Version::*;
 

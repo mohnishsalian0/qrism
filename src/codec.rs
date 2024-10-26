@@ -165,7 +165,7 @@ impl Mode {
 mod mode_tests {
 
     use super::Mode::*;
-    use crate::encode::Mode;
+    use crate::codec::Mode;
 
     #[test]
     fn test_comparison() {
@@ -576,7 +576,7 @@ impl EncodedBlob {
 #[cfg(test)]
 mod encoded_blob_encode_tests {
     use crate::{
-        encode::{Mode, PADDING_CODEWORDS},
+        codec::{Mode, PADDING_CODEWORDS},
         types::{ECLevel, Version},
     };
 
@@ -939,7 +939,7 @@ fn build_segments(char_modes: Vec<Mode>, data: &[u8]) -> Vec<Segment> {
 mod encode_tests {
     use super::{compute_optimal_segments, find_optimal_version_and_segments, Mode, Segment};
     use crate::{
-        encode::build_segments,
+        codec::build_segments,
         types::{ECLevel, Version},
     };
 
@@ -1269,7 +1269,7 @@ impl EncodedBlob {
 #[cfg(test)]
 mod encoded_blob_decode_tests {
     use crate::{
-        encode::{encode_with_version, EncodedBlob, Mode},
+        codec::{encode_with_version, EncodedBlob, Mode},
         types::{ECLevel, Version},
     };
 
@@ -1456,7 +1456,7 @@ pub fn decode(data: &[u8], version: Version) -> Vec<u8> {
 mod decode_tests {
     use super::decode;
     use crate::{
-        encode::encode_with_version,
+        codec::encode_with_version,
         types::{ECLevel, Version},
     };
 

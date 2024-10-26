@@ -1,8 +1,8 @@
 use std::ops::Deref;
 
 use crate::{
-    encode::{encode, encode_with_version},
-    error_correction::{ecc, error_correction_capacity},
+    codec::{encode, encode_with_version},
+    ecc::{ecc, error_correction_capacity},
     mask::apply_best_mask,
     qr::QR,
     types::{ECLevel, Palette, QRError, QRResult, Version},
