@@ -538,9 +538,6 @@ impl EncodedBlob {
             bit_len >= (16 - bits.leading_zeros()) as usize,
             "Bit count shouldn't exceed bit length: Length {bit_len}, Bits {bits}"
         );
-        if bit_len == 0 {
-            return;
-        }
         debug_assert!(
             self.bit_len() + bit_len <= self.bit_capacity,
             "Insufficient capacity: Capacity {}, Size {}",
@@ -549,6 +546,7 @@ impl EncodedBlob {
         );
 
         let shifted_len = self.bit_offset + bit_len;
+
         if self.bit_offset == 0 {
             if shifted_len <= 8 {
                 self.data.push((bits << (8 - shifted_len)) as u8);
@@ -607,42 +605,50 @@ mod encoded_blob_encode_tests {
         let mut eb = EncodedBlob::new(version, ec_level);
         eb.push_bits(0, 0);
         assert_eq!(eb.data, vec![]);
-        eb.push_bits(4, 0b1000);
-        assert_eq!(eb.data, vec![0b10000000]);
-        eb.push_bits(4, 0b1000);
-        assert_eq!(eb.data, vec![0b10001000]);
-        eb.push_bits(8, 0b1000);
-        assert_eq!(eb.data, vec![0b10001000, 0b00001000]);
-        eb.push_bits(9, 0b1000);
-        assert_eq!(eb.data, vec![0b10001000, 0b00001000, 0b00000100, 0b0]);
-        eb.push_bits(7, 0b1000);
-        assert_eq!(eb.data, vec![0b10001000, 0b00001000, 0b00000100, 0b00001000]);
-        eb.push_bits(16, 0b1111111111111111);
+        eb.push_bits(4, 0b1101);
+        assert_eq!(eb.data, vec![0b11010000]);
+        eb.push_bits(4, 0b0010);
+        assert_eq!(eb.data, vec![0b11010010]);
+        eb.push_bits(8, 0b00110100);
+        assert_eq!(eb.data, vec![0b11010010, 0b00110100]);
+        eb.push_bits(9, 0b100011010);
+        assert_eq!(eb.data, vec![0b11010010, 0b00110100, 0b10001101, 0b00000000]);
+        eb.push_bits(7, 0b0100011);
+        assert_eq!(eb.data, vec![0b11010010, 0b00110100, 0b10001101, 0b00100011]);
+        eb.push_bits(16, 0b01001000_11010010);
         assert_eq!(
             eb.data,
-            vec![0b10001000, 0b00001000, 0b00000100, 0b00001000, 0b11111111, 0b11111111]
+            vec![0b11010010, 0b00110100, 0b10001101, 0b00100011, 0b01001000, 0b11010010]
         );
-        eb.push_bits(1, 0b1);
+        eb.push_bits(1, 0b0);
         assert_eq!(
             eb.data,
             vec![
-                0b10001000, 0b00001000, 0b00000100, 0b00001000, 0b11111111, 0b11111111, 0b10000000
+                0b11010010, 0b00110100, 0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00000000
             ]
         );
-        eb.push_bits(11, 0b100);
+        eb.push_bits(11, 0b01101001000);
         assert_eq!(
             eb.data,
             vec![
-                0b10001000, 0b00001000, 0b00000100, 0b00001000, 0b11111111, 0b11111111, 0b10000000,
-                0b01000000
+                0b11010010, 0b00110100, 0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00110100,
+                0b10000000
             ]
         );
-        eb.push_bits(16, 0b100);
+        eb.push_bits(14, 0b11010010001101);
         assert_eq!(
             eb.data,
             vec![
-                0b10001000, 0b00001000, 0b00000100, 0b00001000, 0b11111111, 0b11111111, 0b10000000,
-                0b01000000, 0b00000000, 0b01000000
+                0b11010010, 0b00110100, 0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00110100,
+                0b10001101, 0b00100011, 0b01000000
+            ]
+        );
+        eb.push_bits(16, 0b0010001101001000);
+        assert_eq!(
+            eb.data,
+            vec![
+                0b11010010, 0b00110100, 0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00110100,
+                0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00000000
             ]
         );
     }
@@ -1276,35 +1282,35 @@ mod encoded_blob_decode_tests {
     #[test]
     fn test_take_bits() {
         let data = vec![
-            0b10001000, 0b00001000, 0b00000100, 0b00001000, 0b11111111, 0b11111111, 0b10000000,
-            0b01010100, 0b10001001, 0b11000000, 0b10010001, 0b11000100, 0b10000000,
+            0b11010010, 0b00110100, 0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00110100,
+            0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00110100, 0b10001100,
         ];
         let version = Version::Normal(1);
         let mut eb = EncodedBlob::new_with_data(data, version);
         let bits = eb.take_bits(0);
         assert_eq!(bits, 0);
         let bits = eb.take_bits(4);
-        assert_eq!(bits, 0b1000);
+        assert_eq!(bits, 0b1101);
         let bits = eb.take_bits(4);
-        assert_eq!(bits, 0b1000);
+        assert_eq!(bits, 0b0010);
         let bits = eb.take_bits(8);
-        assert_eq!(bits, 0b00001000);
+        assert_eq!(bits, 0b00110100);
         let bits = eb.take_bits(9);
-        assert_eq!(bits, 0b1000);
+        assert_eq!(bits, 0b100011010);
         let bits = eb.take_bits(7);
-        assert_eq!(bits, 0b1000);
+        assert_eq!(bits, 0b0100011);
         let bits = eb.take_bits(16);
-        assert_eq!(bits, 0b1111111111111111);
+        assert_eq!(bits, 0b01001000_11010010);
         let bits = eb.take_bits(1);
-        assert_eq!(bits, 0b1);
+        assert_eq!(bits, 0b0);
         let bits = eb.take_bits(11);
-        assert_eq!(bits, 0b101);
+        assert_eq!(bits, 0b01101001000);
         let bits = eb.take_bits(14);
-        assert_eq!(bits, 0b1001000100111);
+        assert_eq!(bits, 0b11010010001101);
         let bits = eb.take_bits(16);
-        assert_eq!(bits, 0b0000001001000111);
+        assert_eq!(bits, 0b0010001101001000);
         let bits = eb.take_bits(4);
-        assert_eq!(bits, 0b0001);
+        assert_eq!(bits, 0b1101);
         let bits = eb.take_bits(4);
         assert_eq!(bits, 0b0010);
     }
