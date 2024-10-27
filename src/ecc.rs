@@ -1,4 +1,7 @@
-use crate::types::{ECLevel, QRError, QRResult, Version};
+use crate::{
+    error::{QRError, QRResult},
+    metadata::{ECLevel, Version},
+};
 
 // ECC: Error Correction Codeword generator
 pub fn ecc(data: &[u8], version: Version, ec_level: ECLevel) -> (Vec<&[u8]>, Vec<Vec<u8>>) {
@@ -80,7 +83,7 @@ mod ec_tests {
 
     use crate::{
         ecc::{ecc, ecc_per_block},
-        types::{ECLevel, Version},
+        metadata::{ECLevel, Version},
     };
 
     #[test]
@@ -166,12 +169,12 @@ fn syndromes(block: &[u8], ecc_count: usize) -> QRResult<()> {
 }
 
 // Rectifier for format and version infos
-pub fn rectify_number(number: u32, valid_numbers: &[u32], err_capacity: u32) -> QRResult<u32> {
-    let res = *valid_numbers.iter().min_by_key(|&n| (number ^ n).count_zeros()).unwrap();
-    if (number ^ res).count_ones() <= err_capacity {
+pub fn rectify_info(info: u32, valid_numbers: &[u32], err_capacity: u32) -> QRResult<u32> {
+    let res = *valid_numbers.iter().min_by_key(|&n| (info ^ n).count_zeros()).unwrap();
+    if (info ^ res).count_ones() <= err_capacity {
         Ok(res)
     } else {
-        Err(QRError::InvalidFormatInfo)
+        Err(QRError::InvalidInfo)
     }
 }
 

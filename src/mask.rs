@@ -1,8 +1,8 @@
 use std::ops::Deref;
 
 use crate::{
+    metadata::{Color, Version},
     qr::QR,
-    types::{Color, Version},
 };
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, PartialOrd, Ord)]
@@ -118,7 +118,7 @@ fn compute_adjacent_penalty(qr: &QR) -> u32 {
         let mut last_row_color = Color::Dark;
         let mut consecutive_row_len = 0;
         for (c, col) in cols.iter_mut().enumerate() {
-            let color = *qr.get(r as i16, c as i16);
+            let color = qr.get_color(r as i16, c as i16);
             if last_row_color != color {
                 last_row_color = color;
                 consecutive_row_len = 0;
@@ -145,10 +145,10 @@ fn compute_block_penalty(qr: &QR) -> u32 {
     let w = qr.width() as i16;
     for r in 0..w - 1 {
         for c in 0..w - 1 {
-            let color = *qr.get(r, c);
-            if color == *qr.get(r + 1, c)
-                && color == *qr.get(r, c + 1)
-                && color == *qr.get(r + 1, c + 1)
+            let color = qr.get_color(r, c);
+            if color == qr.get_color(r + 1, c)
+                && color == qr.get_color(r, c + 1)
+                && color == qr.get_color(r + 1, c + 1)
             {
                 penalty += 3;
             }
@@ -172,9 +172,9 @@ fn compute_finder_pattern_penalty(qr: &QR, is_horizontal: bool) -> u32 {
     for i in 0..w {
         for j in 0..w - 6 {
             let get: Box<dyn Fn(i16) -> Color> = if is_horizontal {
-                Box::new(|c| *qr.get(i, c))
+                Box::new(|c| qr.get_color(i, c))
             } else {
-                Box::new(|r| *qr.get(r, i))
+                Box::new(|r| qr.get_color(r, i))
             };
             if !(j..j + 7).map(&*get).ne(PATTERN.iter().copied()) {
                 let match_quietzone = |x| x >= 0 && x < w && get(x) == Color::Dark;

@@ -1,52 +1,8 @@
 use std::cmp::PartialOrd;
-use std::fmt::{Debug, Display, Error, Formatter};
+use std::fmt::Debug;
 use std::ops::{Deref, Not};
 
 use crate::codec::Mode;
-
-// Error
-//------------------------------------------------------------------------------
-
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum QRError {
-    // QR builder
-    EmptyData,
-    DataTooLong,
-    CapacityOverflow,
-    InvalidVersion,
-    InvalidECLevel,
-    InvalidPalette,
-    InvalidColor,
-    InvalidChar,
-    InvalidMaskingPattern,
-
-    // QR reader
-    ErrorDetected([u8; 64]),
-    InvalidFormatInfo,
-}
-
-impl Display for QRError {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        let msg = match *self {
-            Self::EmptyData => "empty data",
-            Self::DataTooLong => "data too long",
-            Self::CapacityOverflow => "capacity overflow",
-            Self::InvalidVersion => "invalid version",
-            Self::InvalidECLevel => "invalid error correction level",
-            Self::InvalidPalette => "invalid color palette",
-            Self::InvalidColor => "invalid color",
-            Self::InvalidChar => "invalid character",
-            Self::InvalidMaskingPattern => "invalid masking pattern",
-            Self::ErrorDetected(_) => "Error detected in data",
-            Self::InvalidFormatInfo => "Invalid format info detected",
-        };
-        f.write_str(msg)
-    }
-}
-
-impl std::error::Error for QRError {}
-
-pub type QRResult<T> = Result<T, QRError>;
 
 // Version
 //------------------------------------------------------------------------------
@@ -496,4 +452,136 @@ static DATA_CODEWORDS_PER_BLOCK: [[(usize, usize, usize, usize); 4]; 44] = [
     [(5, 1, 0, 0), (4, 1, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)], // M2
     [(11, 1, 0, 0), (9, 1, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)], // M3
     [(16, 1, 0, 0), (14, 1, 0, 0), (10, 1, 0, 0), (0, 0, 0, 0)], // M4
+];
+
+pub static FORMAT_INFO_BIT_LEN: usize = 15;
+
+pub static FORMAT_MASK: u32 = 0b101010000010010;
+
+pub static FORMAT_INFOS_QR: [u32; 32] = [
+    0x5412, 0x5125, 0x5e7c, 0x5b4b, 0x45f9, 0x40ce, 0x4f97, 0x4aa0, 0x77c4, 0x72f3, 0x7daa, 0x789d,
+    0x662f, 0x6318, 0x6c41, 0x6976, 0x1689, 0x13be, 0x1ce7, 0x19d0, 0x0762, 0x0255, 0x0d0c, 0x083b,
+    0x355f, 0x3068, 0x3f31, 0x3a06, 0x24b4, 0x2183, 0x2eda, 0x2bed,
+];
+
+pub static FORMAT_INFO_COORDS_QR_MAIN: [(i16, i16); 15] = [
+    (8, 0),
+    (8, 1),
+    (8, 2),
+    (8, 3),
+    (8, 4),
+    (8, 5),
+    (8, 7),
+    (8, 8),
+    (7, 8),
+    (5, 8),
+    (4, 8),
+    (3, 8),
+    (2, 8),
+    (1, 8),
+    (0, 8),
+];
+
+pub static FORMAT_INFO_COORDS_QR_SIDE: [(i16, i16); 15] = [
+    (-1, 8),
+    (-2, 8),
+    (-3, 8),
+    (-4, 8),
+    (-5, 8),
+    (-6, 8),
+    (-7, 8),
+    (8, -8),
+    (8, -7),
+    (8, -6),
+    (8, -5),
+    (8, -4),
+    (8, -3),
+    (8, -2),
+    (8, -1),
+];
+
+pub static VERSION_INFO_BIT_LEN: usize = 18;
+
+pub static VERSION_INFOS: [u32; 34] = [
+    0x07c94, 0x085bc, 0x09a99, 0x0a4d3, 0x0bbf6, 0x0c762, 0x0d847, 0x0e60d, 0x0f928, 0x10b78,
+    0x1145d, 0x12a17, 0x13532, 0x149a6, 0x15683, 0x168c9, 0x177ec, 0x18ec4, 0x191e1, 0x1afab,
+    0x1b08e, 0x1cc1a, 0x1d33f, 0x1ed75, 0x1f250, 0x209d5, 0x216f0, 0x228ba, 0x2379f, 0x24b0b,
+    0x2542e, 0x26a64, 0x27541, 0x28c69,
+];
+
+pub static VERSION_INFO_COORDS_BL: [(i16, i16); 18] = [
+    (-9, 5),
+    (-10, 5),
+    (-11, 5),
+    (-9, 4),
+    (-10, 4),
+    (-11, 4),
+    (-9, 3),
+    (-10, 3),
+    (-11, 3),
+    (-9, 2),
+    (-10, 2),
+    (-11, 2),
+    (-9, 1),
+    (-10, 1),
+    (-11, 1),
+    (-9, 0),
+    (-10, 0),
+    (-11, 0),
+];
+
+pub static VERSION_INFO_COORDS_TR: [(i16, i16); 18] = [
+    (5, -9),
+    (5, -10),
+    (5, -11),
+    (4, -9),
+    (4, -10),
+    (4, -11),
+    (3, -9),
+    (3, -10),
+    (3, -11),
+    (2, -9),
+    (2, -10),
+    (2, -11),
+    (1, -9),
+    (1, -10),
+    (1, -11),
+    (0, -9),
+    (0, -10),
+    (0, -11),
+];
+
+pub static PALETTE_INFO_BIT_LEN: usize = 12;
+
+// TODO: Fill out palette info
+pub static PALETTE_INFOS: [u32; 12] = [0xFFF; 12];
+
+pub static PALETTE_INFO_COORDS_BL: [(i16, i16); 12] = [
+    (-1, 10),
+    (-1, 9),
+    (-2, 10),
+    (-2, 9),
+    (-3, 10),
+    (-3, 9),
+    (-4, 10),
+    (-4, 9),
+    (-5, 10),
+    (-5, 9),
+    (-6, 10),
+    (-6, 9),
+];
+
+pub static PALETTE_INFO_COORDS_TR: [(i16, i16); 12] = [
+    (10, -1),
+    (9, -1),
+    (10, -2),
+    (9, -2),
+    (10, -3),
+    (9, -3),
+    (10, -4),
+    (9, -4),
+    (10, -5),
+    (9, -5),
+    (10, -6),
+    (9, -6),
 ];

@@ -4,14 +4,17 @@
 use std::error::Error;
 
 use builder::QRBuilder;
-use types::{ECLevel, Version};
+use metadata::{ECLevel, Version};
 
 mod builder;
 mod codec;
+mod deqr;
 mod ecc;
+mod error;
+mod iter;
 pub mod mask;
+pub mod metadata;
 pub mod qr;
-pub mod types;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let data = "Hello, world! 🌎";

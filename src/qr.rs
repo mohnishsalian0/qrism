@@ -1,15 +1,20 @@
 use std::ops::Deref;
 
-use image::{DynamicImage, GrayImage, Luma};
+use image::{GrayImage, Luma};
 
 use crate::{
-    ecc::rectify_number,
+    iter::EncRegionIter,
     mask::MaskingPattern,
-    types::{Color, ECLevel, Palette, QRResult, Version},
+    metadata::{
+        Color, ECLevel, Palette, Version, FORMAT_INFOS_QR, FORMAT_INFO_BIT_LEN,
+        FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, PALETTE_INFOS,
+        PALETTE_INFO_BIT_LEN, PALETTE_INFO_COORDS_BL, PALETTE_INFO_COORDS_TR, VERSION_INFOS,
+        VERSION_INFO_BIT_LEN, VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
+    },
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Module {
+enum Module {
     Empty,
     Func(Color),
     Version(Color),
@@ -42,6 +47,9 @@ pub struct QR {
     palette: Palette,
     grid: Vec<Module>,
 }
+
+// QR type for builder
+//------------------------------------------------------------------------------
 
 impl QR {
     pub fn new(version: Version, ec_level: ECLevel, palette: Palette) -> Self {
@@ -114,16 +122,20 @@ impl QR {
         (r * w + c) as _
     }
 
-    pub fn get(&self, r: i16, c: i16) -> Module {
+    fn get(&self, r: i16, c: i16) -> Module {
         self.grid[self.coord_to_index(r, c)]
     }
 
-    pub fn get_mut(&mut self, r: i16, c: i16) -> &mut Module {
+    pub fn get_color(&self, r: i16, c: i16) -> Color {
+        *self.grid[self.coord_to_index(r, c)]
+    }
+
+    fn get_mut(&mut self, r: i16, c: i16) -> &mut Module {
         let index = self.coord_to_index(r, c);
         &mut self.grid[index]
     }
 
-    pub fn set(&mut self, r: i16, c: i16, module: Module) {
+    fn set(&mut self, r: i16, c: i16, module: Module) {
         *self.get_mut(r, c) = module;
     }
 }
@@ -131,8 +143,8 @@ impl QR {
 #[cfg(test)]
 mod qr_util_tests {
     use crate::{
+        metadata::{Color, ECLevel, Palette, Version},
         qr::{Module, QR},
-        types::{Color, ECLevel, Palette, Version},
     };
 
     #[test]
@@ -178,10 +190,6 @@ mod qr_util_tests {
     }
 }
 
-//------------------------------------------------------------------------------
-// QR methods for Builder
-//------------------------------------------------------------------------------
-
 // Finder pattern
 //------------------------------------------------------------------------------
 
@@ -220,8 +228,8 @@ impl QR {
 #[cfg(test)]
 mod finder_pattern_tests {
     use crate::{
+        metadata::{ECLevel, Palette, Version},
         qr::QR,
-        types::{ECLevel, Palette, Version},
     };
 
     #[test]
@@ -296,8 +304,8 @@ impl QR {
 #[cfg(test)]
 mod timing_pattern_tests {
     use crate::{
+        metadata::{ECLevel, Palette, Version},
         qr::QR,
-        types::{ECLevel, Palette, Version},
     };
 
     #[test]
@@ -368,8 +376,8 @@ impl QR {
 #[cfg(test)]
 mod alignment_pattern_tests {
     use crate::{
+        metadata::{ECLevel, Palette, Version},
         qr::QR,
-        types::{ECLevel, Palette, Version},
     };
 
     #[test]
@@ -515,8 +523,8 @@ impl QR {
 #[cfg(test)]
 mod all_function_patterns_test {
     use crate::{
+        metadata::{ECLevel, Palette, Version},
         qr::QR,
-        types::{ECLevel, Palette, Version},
     };
 
     #[test]
@@ -667,8 +675,8 @@ impl QR {
 #[cfg(test)]
 mod qr_information_tests {
     use crate::{
+        metadata::{ECLevel, Palette, Version},
         qr::QR,
-        types::{ECLevel, Palette, Version},
     };
 
     #[test]
@@ -878,56 +886,6 @@ mod qr_information_tests {
     }
 }
 
-// Iterator for placing data in qr
-//------------------------------------------------------------------------------
-
-struct DataModIter {
-    r: i16,
-    c: i16,
-    width: i16,
-    vert_timing_col: i16,
-}
-
-impl DataModIter {
-    const fn new(version: Version) -> Self {
-        let w = version.width() as i16;
-        let vert_timing_col = match version {
-            Version::Micro(_) => 0,
-            Version::Normal(_) => 6,
-        };
-        Self { r: w - 1, c: w - 1, width: w, vert_timing_col }
-    }
-}
-
-impl Iterator for DataModIter {
-    type Item = (i16, i16);
-    fn next(&mut self) -> Option<Self::Item> {
-        let adjusted_col = if self.c <= self.vert_timing_col { self.c + 1 } else { self.c };
-        if self.c < 0 {
-            return None;
-        }
-        let res = (self.r, self.c);
-        let col_type = (self.width - adjusted_col) % 4;
-        match col_type {
-            2 if self.r > 0 => {
-                self.r -= 1;
-                self.c += 1;
-            }
-            0 if self.r < self.width - 1 => {
-                self.r += 1;
-                self.c += 1;
-            }
-            0 | 2 if self.c == self.vert_timing_col + 1 => {
-                self.c -= 2;
-            }
-            _ => {
-                self.c -= 1;
-            }
-        }
-        Some(res)
-    }
-}
-
 // Encoding region
 //------------------------------------------------------------------------------
 
@@ -942,12 +900,12 @@ impl QR {
     }
 
     fn draw_payload(&mut self, payload: &[u8]) {
-        let mut coords = DataModIter::new(self.version);
+        let mut coords = EncRegionIter::new(self.version);
         self.draw_codewords(payload, &mut coords);
         self.fill_remainder_bits(&mut coords);
     }
 
-    fn draw_codewords(&mut self, codewords: &[u8], coords: &mut DataModIter) {
+    fn draw_codewords(&mut self, codewords: &[u8], coords: &mut EncRegionIter) {
         for &codeword in codewords.iter() {
             for i in (0..8).rev() {
                 let bit = (codeword >> i) & 1;
@@ -966,7 +924,7 @@ impl QR {
         }
     }
 
-    fn fill_remainder_bits(&mut self, coords: &mut DataModIter) {
+    fn fill_remainder_bits(&mut self, coords: &mut EncRegionIter) {
         let empty_modules =
             coords.filter(|(r, c)| self.get(*r, *c) == Module::Empty).collect::<Vec<_>>();
         debug_assert!(
@@ -1081,106 +1039,6 @@ impl QR {
     }
 }
 
-//------------------------------------------------------------------------------
-// QR methods for Reader
-//------------------------------------------------------------------------------
-
-impl QR {
-    pub fn from_image(image: DynamicImage) -> Self {
-        todo!()
-    }
-}
-
-// Format & version info
-//------------------------------------------------------------------------------
-
-impl QR {
-    pub fn identify_format_info(&mut self) -> QRResult<u32> {
-        match self.version {
-            Version::Micro(_) => todo!(),
-            Version::Normal(_) => {
-                let main = self.get_number(&FORMAT_INFO_COORDS_QR_MAIN);
-                rectify_number(main, &FORMAT_INFOS_QR, 3)
-                    .or_else(|_| {
-                        let side = self.get_number(&FORMAT_INFO_COORDS_QR_SIDE);
-                        rectify_number(side, &FORMAT_INFOS_QR, 3)
-                    })
-                    .map(|mf| mf ^ FORMAT_MASK)
-            }
-        }
-    }
-
-    pub fn identify_version_info(&mut self) -> QRResult<Version> {
-        todo!()
-    }
-
-    pub fn get_number(&mut self, coords: &[(i16, i16)]) -> u32 {
-        let mut number = 0;
-        for (r, c) in coords {
-            let m = self.get_mut(*r, *c);
-            number = (number << 1) | u32::from(**m);
-        }
-        number
-    }
-}
-
-// Finder patterns
-//------------------------------------------------------------------------------
-
-impl QR {
-    pub fn identify_all_function_patterns(&mut self) -> QRResult<()> {
-        todo!()
-    }
-}
-
-// Alignment pattern
-//------------------------------------------------------------------------------
-
-impl QR {
-    pub fn identify_alignment_pattern(&mut self) -> QRResult<()> {
-        todo!()
-    }
-
-    pub fn identify_alignment_pattern_at(&mut self) -> QRResult<()> {
-        todo!()
-    }
-}
-
-// Timing pattern
-//------------------------------------------------------------------------------
-
-impl QR {
-    pub fn identify_timing_pattern(&mut self) -> QRResult<()> {
-        todo!()
-    }
-
-    pub fn identify_timing_pattern_at(&mut self) -> QRResult<()> {
-        todo!()
-    }
-}
-
-// Finder pattern
-//------------------------------------------------------------------------------
-
-impl QR {
-    pub fn identify_finder_pattern(&mut self) -> QRResult<()> {
-        todo!()
-    }
-
-    pub fn identify_finder_pattern_at(&mut self) -> QRResult<()> {
-        todo!()
-    }
-}
-
-// Encoding region
-//------------------------------------------------------------------------------
-
-impl QR {
-    pub fn identify_encoding_region(&mut self) -> Vec<u8> {
-        todo!()
-    }
-}
-
 // Format information
 //------------------------------------------------------------------------------
 
@@ -1207,135 +1065,3 @@ pub fn palette_info(palette: Palette) -> u32 {
 
 // Global constants
 //------------------------------------------------------------------------------
-
-static FORMAT_INFO_BIT_LEN: usize = 15;
-
-static FORMAT_MASK: u32 = 0b101010000010010;
-
-static FORMAT_INFOS_QR: [u32; 32] = [
-    0x5412, 0x5125, 0x5e7c, 0x5b4b, 0x45f9, 0x40ce, 0x4f97, 0x4aa0, 0x77c4, 0x72f3, 0x7daa, 0x789d,
-    0x662f, 0x6318, 0x6c41, 0x6976, 0x1689, 0x13be, 0x1ce7, 0x19d0, 0x0762, 0x0255, 0x0d0c, 0x083b,
-    0x355f, 0x3068, 0x3f31, 0x3a06, 0x24b4, 0x2183, 0x2eda, 0x2bed,
-];
-
-static FORMAT_INFO_COORDS_QR_MAIN: [(i16, i16); 15] = [
-    (8, 0),
-    (8, 1),
-    (8, 2),
-    (8, 3),
-    (8, 4),
-    (8, 5),
-    (8, 7),
-    (8, 8),
-    (7, 8),
-    (5, 8),
-    (4, 8),
-    (3, 8),
-    (2, 8),
-    (1, 8),
-    (0, 8),
-];
-
-static FORMAT_INFO_COORDS_QR_SIDE: [(i16, i16); 15] = [
-    (-1, 8),
-    (-2, 8),
-    (-3, 8),
-    (-4, 8),
-    (-5, 8),
-    (-6, 8),
-    (-7, 8),
-    (8, -8),
-    (8, -7),
-    (8, -6),
-    (8, -5),
-    (8, -4),
-    (8, -3),
-    (8, -2),
-    (8, -1),
-];
-
-static VERSION_INFO_BIT_LEN: usize = 18;
-
-static VERSION_INFOS: [u32; 34] = [
-    0x07c94, 0x085bc, 0x09a99, 0x0a4d3, 0x0bbf6, 0x0c762, 0x0d847, 0x0e60d, 0x0f928, 0x10b78,
-    0x1145d, 0x12a17, 0x13532, 0x149a6, 0x15683, 0x168c9, 0x177ec, 0x18ec4, 0x191e1, 0x1afab,
-    0x1b08e, 0x1cc1a, 0x1d33f, 0x1ed75, 0x1f250, 0x209d5, 0x216f0, 0x228ba, 0x2379f, 0x24b0b,
-    0x2542e, 0x26a64, 0x27541, 0x28c69,
-];
-
-static VERSION_INFO_COORDS_BL: [(i16, i16); 18] = [
-    (-9, 5),
-    (-10, 5),
-    (-11, 5),
-    (-9, 4),
-    (-10, 4),
-    (-11, 4),
-    (-9, 3),
-    (-10, 3),
-    (-11, 3),
-    (-9, 2),
-    (-10, 2),
-    (-11, 2),
-    (-9, 1),
-    (-10, 1),
-    (-11, 1),
-    (-9, 0),
-    (-10, 0),
-    (-11, 0),
-];
-
-static VERSION_INFO_COORDS_TR: [(i16, i16); 18] = [
-    (5, -9),
-    (5, -10),
-    (5, -11),
-    (4, -9),
-    (4, -10),
-    (4, -11),
-    (3, -9),
-    (3, -10),
-    (3, -11),
-    (2, -9),
-    (2, -10),
-    (2, -11),
-    (1, -9),
-    (1, -10),
-    (1, -11),
-    (0, -9),
-    (0, -10),
-    (0, -11),
-];
-
-static PALETTE_INFO_BIT_LEN: usize = 12;
-
-// TODO: Fill out palette info
-static PALETTE_INFOS: [u32; 12] = [0xFFF; 12];
-
-static PALETTE_INFO_COORDS_BL: [(i16, i16); 12] = [
-    (-1, 10),
-    (-1, 9),
-    (-2, 10),
-    (-2, 9),
-    (-3, 10),
-    (-3, 9),
-    (-4, 10),
-    (-4, 9),
-    (-5, 10),
-    (-5, 9),
-    (-6, 10),
-    (-6, 9),
-];
-
-static PALETTE_INFO_COORDS_TR: [(i16, i16); 12] = [
-    (10, -1),
-    (9, -1),
-    (10, -2),
-    (9, -2),
-    (10, -3),
-    (9, -3),
-    (10, -4),
-    (9, -4),
-    (10, -5),
-    (9, -5),
-    (10, -6),
-    (9, -6),
-];

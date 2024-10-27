@@ -1,4 +1,7 @@
-use crate::types::{ECLevel, QRError, QRResult, Version};
+use crate::{
+    error::{QRError, QRResult},
+    metadata::{ECLevel, Version},
+};
 use std::{
     cmp::{min, Ordering},
     mem::swap,
@@ -355,73 +358,73 @@ mod segment_tests {
     #[test]
     fn test_bit_len_numeric_mode_1() {
         let seg = Segment::new(super::Mode::Numeric, "123".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(1)), 24);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(1)), 24);
         let seg = Segment::new(super::Mode::Numeric, "45".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(1)), 21);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(1)), 21);
         let seg = Segment::new(super::Mode::Numeric, "6".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(1)), 18);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(1)), 18);
     }
 
     #[test]
     fn test_bit_len_numeric_mode_10() {
         let seg = Segment::new(super::Mode::Numeric, "123".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(10)), 26);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(10)), 26);
         let seg = Segment::new(super::Mode::Numeric, "45".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(10)), 23);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(10)), 23);
         let seg = Segment::new(super::Mode::Numeric, "6".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(10)), 20);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(10)), 20);
     }
 
     #[test]
     fn test_bit_len_numeric_mode_27() {
         let seg = Segment::new(super::Mode::Numeric, "123".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(27)), 28);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(27)), 28);
         let seg = Segment::new(super::Mode::Numeric, "45".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(27)), 25);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(27)), 25);
         let seg = Segment::new(super::Mode::Numeric, "6".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(27)), 22);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(27)), 22);
     }
 
     #[test]
     fn test_bit_len_alphanumeric_mode_1() {
         let seg = Segment::new(super::Mode::Alphanumeric, "AZ".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(1)), 24);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(1)), 24);
         let seg = Segment::new(super::Mode::Alphanumeric, "-".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(1)), 19);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(1)), 19);
     }
 
     #[test]
     fn test_bit_len_alphanumeric_mode_10() {
         let seg = Segment::new(super::Mode::Alphanumeric, "AZ".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(10)), 26);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(10)), 26);
         let seg = Segment::new(super::Mode::Alphanumeric, "-".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(10)), 21);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(10)), 21);
     }
 
     #[test]
     fn test_bit_len_alphanumeric_mode_27() {
         let seg = Segment::new(super::Mode::Alphanumeric, "AZ".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(27)), 28);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(27)), 28);
         let seg = Segment::new(super::Mode::Alphanumeric, "-".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(27)), 23);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(27)), 23);
     }
 
     #[test]
     fn test_bit_len_byte_mode_1() {
         let seg = Segment::new(super::Mode::Byte, "a".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(1)), 20);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(1)), 20);
     }
 
     #[test]
     fn test_bit_len_byte_mode_10() {
         let seg = Segment::new(super::Mode::Byte, "ab".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(10)), 36);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(10)), 36);
     }
 
     #[test]
     fn test_bit_len_byte_mode_27() {
         let seg = Segment::new(super::Mode::Byte, "abc".as_bytes());
-        assert_eq!(seg.bit_len(crate::types::Version::Normal(27)), 44);
+        assert_eq!(seg.bit_len(crate::metadata::Version::Normal(27)), 44);
     }
 }
 
@@ -572,7 +575,7 @@ impl EncodedBlob {
 mod encoded_blob_encode_tests {
     use crate::{
         codec::{Mode, PADDING_CODEWORDS},
-        types::{ECLevel, Version},
+        metadata::{ECLevel, Version},
     };
 
     use super::EncodedBlob;
@@ -957,7 +960,7 @@ mod encode_tests {
     use super::{compute_optimal_segments, find_optimal_version_and_segments, Mode, Segment};
     use crate::{
         codec::build_segments,
-        types::{ECLevel, Version},
+        metadata::{ECLevel, Version},
     };
 
     #[test]
@@ -1287,7 +1290,7 @@ impl EncodedBlob {
 mod encoded_blob_decode_tests {
     use crate::{
         codec::{encode_with_version, EncodedBlob, Mode},
-        types::{ECLevel, Version},
+        metadata::{ECLevel, Version},
     };
 
     #[test]
@@ -1474,7 +1477,7 @@ mod decode_tests {
     use super::decode;
     use crate::{
         codec::encode_with_version,
-        types::{ECLevel, Version},
+        metadata::{ECLevel, Version},
     };
 
     #[test]

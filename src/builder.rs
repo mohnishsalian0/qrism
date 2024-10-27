@@ -3,9 +3,10 @@ use std::ops::Deref;
 use crate::{
     codec::{encode, encode_with_version},
     ecc::{ecc, error_correction_capacity},
+    error::{QRError, QRResult},
     mask::apply_best_mask,
+    metadata::{ECLevel, Palette, Version},
     qr::QR,
-    types::{ECLevel, Palette, QRError, QRResult, Version},
 };
 
 pub struct QRBuilder<'a> {
@@ -62,7 +63,7 @@ impl<'a> QRBuilder<'a> {
 #[cfg(test)]
 mod qrbuilder_util_tests {
     use super::QRBuilder;
-    use crate::types::{ECLevel, Palette, Version};
+    use crate::metadata::{ECLevel, Palette, Version};
 
     #[test]
     fn test_metadata() {
@@ -166,7 +167,7 @@ impl<'a> QRBuilder<'a> {
 mod builder_tests {
     use crate::{
         builder::QRBuilder,
-        types::{ECLevel, Version},
+        metadata::{ECLevel, Version},
     };
 
     #[test]
