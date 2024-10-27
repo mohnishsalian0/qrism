@@ -1187,7 +1187,7 @@ mod encode_tests {
 //------------------------------------------------------------------------------
 
 impl EncodedBlob {
-    fn new_with_data(data: Vec<u8>, version: Version) -> Self {
+    fn from_data(data: Vec<u8>, version: Version) -> Self {
         let bit_capacity = data.len() * 8;
         Self { data, bit_offset: 0, version, bit_capacity, bit_cursor: 0 }
     }
@@ -1297,7 +1297,7 @@ mod encoded_blob_decode_tests {
             0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00110100, 0b10001100,
         ];
         let version = Version::Normal(1);
-        let mut eb = EncodedBlob::new_with_data(data, version);
+        let mut eb = EncodedBlob::from_data(data, version);
         let bits = eb.take_bits(0);
         assert_eq!(bits, 0);
         let bits = eb.take_bits(4);
@@ -1331,7 +1331,7 @@ mod encoded_blob_decode_tests {
     fn test_take_bits_over_capacity() {
         let data = vec![];
         let version = Version::Normal(1);
-        let mut eb = EncodedBlob::new_with_data(data, version);
+        let mut eb = EncodedBlob::from_data(data, version);
         eb.take_bits(5);
     }
 
@@ -1339,7 +1339,7 @@ mod encoded_blob_decode_tests {
     fn test_take_header_v1() {
         let data = vec![0b00011111, 0b11111100, 0b10111111, 0b11101001, 0b11111110];
         let version = Version::Normal(1);
-        let mut eb = EncodedBlob::new_with_data(data, version);
+        let mut eb = EncodedBlob::from_data(data, version);
         let (mode, char_count) = eb.take_header().unwrap();
         assert_eq!(mode, Mode::Numeric);
         assert_eq!(char_count, 0b11_1111_1111);
@@ -1357,7 +1357,7 @@ mod encoded_blob_decode_tests {
             0b00011111, 0b11111111, 0b00101111, 0b11111110, 0b10011111, 0b11111111, 0b11100000,
         ];
         let version = Version::Normal(10);
-        let mut eb = EncodedBlob::new_with_data(data, version);
+        let mut eb = EncodedBlob::from_data(data, version);
         let (mode, char_count) = eb.take_header().unwrap();
         assert_eq!(mode, Mode::Numeric);
         assert_eq!(char_count, 0b1111_1111_1111);
@@ -1375,7 +1375,7 @@ mod encoded_blob_decode_tests {
             0b00011111, 0b11111111, 0b11001011, 0b11111111, 0b11101001, 0b11111111, 0b11111110,
         ];
         let version = Version::Normal(27);
-        let mut eb = EncodedBlob::new_with_data(data, version);
+        let mut eb = EncodedBlob::from_data(data, version);
         let (mode, char_count) = eb.take_header().unwrap();
         assert_eq!(mode, Mode::Numeric);
         assert_eq!(char_count, 0b11_1111_1111_1111);
@@ -1392,7 +1392,7 @@ mod encoded_blob_decode_tests {
         let data = "12345".as_bytes();
         let version = Version::Normal(1);
         let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
-        let mut eb = EncodedBlob::new_with_data(encoded_data, version);
+        let mut eb = EncodedBlob::from_data(encoded_data, version);
         eb.take_header().unwrap();
         let numeric_data = eb.take_numeric_data(3);
         assert_eq!(numeric_data, "123".as_bytes().to_vec());
@@ -1400,7 +1400,7 @@ mod encoded_blob_decode_tests {
         assert_eq!(numeric_data, "45".as_bytes().to_vec());
         let data = "6".as_bytes();
         let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
-        let mut eb = EncodedBlob::new_with_data(encoded_data, version);
+        let mut eb = EncodedBlob::from_data(encoded_data, version);
         eb.take_header().unwrap();
         let numeric_data = eb.take_numeric_data(1);
         assert_eq!(numeric_data, "6".as_bytes().to_vec());
@@ -1411,7 +1411,7 @@ mod encoded_blob_decode_tests {
         let data = "AC-".as_bytes();
         let version = Version::Normal(1);
         let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
-        let mut eb = EncodedBlob::new_with_data(encoded_data, version);
+        let mut eb = EncodedBlob::from_data(encoded_data, version);
         eb.take_header().unwrap();
         let alphanumeric_data = eb.take_alphanumeric_data(2);
         assert_eq!(alphanumeric_data, "AC".as_bytes().to_vec());
@@ -1419,7 +1419,7 @@ mod encoded_blob_decode_tests {
         assert_eq!(alphanumeric_data, "-".as_bytes().to_vec());
         let data = "%".as_bytes();
         let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
-        let mut eb = EncodedBlob::new_with_data(encoded_data, version);
+        let mut eb = EncodedBlob::from_data(encoded_data, version);
         eb.take_header().unwrap();
         let alphanumeric_data = eb.take_alphanumeric_data(1);
         assert_eq!(alphanumeric_data, "%".as_bytes().to_vec());
@@ -1430,7 +1430,7 @@ mod encoded_blob_decode_tests {
         let data = "abc".as_bytes();
         let version = Version::Normal(1);
         let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
-        let mut eb = EncodedBlob::new_with_data(encoded_data, version);
+        let mut eb = EncodedBlob::from_data(encoded_data, version);
         eb.take_header().unwrap();
         let byte_data = eb.take_byte_data(2);
         assert_eq!(byte_data, "ab".as_bytes().to_vec());
@@ -1443,7 +1443,7 @@ mod encoded_blob_decode_tests {
         let data = "abcABCDEF1234567890123ABCDEFabc".as_bytes();
         let version = Version::Normal(2);
         let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
-        let mut eb = EncodedBlob::new_with_data(encoded_data, version);
+        let mut eb = EncodedBlob::from_data(encoded_data, version);
         let seg_data = eb.take_segment().unwrap();
         assert_eq!(seg_data, "abc".as_bytes().to_vec());
         let seg_data = eb.take_segment().unwrap();
@@ -1461,7 +1461,7 @@ mod encoded_blob_decode_tests {
 //------------------------------------------------------------------------------
 
 pub fn decode(data: &[u8], version: Version) -> Vec<u8> {
-    let mut encoded_blob = EncodedBlob::new_with_data(data.to_vec(), version);
+    let mut encoded_blob = EncodedBlob::from_data(data.to_vec(), version);
     let mut res = Vec::with_capacity(data.len());
     while let Some(decoded_seg) = encoded_blob.take_segment() {
         res.extend(decoded_seg);

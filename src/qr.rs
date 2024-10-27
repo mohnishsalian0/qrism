@@ -1,10 +1,11 @@
 use std::ops::Deref;
 
-use image::{GrayImage, Luma};
+use image::{DynamicImage, GrayImage, Luma};
 
 use crate::{
+    ecc::rectify_number,
     mask::MaskingPattern,
-    types::{format_info, Color, ECLevel, Palette, Version},
+    types::{Color, ECLevel, Palette, QRResult, Version},
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -15,6 +16,7 @@ pub enum Module {
     Format(Color),
     Palette(Color),
     Data(Color),
+    Unknown(Color), // For QR reader
 }
 
 impl Deref for Module {
@@ -27,6 +29,7 @@ impl Deref for Module {
             Module::Format(c) => c,
             Module::Palette(c) => c,
             Module::Data(c) => c,
+            Module::Unknown(c) => c,
         }
     }
 }
@@ -91,6 +94,8 @@ impl QR {
                     Module::Palette(Color::Light | Color::Hue(_)) => 'P',
                     Module::Data(Color::Dark) => 'd',
                     Module::Data(Color::Light | Color::Hue(_)) => 'D',
+                    Module::Unknown(Color::Dark) => 'u',
+                    Module::Unknown(Color::Light | Color::Hue(_)) => 'U',
                 };
                 res.push(c);
             }
@@ -173,6 +178,13 @@ mod qr_util_tests {
     }
 }
 
+//------------------------------------------------------------------------------
+// QR methods for Builder
+//------------------------------------------------------------------------------
+
+// Finder pattern
+//------------------------------------------------------------------------------
+
 impl QR {
     fn draw_finder_patterns(&mut self) {
         self.draw_finder_pattern_at(3, 3);
@@ -243,6 +255,9 @@ mod finder_pattern_tests {
         );
     }
 }
+
+// Timing pattern
+//------------------------------------------------------------------------------
 
 impl QR {
     fn draw_timing_pattern(&mut self) {
@@ -316,6 +331,9 @@ mod timing_pattern_tests {
         );
     }
 }
+
+// Alignment pattern
+//------------------------------------------------------------------------------
 
 impl QR {
     fn draw_alignment_patterns(&mut self) {
@@ -483,6 +501,9 @@ mod alignment_pattern_tests {
     }
 }
 
+// Function patterns
+//------------------------------------------------------------------------------
+
 impl QR {
     pub fn draw_all_function_patterns(&mut self) {
         self.draw_finder_patterns();
@@ -538,6 +559,9 @@ mod all_function_patterns_test {
     }
 }
 
+// Format & version info
+//------------------------------------------------------------------------------
+
 impl QR {
     fn reserve_format_area(&mut self) {
         self.draw_format_info((1 << FORMAT_INFO_BIT_LEN) - 1);
@@ -570,7 +594,7 @@ impl QR {
         match self.version {
             Version::Micro(_) | Version::Normal(1..=6) => {}
             Version::Normal(7..=40) => {
-                let version_info = self.version.version_info();
+                let version_info = version_info(self.version);
                 self.draw_number(
                     version_info,
                     VERSION_INFO_BIT_LEN,
@@ -596,7 +620,7 @@ impl QR {
             Version::Normal(_) => match self.palette {
                 Palette::Monochrome => {}
                 Palette::Polychrome(2..=16) => {
-                    let palette_info = self.palette.palette_info();
+                    let palette_info = palette_info(self.palette);
                     self.draw_number(
                         palette_info,
                         PALETTE_INFO_BIT_LEN,
@@ -854,6 +878,9 @@ mod qr_information_tests {
     }
 }
 
+// Iterator for placing data in qr
+//------------------------------------------------------------------------------
+
 struct DataModIter {
     r: i16,
     c: i16,
@@ -900,6 +927,9 @@ impl Iterator for DataModIter {
         Some(res)
     }
 }
+
+// Encoding region
+//------------------------------------------------------------------------------
 
 impl QR {
     pub fn draw_encoding_region(&mut self, payload: &[u8]) {
@@ -970,7 +1000,7 @@ impl QR {
                 }
             }
         }
-        let format_info = format_info(self.version, self.ec_level, pattern);
+        let format_info = format_info_qr(self.ec_level, pattern);
         self.draw_format_info(format_info);
     }
 }
@@ -1002,6 +1032,7 @@ impl QR {
                     | Module::Palette(c)
                     | Module::Data(c) => c,
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
+                    Module::Unknown(_) => unreachable!("Unknown module found while rendering"),
                 };
 
                 let pixel = match color {
@@ -1039,6 +1070,7 @@ impl QR {
                     | Module::Palette(c)
                     | Module::Data(c) => c,
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
+                    Module::Unknown(_) => unreachable!("Unknown module found while rendering"),
                 };
                 canvas.push(color.select('█', ' '));
             }
@@ -1049,10 +1081,142 @@ impl QR {
     }
 }
 
+//------------------------------------------------------------------------------
+// QR methods for Reader
+//------------------------------------------------------------------------------
+
+impl QR {
+    pub fn from_image(image: DynamicImage) -> Self {
+        todo!()
+    }
+}
+
+// Format & version info
+//------------------------------------------------------------------------------
+
+impl QR {
+    pub fn identify_format_info(&mut self) -> QRResult<u32> {
+        match self.version {
+            Version::Micro(_) => todo!(),
+            Version::Normal(_) => {
+                let main = self.get_number(&FORMAT_INFO_COORDS_QR_MAIN);
+                rectify_number(main, &FORMAT_INFOS_QR, 3)
+                    .or_else(|_| {
+                        let side = self.get_number(&FORMAT_INFO_COORDS_QR_SIDE);
+                        rectify_number(side, &FORMAT_INFOS_QR, 3)
+                    })
+                    .map(|mf| mf ^ FORMAT_MASK)
+            }
+        }
+    }
+
+    pub fn identify_version_info(&mut self) -> QRResult<Version> {
+        todo!()
+    }
+
+    pub fn get_number(&mut self, coords: &[(i16, i16)]) -> u32 {
+        let mut number = 0;
+        for (r, c) in coords {
+            let m = self.get_mut(*r, *c);
+            number = (number << 1) | u32::from(**m);
+        }
+        number
+    }
+}
+
+// Finder patterns
+//------------------------------------------------------------------------------
+
+impl QR {
+    pub fn identify_all_function_patterns(&mut self) -> QRResult<()> {
+        todo!()
+    }
+}
+
+// Alignment pattern
+//------------------------------------------------------------------------------
+
+impl QR {
+    pub fn identify_alignment_pattern(&mut self) -> QRResult<()> {
+        todo!()
+    }
+
+    pub fn identify_alignment_pattern_at(&mut self) -> QRResult<()> {
+        todo!()
+    }
+}
+
+// Timing pattern
+//------------------------------------------------------------------------------
+
+impl QR {
+    pub fn identify_timing_pattern(&mut self) -> QRResult<()> {
+        todo!()
+    }
+
+    pub fn identify_timing_pattern_at(&mut self) -> QRResult<()> {
+        todo!()
+    }
+}
+
+// Finder pattern
+//------------------------------------------------------------------------------
+
+impl QR {
+    pub fn identify_finder_pattern(&mut self) -> QRResult<()> {
+        todo!()
+    }
+
+    pub fn identify_finder_pattern_at(&mut self) -> QRResult<()> {
+        todo!()
+    }
+}
+
+// Encoding region
+//------------------------------------------------------------------------------
+
+impl QR {
+    pub fn identify_encoding_region(&mut self) -> Vec<u8> {
+        todo!()
+    }
+}
+
+// Format information
+//------------------------------------------------------------------------------
+
+pub fn format_info_qr(ec_level: ECLevel, mask_pattern: MaskingPattern) -> u32 {
+    let format_data = ((ec_level as usize) ^ 1) << 3 | (*mask_pattern as usize);
+    FORMAT_INFOS_QR[format_data]
+}
+
+pub fn version_info(version: Version) -> u32 {
+    debug_assert!(matches!(version, Version::Normal(7..=40)), "Invalid version");
+    match version {
+        Version::Normal(v) => VERSION_INFOS[v - 7],
+        _ => unreachable!(),
+    }
+}
+pub fn palette_info(palette: Palette) -> u32 {
+    debug_assert!(0 < *palette && *palette < 17, "Invalid palette");
+
+    match palette {
+        Palette::Monochrome => 1,
+        Palette::Polychrome(p) => PALETTE_INFOS[p as usize],
+    }
+}
+
 // Global constants
 //------------------------------------------------------------------------------
 
 static FORMAT_INFO_BIT_LEN: usize = 15;
+
+static FORMAT_MASK: u32 = 0b101010000010010;
+
+static FORMAT_INFOS_QR: [u32; 32] = [
+    0x5412, 0x5125, 0x5e7c, 0x5b4b, 0x45f9, 0x40ce, 0x4f97, 0x4aa0, 0x77c4, 0x72f3, 0x7daa, 0x789d,
+    0x662f, 0x6318, 0x6c41, 0x6976, 0x1689, 0x13be, 0x1ce7, 0x19d0, 0x0762, 0x0255, 0x0d0c, 0x083b,
+    0x355f, 0x3068, 0x3f31, 0x3a06, 0x24b4, 0x2183, 0x2eda, 0x2bed,
+];
 
 static FORMAT_INFO_COORDS_QR_MAIN: [(i16, i16); 15] = [
     (8, 0),
@@ -1091,6 +1255,13 @@ static FORMAT_INFO_COORDS_QR_SIDE: [(i16, i16); 15] = [
 ];
 
 static VERSION_INFO_BIT_LEN: usize = 18;
+
+static VERSION_INFOS: [u32; 34] = [
+    0x07c94, 0x085bc, 0x09a99, 0x0a4d3, 0x0bbf6, 0x0c762, 0x0d847, 0x0e60d, 0x0f928, 0x10b78,
+    0x1145d, 0x12a17, 0x13532, 0x149a6, 0x15683, 0x168c9, 0x177ec, 0x18ec4, 0x191e1, 0x1afab,
+    0x1b08e, 0x1cc1a, 0x1d33f, 0x1ed75, 0x1f250, 0x209d5, 0x216f0, 0x228ba, 0x2379f, 0x24b0b,
+    0x2542e, 0x26a64, 0x27541, 0x28c69,
+];
 
 static VERSION_INFO_COORDS_BL: [(i16, i16); 18] = [
     (-9, 5),
@@ -1135,6 +1306,9 @@ static VERSION_INFO_COORDS_TR: [(i16, i16); 18] = [
 ];
 
 static PALETTE_INFO_BIT_LEN: usize = 12;
+
+// TODO: Fill out palette info
+static PALETTE_INFOS: [u32; 12] = [0xFFF; 12];
 
 static PALETTE_INFO_COORDS_BL: [(i16, i16); 12] = [
     (-1, 10),

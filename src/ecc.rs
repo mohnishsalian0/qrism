@@ -1,4 +1,4 @@
-use crate::types::{ECLevel, Version};
+use crate::types::{ECLevel, QRError, QRResult, Version};
 
 // ECC: Error Correction Codeword generator
 pub fn ecc(data: &[u8], version: Version, ec_level: ECLevel) -> (Vec<&[u8]>, Vec<Vec<u8>>) {
@@ -134,6 +134,45 @@ pub fn rectify(data_blocks: Vec<Vec<u8>>, ecc_blocks: Vec<Vec<u8>>) -> Vec<u8> {
 
 pub fn rectify_per_block(data: Vec<u8>, ecc: Vec<u8>) -> Vec<u8> {
     todo!()
+}
+
+// Computes syndromes for a block
+fn syndromes(block: &[u8], ecc_count: usize) -> QRResult<()> {
+    let len = block.len();
+    let mut s = [0_u8; 64];
+    let mut err_flag = false;
+    for e in s.iter_mut().take(ecc_count) {
+        for (j, &c) in block.iter().rev().enumerate() {
+            let log_c = LOG_TABLE[c as usize];
+            let mut log_sum = log_c as usize + (*e as usize * j);
+            if log_sum > 255 {
+                log_sum -= 255;
+            }
+            let mut exp_sum = *e as u16 + EXP_TABLE[log_sum] as u16;
+            if exp_sum > 255 {
+                exp_sum -= 255;
+            }
+            *e = exp_sum as u8;
+        }
+        if *e != 0 {
+            err_flag = true;
+        }
+    }
+    if !err_flag {
+        Ok(())
+    } else {
+        Err(QRError::ErrorDetected(s))
+    }
+}
+
+// Rectifier for format and version infos
+pub fn rectify_number(number: u32, valid_numbers: &[u32], err_capacity: u32) -> QRResult<u32> {
+    let res = *valid_numbers.iter().min_by_key(|&n| (number ^ n).count_zeros()).unwrap();
+    if (number ^ res).count_ones() <= err_capacity {
+        Ok(res)
+    } else {
+        Err(QRError::InvalidFormatInfo)
+    }
 }
 
 // Global constants

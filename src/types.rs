@@ -3,13 +3,13 @@ use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::{Deref, Not};
 
 use crate::codec::Mode;
-use crate::mask::MaskingPattern;
 
 // Error
 //------------------------------------------------------------------------------
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum QRError {
+    // QR builder
     EmptyData,
     DataTooLong,
     CapacityOverflow,
@@ -19,6 +19,10 @@ pub enum QRError {
     InvalidColor,
     InvalidChar,
     InvalidMaskingPattern,
+
+    // QR reader
+    ErrorDetected([u8; 64]),
+    InvalidFormatInfo,
 }
 
 impl Display for QRError {
@@ -33,6 +37,8 @@ impl Display for QRError {
             Self::InvalidColor => "invalid color",
             Self::InvalidChar => "invalid character",
             Self::InvalidMaskingPattern => "invalid masking pattern",
+            Self::ErrorDetected(_) => "Error detected in data",
+            Self::InvalidFormatInfo => "Invalid format info detected",
         };
         f.write_str(msg)
     }
@@ -75,14 +81,6 @@ impl Version {
         match self {
             Self::Micro(_) => &[],
             Self::Normal(v) => ALIGNMENT_PATTERN_POSITIONS[v - 1],
-        }
-    }
-
-    pub fn version_info(self) -> u32 {
-        debug_assert!(matches!(self, Self::Normal(7..=40)), "Invalid version");
-        match self {
-            Self::Normal(v) => VERSION_INFOS[v - 7],
-            _ => unreachable!(),
         }
     }
 
@@ -264,17 +262,6 @@ impl Deref for Palette {
     }
 }
 
-impl Palette {
-    pub fn palette_info(self) -> u32 {
-        debug_assert!(0 < *self && *self < 17, "Invalid palette");
-
-        match self {
-            Self::Monochrome => 1,
-            Self::Polychrome(p) => PALETTE_INFOS[p as usize],
-        }
-    }
-}
-
 // Color
 //------------------------------------------------------------------------------
 
@@ -297,6 +284,16 @@ impl Not for Color {
     }
 }
 
+impl From<Color> for u32 {
+    fn from(value: Color) -> Self {
+        match value {
+            Color::Light => 0,
+            Color::Dark => 1,
+            Color::Hue(h) => h,
+        }
+    }
+}
+
 // TODO: Figure out how to handle hue
 impl Color {
     pub fn select<T: Debug>(&self, light: T, dark: T) -> T {
@@ -304,19 +301,6 @@ impl Color {
             Self::Light => light,
             Self::Dark => dark,
             Self::Hue(_) => todo!(),
-        }
-    }
-}
-
-// Format information
-//------------------------------------------------------------------------------
-
-pub fn format_info(version: Version, ec_level: ECLevel, mask_pattern: MaskingPattern) -> u32 {
-    match version {
-        Version::Micro(_) => todo!(),
-        Version::Normal(_) => {
-            let format_data = ((ec_level as usize) ^ 1) << 3 | (*mask_pattern as usize);
-            FORMAT_INFOS_QR[format_data]
         }
     }
 }
@@ -366,22 +350,6 @@ static ALIGNMENT_PATTERN_POSITIONS: [&[i16]; 40] = [
     &[6, 26, 54, 82, 110, 138, 166],
     &[6, 30, 58, 86, 114, 142, 170],
 ];
-
-static VERSION_INFOS: [u32; 34] = [
-    0x07c94, 0x085bc, 0x09a99, 0x0a4d3, 0x0bbf6, 0x0c762, 0x0d847, 0x0e60d, 0x0f928, 0x10b78,
-    0x1145d, 0x12a17, 0x13532, 0x149a6, 0x15683, 0x168c9, 0x177ec, 0x18ec4, 0x191e1, 0x1afab,
-    0x1b08e, 0x1cc1a, 0x1d33f, 0x1ed75, 0x1f250, 0x209d5, 0x216f0, 0x228ba, 0x2379f, 0x24b0b,
-    0x2542e, 0x26a64, 0x27541, 0x28c69,
-];
-
-static FORMAT_INFOS_QR: [u32; 32] = [
-    0x5412, 0x5125, 0x5e7c, 0x5b4b, 0x45f9, 0x40ce, 0x4f97, 0x4aa0, 0x77c4, 0x72f3, 0x7daa, 0x789d,
-    0x662f, 0x6318, 0x6c41, 0x6976, 0x1689, 0x13be, 0x1ce7, 0x19d0, 0x0762, 0x0255, 0x0d0c, 0x083b,
-    0x355f, 0x3068, 0x3f31, 0x3a06, 0x24b4, 0x2183, 0x2eda, 0x2bed,
-];
-
-// TODO: Fill out palette info
-static PALETTE_INFOS: [u32; 12] = [0xFFF; 12];
 
 // Bit capacity per error level per version
 static VERSION_BIT_CAPACITY: [[usize; 4]; 44] = [
