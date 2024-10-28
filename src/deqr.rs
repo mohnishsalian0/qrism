@@ -8,34 +8,34 @@ use crate::{
     iter::EncRegionIter,
     mask::MaskingPattern,
     metadata::{
-        Color, ECLevel, Version, FORMAT_INFOS_QR, FORMAT_INFO_COORDS_QR_MAIN,
-        FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK, VERSION_INFOS, VERSION_INFO_COORDS_BL,
-        VERSION_INFO_COORDS_TR,
+        Color, ECLevel, Version, FORMAT_ERROR_CAPACITY, FORMAT_INFOS_QR,
+        FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK, VERSION_ERROR_BIT_LEN,
+        VERSION_ERROR_CAPACITY, VERSION_INFOS, VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
     },
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum Module {
+pub enum DeModule {
     Unmarked(Color),
     Marked,
 }
 
-impl Deref for Module {
+impl Deref for DeModule {
     type Target = Color;
     fn deref(&self) -> &Self::Target {
         match self {
-            Module::Unmarked(c) => c,
-            Module::Marked => &Color::Dark,
+            DeModule::Unmarked(c) => c,
+            DeModule::Marked => &Color::Dark,
         }
     }
 }
 
-impl Not for Module {
-    type Output = Module;
+impl Not for DeModule {
+    type Output = DeModule;
     fn not(self) -> Self::Output {
         match self {
-            Module::Unmarked(c) => Module::Unmarked(!c),
-            Module::Marked => Module::Marked,
+            DeModule::Unmarked(c) => DeModule::Unmarked(!c),
+            DeModule::Marked => DeModule::Marked,
         }
     }
 }
@@ -46,32 +46,61 @@ impl Not for Module {
 #[derive(Debug, Clone)]
 pub struct DeQR {
     width: usize,
-    grid: Vec<Module>,
+    grid: Vec<DeModule>,
     version: Version,
     ec_level: Option<ECLevel>,
 }
 
 impl DeQR {
-    pub fn from_image(image: GrayImage, version: Version) -> Self {
+    pub fn from_image(qr: &GrayImage, version: Version) -> Self {
         let qr_width = version.width();
-        let (w, h) = image.dimensions();
+        let (w, h) = qr.dimensions();
+        let (w, h) = (w as i16, h as i16);
+        let mod_size = w / qr_width as i16;
+        let qz_size = if let Version::Normal(_) = version { 4 } else { 2 } * mod_size;
 
         debug_assert!(w == h, "Image is not perfect square");
-        debug_assert!(w as usize % qr_width == 0, "Image width is not a multiple of qr size");
+        debug_assert!(
+            (w - 2 * qz_size) % qr_width as i16 == 0,
+            "Image width is not a multiple of qr size"
+        );
 
-        let mod_size = w as usize / qr_width;
         let half_area = mod_size * mod_size / 2;
-        let mut black_count = vec![0; qr_width * qr_width];
 
-        for (c, r, pixel) in image.enumerate_pixels() {
-            let index = Self::coord_to_index(r as i16, c as i16, qr_width);
+        let mut black_count = vec![0; qr_width * qr_width];
+        for (c, r, pixel) in qr.enumerate_pixels() {
+            let (r, c) = (r as i16, c as i16);
+            if r < qz_size || r >= w - qz_size || c < qz_size || c >= w - qz_size {
+                continue;
+            }
+            let index =
+                Self::coord_to_index((r - qz_size) / mod_size, (c - qz_size) / mod_size, qr_width);
             let Luma([luma]) = *pixel;
             black_count[index] += if luma < 128 { 1 } else { 0 };
         }
 
         let grid = black_count
             .iter()
-            .map(|&bc| Module::Unmarked(if bc > half_area { Color::Dark } else { Color::Light }))
+            .map(|&bc| DeModule::Unmarked(if bc > half_area { Color::Dark } else { Color::Light }))
+            .collect();
+
+        Self { width: qr_width, grid, version, ec_level: None }
+    }
+
+    pub fn from_string(qr: &str, version: Version) -> Self {
+        let qr_width = version.width();
+        let qz_size = if let Version::Normal(_) = version { 4 } else { 2 };
+        let full_width = qz_size + qr_width + qz_size;
+
+        let grid = qr
+            .chars()
+            .filter(|clr| *clr != '\n')
+            .enumerate()
+            .filter(|(i, clr)| {
+                let (r, c) = (i / full_width, i % full_width);
+                r >= qz_size && r < qz_size + qr_width && c >= qz_size && c < qz_size + qr_width
+            })
+            .map(|(i, clr)| DeModule::Unmarked(if clr == ' ' { Color::Dark } else { Color::Light }))
             .collect();
 
         Self { width: qr_width, grid, version, ec_level: None }
@@ -89,9 +118,9 @@ impl DeQR {
         for i in 0..w {
             for j in 0..w {
                 let c = match self.get(i, j) {
-                    Module::Unmarked(Color::Dark) => 'u',
-                    Module::Unmarked(Color::Light | Color::Hue(_)) => 'U',
-                    Module::Marked => '.',
+                    DeModule::Unmarked(Color::Dark) => 'u',
+                    DeModule::Unmarked(Color::Light | Color::Hue(_)) => 'U',
+                    DeModule::Marked => '.',
                 };
                 res.push(c);
             }
@@ -110,17 +139,66 @@ impl DeQR {
         (r * w + c) as _
     }
 
-    fn get(&self, r: i16, c: i16) -> Module {
+    pub fn get(&self, r: i16, c: i16) -> DeModule {
         self.grid[Self::coord_to_index(r, c, self.width)]
     }
 
-    fn get_mut(&mut self, r: i16, c: i16) -> &mut Module {
+    pub fn get_mut(&mut self, r: i16, c: i16) -> &mut DeModule {
         let index = Self::coord_to_index(r, c, self.width);
         &mut self.grid[index]
     }
 
-    fn set(&mut self, r: i16, c: i16, module: Module) {
+    pub fn set(&mut self, r: i16, c: i16, module: DeModule) {
         *self.get_mut(r, c) = module;
+    }
+}
+
+#[cfg(test)]
+mod deqr_util_tests {
+    use super::DeQR;
+    use crate::{
+        builder::QRBuilder,
+        metadata::{ECLevel, Version},
+    };
+
+    #[test]
+    fn test_from_string() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(2);
+        let size = version.width() as i16;
+        let ec_level = ECLevel::L;
+
+        let qr =
+            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr_str = qr.to_str(1);
+
+        let deqr = DeQR::from_string(&qr_str, version);
+
+        for r in 0..size {
+            for c in 0..size {
+                assert_eq!(*qr.get(r, c), *deqr.get(r, c), "{r} {c}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_from_image() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(2);
+        let size = version.width() as i16;
+        let ec_level = ECLevel::L;
+
+        let qr =
+            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr_str = qr.render(1);
+
+        let deqr = DeQR::from_image(&qr_str, version);
+
+        for r in 0..size {
+            for c in 0..size {
+                assert_eq!(*qr.get(r, c), *deqr.get(r, c), "{r} {c}");
+            }
+        }
     }
 }
 
@@ -130,10 +208,10 @@ impl DeQR {
 impl DeQR {
     pub fn identify_format_info(&mut self) -> QRResult<u32> {
         let main = self.get_number(&FORMAT_INFO_COORDS_QR_MAIN);
-        let f = rectify_info(main, &FORMAT_INFOS_QR, 3)
+        let f = rectify_info(main, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY)
             .or_else(|_| {
                 let side = self.get_number(&FORMAT_INFO_COORDS_QR_SIDE);
-                rectify_info(side, &FORMAT_INFOS_QR, 3)
+                rectify_info(side, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY)
             })
             .or(Err(QRError::InvalidFormatInfo))?;
         self.mark_coords(&FORMAT_INFO_COORDS_QR_MAIN);
@@ -141,17 +219,21 @@ impl DeQR {
         Ok(f ^ FORMAT_MASK)
     }
 
-    pub fn verify_version_info(&mut self) -> QRResult<Version> {
+    pub fn identify_version_info(&mut self) -> QRResult<Version> {
+        debug_assert!(
+            !matches!(self.version, Version::Micro(_) | Version::Normal(1..=6)),
+            "Version is too small to identify version info"
+        );
         let bl = self.get_number(&VERSION_INFO_COORDS_BL);
-        let v = rectify_info(bl, &VERSION_INFOS, 3)
+        let v = rectify_info(bl, &VERSION_INFOS, VERSION_ERROR_CAPACITY)
             .or_else(|_| {
                 let tr = self.get_number(&VERSION_INFO_COORDS_TR);
-                rectify_info(tr, &VERSION_INFOS, 3)
+                rectify_info(tr, &VERSION_INFOS, VERSION_ERROR_CAPACITY)
             })
             .or(Err(QRError::InvalidVersionInfo))?;
         self.mark_coords(&VERSION_INFO_COORDS_BL);
         self.mark_coords(&VERSION_INFO_COORDS_TR);
-        Ok(Version::Normal(v as usize))
+        Ok(Version::Normal(v as usize >> VERSION_ERROR_BIT_LEN))
     }
 
     pub fn get_number(&mut self, coords: &[(i16, i16)]) -> u32 {
@@ -165,8 +247,315 @@ impl DeQR {
 
     pub fn mark_coords(&mut self, coords: &[(i16, i16)]) {
         for (r, c) in coords {
-            self.set(*r, *c, Module::Marked);
+            self.set(*r, *c, DeModule::Marked);
         }
+    }
+}
+
+#[cfg(test)]
+mod deqr_infos_test {
+    use crate::{
+        builder::QRBuilder,
+        mask::MaskingPattern,
+        metadata::{Color, ECLevel, Version, FORMAT_MASK},
+        qr::format_info_qr,
+    };
+
+    use super::DeQR;
+
+    #[test]
+    fn test_identify_format_info() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(2);
+        let size = version.width() as i16;
+        let ec_level = ECLevel::L;
+        let mask_pattern = MaskingPattern::new(1);
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(version)
+            .ec_level(ec_level)
+            .mask(mask_pattern)
+            .build()
+            .unwrap();
+        let qr_str = qr.to_str(1);
+
+        let mut deqr = DeQR::from_string(&qr_str, version);
+
+        let exp_format_info = format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
+        let format_info = deqr.identify_format_info().unwrap();
+        assert_eq!(format_info, exp_format_info);
+    }
+
+    #[test]
+    fn test_identify_format_info_one_corrupted() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(2);
+        let size = version.width() as i16;
+        let ec_level = ECLevel::L;
+        let mask_pattern = MaskingPattern::new(1);
+
+        let mut qr = QRBuilder::new(data.as_bytes())
+            .version(version)
+            .ec_level(ec_level)
+            .mask(mask_pattern)
+            .build()
+            .unwrap();
+        qr.set(8, 1, crate::qr::Module::Format(Color::Light));
+        qr.set(8, 2, crate::qr::Module::Format(Color::Light));
+        qr.set(8, 4, crate::qr::Module::Format(Color::Dark));
+        let qr_str = qr.to_str(1);
+
+        let mut deqr = DeQR::from_string(&qr_str, version);
+
+        let exp_format_info = format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
+        let format_info = deqr.identify_format_info().unwrap();
+        assert_eq!(format_info, exp_format_info);
+    }
+
+    #[test]
+    fn test_identify_format_info_one_fully_corrupted() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(2);
+        let size = version.width() as i16;
+        let ec_level = ECLevel::L;
+        let mask_pattern = MaskingPattern::new(1);
+
+        let mut qr = QRBuilder::new(data.as_bytes())
+            .version(version)
+            .ec_level(ec_level)
+            .mask(mask_pattern)
+            .build()
+            .unwrap();
+        qr.set(8, 1, crate::qr::Module::Format(Color::Light));
+        qr.set(8, 2, crate::qr::Module::Format(Color::Light));
+        qr.set(8, 3, crate::qr::Module::Format(Color::Dark));
+        qr.set(8, 4, crate::qr::Module::Format(Color::Dark));
+        let qr_str = qr.to_str(1);
+
+        let mut deqr = DeQR::from_string(&qr_str, version);
+
+        let exp_format_info = format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
+        let format_info = deqr.identify_format_info().unwrap();
+        assert_eq!(format_info, exp_format_info);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_identify_format_info_both_fully_corrupted() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(2);
+        let size = version.width() as i16;
+        let ec_level = ECLevel::L;
+        let mask_pattern = MaskingPattern::new(1);
+
+        let mut qr = QRBuilder::new(data.as_bytes())
+            .version(version)
+            .ec_level(ec_level)
+            .mask(mask_pattern)
+            .build()
+            .unwrap();
+        qr.set(8, 1, crate::qr::Module::Format(Color::Light));
+        qr.set(8, 2, crate::qr::Module::Format(Color::Light));
+        qr.set(8, 3, crate::qr::Module::Format(Color::Dark));
+        qr.set(8, 4, crate::qr::Module::Format(Color::Dark));
+        qr.set(-2, 8, crate::qr::Module::Format(Color::Light));
+        qr.set(-3, 8, crate::qr::Module::Format(Color::Light));
+        qr.set(-4, 8, crate::qr::Module::Format(Color::Dark));
+        qr.set(-5, 8, crate::qr::Module::Format(Color::Dark));
+        let qr_str = qr.to_str(1);
+
+        let mut deqr = DeQR::from_string(&qr_str, version);
+
+        let exp_format_info = format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
+        let format_info = deqr.identify_format_info().unwrap();
+        assert_eq!(format_info, exp_format_info);
+    }
+
+    #[test]
+    fn test_mark_format_info() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(2);
+        let ec_level = ECLevel::L;
+
+        let qr =
+            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr_str = qr.to_str(1);
+
+        let mut deqr = DeQR::from_string(&qr_str, version);
+        let _ = deqr.identify_format_info();
+
+        assert_eq!(
+            deqr.to_debug_str(),
+            "\n\
+            uuuuuuuU.UuUUuuUuUuuuuuuu\n\
+            uUUUUUuU.uUUUUuUUUuUUUUUu\n\
+            uUuuuUuU.UUuUUuUUUuUuuuUu\n\
+            uUuuuUuU.uUUuuUUUUuUuuuUu\n\
+            uUuuuUuU.uUUuuuUuUuUuuuUu\n\
+            uUUUUUuU.UuuuUuUuUuUUUUUu\n\
+            uuuuuuuUuUuUuUuUuUuuuuuuu\n\
+            UUUUUUUU.UUuUUUUuUUUUUUUU\n\
+            ......u..UUUuUUuU........\n\
+            UUUuUUUuUuUuuuUuUUuUUUuuu\n\
+            UUUuUuuUUUuuuUuuuUuuUUuuu\n\
+            UuuuUuUuuuuUuuuuUuuUuUUUU\n\
+            UuUUUuuUuUuuUUuUUuuUUUUuu\n\
+            UuUUuuUuUUuuUUuUuuuUUUuuu\n\
+            uUUuuuuuuuuUUuUuuuUuUUuuu\n\
+            UuUUUUUuuUuuUUUuUuUUUUUuU\n\
+            uUUuUUuUUUuUuUUUuuuuuUUUU\n\
+            UUUUUUUUuuuuuuUuuUUUuUuuU\n\
+            uuuuuuuU.uuuuUuuuUuUuuUuu\n\
+            uUUUUUuU.uuUuuuuuUUUuuUuu\n\
+            uUuuuUuU.UuuUUuUuuuuuUUUu\n\
+            uUuuuUuU.UuuUUuUUUUUuUuUU\n\
+            uUuuuUuU.uUUUuUUuUUuuUuUu\n\
+            uUUUUUuU.UuuUUUuuUUuUuUuU\n\
+            uuuuuuuU.uUUuUUUuUuUuUUuu\n"
+        );
+    }
+
+    #[test]
+    fn test_identify_version_info() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(7);
+        let ec_level = ECLevel::L;
+
+        let qr =
+            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr_str = qr.to_str(1);
+
+        let mut deqr = DeQR::from_string(&qr_str, version);
+
+        let version_info = deqr.identify_version_info().unwrap();
+        assert_eq!(version_info, version);
+    }
+
+    #[test]
+    fn test_identify_version_info_one_corrupted() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(7);
+        let ec_level = ECLevel::L;
+
+        let mut qr =
+            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        qr.set(-9, 5, crate::qr::Module::Format(Color::Dark));
+        qr.set(-10, 5, crate::qr::Module::Format(Color::Dark));
+        qr.set(-11, 5, crate::qr::Module::Format(Color::Dark));
+        let qr_str = qr.to_str(1);
+
+        let mut deqr = DeQR::from_string(&qr_str, version);
+
+        let version_info = deqr.identify_version_info().unwrap();
+        assert_eq!(version_info, version);
+    }
+
+    #[test]
+    fn test_identify_version_info_one_fully_corrupted() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(7);
+        let ec_level = ECLevel::L;
+
+        let mut qr =
+            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        qr.set(-9, 5, crate::qr::Module::Format(Color::Dark));
+        qr.set(-10, 5, crate::qr::Module::Format(Color::Dark));
+        qr.set(-11, 5, crate::qr::Module::Format(Color::Dark));
+        qr.set(-9, 4, crate::qr::Module::Format(Color::Light));
+        let qr_str = qr.to_str(1);
+
+        let mut deqr = DeQR::from_string(&qr_str, version);
+
+        let version_info = deqr.identify_version_info().unwrap();
+        assert_eq!(version_info, version);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_identify_version_info_both_fully_corrupted() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(7);
+        let ec_level = ECLevel::L;
+
+        let mut qr =
+            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        qr.set(-9, 5, crate::qr::Module::Format(Color::Dark));
+        qr.set(-10, 5, crate::qr::Module::Format(Color::Dark));
+        qr.set(-11, 5, crate::qr::Module::Format(Color::Dark));
+        qr.set(-9, 4, crate::qr::Module::Format(Color::Light));
+        qr.set(5, -9, crate::qr::Module::Format(Color::Dark));
+        qr.set(5, -10, crate::qr::Module::Format(Color::Dark));
+        qr.set(5, -11, crate::qr::Module::Format(Color::Dark));
+        qr.set(4, -9, crate::qr::Module::Format(Color::Light));
+        let qr_str = qr.to_str(1);
+
+        let mut deqr = DeQR::from_string(&qr_str, version);
+
+        let version_info = deqr.identify_version_info().unwrap();
+    }
+
+    #[test]
+    fn test_mark_version_info() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(7);
+        let ec_level = ECLevel::L;
+
+        let qr =
+            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr_str = qr.to_str(1);
+
+        let mut deqr = DeQR::from_string(&qr_str, version);
+        let _ = deqr.identify_version_info();
+
+        assert_eq!(
+            deqr.to_debug_str(),
+            "\n\
+            uuuuuuuUuuuUuuUuUUuuuUuUuUUUUuUUuu...Uuuuuuuu\n\
+            uUUUUUuUUUuUuuUuUuUUUUuUuuuUUuUuUu...UuUUUUUu\n\
+            uUuuuUuUuUuUUuuUuuUUuuUUuuUUuuuUUU...UuUuuuUu\n\
+            uUuuuUuUuUuUUuuUUUuUUuUuUuUUuUUUUu...UuUuuuUu\n\
+            uUuuuUuUuuuUUUuUUUUuuuuuuUuUuUuuuU...UuUuuuUu\n\
+            uUUUUUuUUuUUUUuuuUUUuUUUuUUuUUUuUu...UuUUUUUu\n\
+            uuuuuuuUuUuUuUuUuUuUuUuUuUuUuUuUuUuUuUuuuuuuu\n\
+            UUUUUUUUUUuuUUUUUUUUuUUUuuUUUuUuuuuuUUUUUUUUU\n\
+            uuuuUUuUuUUuuUuUuUUUuuuuuuuuUuUuUUUUUuUUuuuUu\n\
+            UuUuuUUUuuuuuUUUuuuuuuUuuuuuuUuuUUuUuuUuUuUUu\n\
+            uUuUUUuUUUUuuUuUuUuuuuUuUUuuuUUUuUUuuUUuuuuuu\n\
+            UUUuuuUuuuuuUUUuUUuuUUuuUUuuuUUuUuUuuUuuuuuuU\n\
+            uUUuUUuUUuUUUUUuUuUuUUUUuUuuUuuuuuuUuUuuUUuuu\n\
+            uUuUUuUuUUUUUuuuuuUUuUUUUuUuUuUUUuuUuuUuUUuuu\n\
+            uUuuUuuUuUUuUuUUUuuUUuuUUuUUuuUUuUuUuuUUuUUuU\n\
+            UuUUUuUUUuuUuuUUuUUUUuUuuUUUUuUUUuUuUuUuuuuuU\n\
+            UuuUuuuuuUUuUUuuUUuuuuUuUuuUUuuuUuUuUUuuUuuUu\n\
+            UUUUUUUuUuuuuUUUuUUuUuUUUuUuuuuuuUuUuuUUUUUuu\n\
+            UUuUuuuUuuuUUuuUUUuUUuuuUuUuUUuuuUUUuUuuUuuuU\n\
+            UUUuuuUUUUUuUUUUUUUuUuuuuUuUUUuuuUUUuUuUUuUuu\n\
+            UUuuuuuuuUUUUUuuuUUuuuuuuUUuUUuuUuuuuuuuuuUUU\n\
+            uUUUuUUUuuuUuUUuUuuuuUUUuUUuuuUuUuUUuUUUuuUUU\n\
+            uUUuuUuUuUuuUuUuUuUuuUuUuuuuuuUUuuUuuUuUuUuuU\n\
+            UuuUuUUUuuUUuuuUuuUUuUUUuUuUuUUUUuUUuUUUuUUuu\n\
+            uuuUuuuuuuuuuuuuUUuUuuuuuUuUuuuUUuuuuuuuuUUuu\n\
+            UuUuUUUUuuUuUUuuuUUUUUUUuuUUuuUuuuuuUuuuuUuUU\n\
+            uuUuUuuUUuuuUuUUUuuUUuUUUuUuUuUuUUuUUuUUUUuUU\n\
+            UUUUuUUuUUuUuuUUuUUuuuuuUuuUUUuUUUuUuuUUuuUUU\n\
+            uUUUUUuUUUUUUUuUUUuuUuuuuUUUUUUuUUuUuUuuuuUUU\n\
+            UuUUUuUuUuuUUUUuUUUuUUuuuUuuuUUuuuUuuUUuuuuUU\n\
+            uUUUuUuuUuUuuUUuuuUUuuUuuUUuUuuuuuUuuUUUuUuUU\n\
+            uuuUuUUuUUUuUuuuuuuUuuUuUUuuUUuUuUUuuUUuuuUuu\n\
+            uUUuuuuuuUUUUuUuuuuuuUuuUUUUuUuUuuuuUUuuuUuuU\n\
+            uUUuUuUuuUuuUuUuUUuUUUUUuUUUUuUUuuUuUUuuUUuUU\n\
+            ......uUUUUuuuUuUuUUUUUUUuuUUuUuUuUUuuUuUUUuu\n\
+            ......UUUuUuuuuUuuUuUuuUUuUUuuuUUUuUUuUUuUUuu\n\
+            ......uUuuuUuuuUUUuUuuuuuuUUuUUUUUUuuuuuuuuUU\n\
+            UUUUUUUUuuUUuUuUUUUUuUUUuUuUuUuuuUUuuUUUuuUUu\n\
+            uuuuuuuUUUUUuUuuuUUuuUuUuUUuUUUuUuuUuUuUuUUUu\n\
+            uUUUUUuUUuuuUUuuUuuuuUUUuuuuUUuuUUuUuUUUuuuUu\n\
+            uUuuuUuUUuuUUuUUUuUuuuuuuUUuuUUUuUuuuuuuuUuuU\n\
+            uUuuuUuUuuUUUuUuUuUuuUuuUUuUUUUUUuUuUuUUUuuUU\n\
+            uUuuuUuUuuUuuUUuuuUuuUUUuUUUuuuUUuUUuUUUUUUUU\n\
+            uUUUUUuUuuUuUuuuuuuUuuuuUuUuUuUUuuuUUuUuuUuUu\n\
+            uuuuuuuUuUuuUuUUuuuUuUUuuuuUuuUUuUUUUUuuuUUUU\n"
+        );
     }
 }
 
@@ -179,6 +568,81 @@ impl DeQR {
         self.mark_finder_patterns();
         self.mark_timing_patterns();
         self.mark_alignment_patterns();
+    }
+}
+
+#[cfg(test)]
+mod deqr_all_function_tests {
+    use crate::{
+        builder::QRBuilder,
+        deqr::DeQR,
+        metadata::{ECLevel, Version},
+    };
+
+    #[test]
+    fn test_mark_all_function_pattern() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(7);
+        let ec_level = ECLevel::L;
+
+        let qr =
+            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr_str = qr.to_str(1);
+
+        let mut deqr = DeQR::from_string(&qr_str, version);
+        deqr.mark_all_function_patterns();
+
+        println!("{}", deqr.to_debug_str());
+
+        assert_eq!(
+            deqr.to_debug_str(),
+            "\n\
+            ........uuuUuuUuUUuuuUuUuUUUUuUUuuUUu........\n\
+            ........UUuUuuUuUuUUUUuUuuuUUuUuUuUuU........\n\
+            ........uUuUUuuUuuUUuuUUuuUUuuuUUUUuU........\n\
+            ........uUuUUuuUUUuUUuUuUuUUuUUUUuUuu........\n\
+            ........uuuUUUuUUUUu.....UuUuUuuuUuuu........\n\
+            ........UuUUUUuuuUUU.....UUuUUUuUuUUU........\n\
+            .............................................\n\
+            ........UUuuUUUUUUUU.....uUUUuUuuuuuU........\n\
+            uuuuUU.UuUUuuUuUuUUU.....uuuUuUuUUUUUuUUuuuUu\n\
+            UuUuuU.UuuuuuUUUuuuuuuUuuuuuuUuuUUuUuuUuUuUUu\n\
+            uUuUUU.UUUUuuUuUuUuuuuUuUUuuuUUUuUUuuUUuuuuuu\n\
+            UUUuuu.uuuuuUUUuUUuuUUuuUUuuuUUuUuUuuUuuuuuuU\n\
+            uUUuUU.UUuUUUUUuUuUuUUUUuUuuUuuuuuuUuUuuUUuuu\n\
+            uUuUUu.uUUUUUuuuuuUUuUUUUuUuUuUUUuuUuuUuUUuuu\n\
+            uUuuUu.UuUUuUuUUUuuUUuuUUuUUuuUUuUuUuuUUuUUuU\n\
+            UuUUUu.UUuuUuuUUuUUUUuUuuUUUUuUUUuUuUuUuuuuuU\n\
+            UuuUuu.uuUUuUUuuUUuuuuUuUuuUUuuuUuUuUUuuUuuUu\n\
+            UUUUUU.uUuuuuUUUuUUuUuUUUuUuuuuuuUuUuuUUUUUuu\n\
+            UUuUuu.UuuuUUuuUUUuUUuuuUuUuUUuuuUUUuUuuUuuuU\n\
+            UUUuuu.UUUUuUUUUUUUuUuuuuUuUUUuuuUUUuUuUUuUuu\n\
+            UUuu.....UUUUUuuuUUu.....UUuUUuuUuuu.....uUUU\n\
+            uUUU.....uuUuUUuUuuu.....UUuuuUuUuUU.....uUUU\n\
+            uUUu.....UuuUuUuUuUu.....uuuuuUUuuUu.....UuuU\n\
+            UuuU.....uUUuuuUuuUU.....UuUuUUUUuUU.....UUuu\n\
+            uuuU.....uuuuuuuUUuU.....UuUuuuUUuuu.....UUuu\n\
+            UuUuUU.UuuUuUUuuuUUUUUUUuuUUuuUuuuuuUuuuuUuUU\n\
+            uuUuUu.UUuuuUuUUUuuUUuUUUuUuUuUuUUuUUuUUUUuUU\n\
+            UUUUuU.uUUuUuuUUuUUuuuuuUuuUUUuUUUuUuuUUuuUUU\n\
+            uUUUUU.UUUUUUUuUUUuuUuuuuUUUUUUuUUuUuUuuuuUUU\n\
+            UuUUUu.uUuuUUUUuUUUuUUuuuUuuuUUuuuUuuUUuuuuUU\n\
+            uUUUuU.uUuUuuUUuuuUUuuUuuUUuUuuuuuUuuUUUuUuUU\n\
+            uuuUuU.uUUUuUuuuuuuUuuUuUUuuUUuUuUUuuUUuuuUuu\n\
+            uUUuuu.uuUUUUuUuuuuuuUuuUUUUuUuUuuuuUUuuuUuuU\n\
+            uUUuUu.uuUuuUuUuUUuUUUUUuUUUUuUUuuUuUUuuUUuUU\n\
+            UUUUuU.UUUUuuuUuUuUUUUUUUuuUUuUuUuUUuuUuUUUuu\n\
+            UuuuuU.UUuUuuuuUuuUuUuuUUuUUuuuUUUuUUuUUuUUuu\n\
+            uUUuuU.UuuuUuuuUUUuU.....uUUuUUUUUUu.....uuUU\n\
+            ........uuUUuUuUUUUU.....UuUuUuuuUUu.....uUUu\n\
+            ........UUUUuUuuuUUu.....UUuUUUuUuuU.....UUUu\n\
+            ........UuuuUUuuUuuu.....uuuUUuuUUuU.....uuUu\n\
+            ........UuuUUuUUUuUu.....UUuuUUUuUuu.....UuuU\n\
+            ........uuUUUuUuUuUuuUuuUUuUUUUUUuUuUuUUUuuUU\n\
+            ........uuUuuUUuuuUuuUUUuUUUuuuUUuUUuUUUUUUUU\n\
+            ........uuUuUuuuuuuUuuuuUuUuUuUUuuuUUuUuuUuUu\n\
+            ........uUuuUuUUuuuUuUUuuuuUuuUUuUUUUUuuuUUUU\n"
+        );
     }
 }
 
@@ -197,14 +661,67 @@ impl DeQR {
         }
     }
 
-    pub fn mark_finder_pattern_at(&mut self, r: i16, c: i16) {
+    fn mark_finder_pattern_at(&mut self, r: i16, c: i16) {
         let (dr_left, dr_right) = if r > 0 { (-3, 4) } else { (-4, 3) };
         let (dc_top, dc_bottom) = if c > 0 { (-3, 4) } else { (-4, 3) };
         for i in dr_left..=dr_right {
             for j in dc_top..=dc_bottom {
-                self.set(r + i, c + j, Module::Marked);
+                self.set(r + i, c + j, DeModule::Marked);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod deqr_finder_tests {
+    use crate::{
+        builder::QRBuilder,
+        deqr::DeQR,
+        metadata::{ECLevel, Version},
+    };
+
+    #[test]
+    fn test_mark_finder_pattern() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(2);
+        let ec_level = ECLevel::L;
+
+        let qr =
+            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr_str = qr.to_str(1);
+
+        let mut deqr = DeQR::from_string(&qr_str, version);
+        deqr.mark_finder_patterns();
+
+        assert_eq!(
+            deqr.to_debug_str(),
+            "\n\
+            ........UUuUUuuUu........\n\
+            ........UuUUUUuUU........\n\
+            ........uUUuUUuUU........\n\
+            ........UuUUuuUUU........\n\
+            ........UuUUuuuUu........\n\
+            ........UUuuuUuUu........\n\
+            ........uUuUuUuUu........\n\
+            ........uUUuUUUUu........\n\
+            uuuUuuuuuUUUuUUuUuuUUUuUU\n\
+            UUUuUUUuUuUuuuUuUUuUUUuuu\n\
+            UUUuUuuUUUuuuUuuuUuuUUuuu\n\
+            UuuuUuUuuuuUuuuuUuuUuUUUU\n\
+            UuUUUuuUuUuuUUuUUuuUUUUuu\n\
+            UuUUuuUuUUuuUUuUuuuUUUuuu\n\
+            uUUuuuuuuuuUUuUuuuUuUUuuu\n\
+            UuUUUUUuuUuuUUUuUuUUUUUuU\n\
+            uUUuUUuUUUuUuUUUuuuuuUUUU\n\
+            ........uuuuuuUuuUUUuUuuU\n\
+            ........uuuuuUuuuUuUuuUuu\n\
+            ........uuuUuuuuuUUUuuUuu\n\
+            ........uUuuUUuUuuuuuUUUu\n\
+            ........UUuuUUuUUUUUuUuUU\n\
+            ........uuUUUuUUuUUuuUuUu\n\
+            ........uUuuUUUuuUUuUuUuU\n\
+            ........uuUUuUUUuUuUuUUuu\n"
+        );
     }
 }
 
@@ -222,18 +739,71 @@ impl DeQR {
         self.mark_line(8, offset, last, offset);
     }
 
-    pub fn mark_line(&mut self, r1: i16, c1: i16, r2: i16, c2: i16) {
+    fn mark_line(&mut self, r1: i16, c1: i16, r2: i16, c2: i16) {
         debug_assert!(r1 == r2 || c1 == c2, "Line is neither vertical nor horizontal");
 
         if r1 == r2 {
             for j in c1..=c2 {
-                self.set(r1, j, Module::Marked);
+                self.set(r1, j, DeModule::Marked);
             }
         } else {
             for i in r1..=r2 {
-                self.set(i, c1, Module::Marked);
+                self.set(i, c1, DeModule::Marked);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod deqr_timing_tests {
+    use crate::{
+        builder::QRBuilder,
+        deqr::DeQR,
+        metadata::{ECLevel, Version},
+    };
+
+    #[test]
+    fn test_mark_timing_pattern() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(2);
+        let ec_level = ECLevel::L;
+
+        let qr =
+            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr_str = qr.to_str(1);
+
+        let mut deqr = DeQR::from_string(&qr_str, version);
+        deqr.mark_timing_patterns();
+
+        assert_eq!(
+            deqr.to_debug_str(),
+            "\n\
+            uuuuuuuUUUuUUuuUuUuuuuuuu\n\
+            uUUUUUuUUuUUUUuUUUuUUUUUu\n\
+            uUuuuUuUuUUuUUuUUUuUuuuUu\n\
+            uUuuuUuUUuUUuuUUUUuUuuuUu\n\
+            uUuuuUuUUuUUuuuUuUuUuuuUu\n\
+            uUUUUUuUUUuuuUuUuUuUUUUUu\n\
+            uuuuuuuU.........Uuuuuuuu\n\
+            UUUUUUUUuUUuUUUUuUUUUUUUU\n\
+            uuuUuu.uuUUUuUUuUuuUUUuUU\n\
+            UUUuUU.uUuUuuuUuUUuUUUuuu\n\
+            UUUuUu.UUUuuuUuuuUuuUUuuu\n\
+            UuuuUu.uuuuUuuuuUuuUuUUUU\n\
+            UuUUUu.UuUuuUUuUUuuUUUUuu\n\
+            UuUUuu.uUUuuUUuUuuuUUUuuu\n\
+            uUUuuu.uuuuUUuUuuuUuUUuuu\n\
+            UuUUUU.uuUuuUUUuUuUUUUUuU\n\
+            uUUuUU.UUUuUuUUUuuuuuUUUU\n\
+            UUUUUUUUuuuuuuUuuUUUuUuuU\n\
+            uuuuuuuUuuuuuUuuuUuUuuUuu\n\
+            uUUUUUuUuuuUuuuuuUUUuuUuu\n\
+            uUuuuUuUuUuuUUuUuuuuuUUUu\n\
+            uUuuuUuUUUuuUUuUUUUUuUuUU\n\
+            uUuuuUuUuuUUUuUUuUUuuUuUu\n\
+            uUUUUUuUuUuuUUUuuUUuUuUuU\n\
+            uuuuuuuUuuUUuUUUuUuUuUUuu\n"
+        );
     }
 }
 
@@ -250,16 +820,69 @@ impl DeQR {
         }
     }
 
-    pub fn mark_alignment_pattern_at(&mut self, r: i16, c: i16) {
+    fn mark_alignment_pattern_at(&mut self, r: i16, c: i16) {
         let w = self.width as i16;
         if (r == 6 && (c == 6 || c - w == -7)) || (r - w == -7 && c == 6) {
             return;
         }
         for i in -2..=2 {
             for j in -2..=2 {
-                self.set(r + i, c + j, Module::Marked);
+                self.set(r + i, c + j, DeModule::Marked);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod deqr_alignement_tests {
+    use crate::{
+        builder::QRBuilder,
+        deqr::DeQR,
+        metadata::{ECLevel, Version},
+    };
+
+    #[test]
+    fn test_mark_alignment_pattern() {
+        let data = "Hello, world! 🌎";
+        let version = Version::Normal(2);
+        let ec_level = ECLevel::L;
+
+        let qr =
+            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr_str = qr.to_str(1);
+
+        let mut deqr = DeQR::from_string(&qr_str, version);
+        deqr.mark_alignment_patterns();
+
+        assert_eq!(
+            deqr.to_debug_str(),
+            "\n\
+            uuuuuuuUUUuUUuuUuUuuuuuuu\n\
+            uUUUUUuUUuUUUUuUUUuUUUUUu\n\
+            uUuuuUuUuUUuUUuUUUuUuuuUu\n\
+            uUuuuUuUUuUUuuUUUUuUuuuUu\n\
+            uUuuuUuUUuUUuuuUuUuUuuuUu\n\
+            uUUUUUuUUUuuuUuUuUuUUUUUu\n\
+            uuuuuuuUuUuUuUuUuUuuuuuuu\n\
+            UUUUUUUUuUUuUUUUuUUUUUUUU\n\
+            uuuUuuuuuUUUuUUuUuuUUUuUU\n\
+            UUUuUUUuUuUuuuUuUUuUUUuuu\n\
+            UUUuUuuUUUuuuUuuuUuuUUuuu\n\
+            UuuuUuUuuuuUuuuuUuuUuUUUU\n\
+            UuUUUuuUuUuuUUuUUuuUUUUuu\n\
+            UuUUuuUuUUuuUUuUuuuUUUuuu\n\
+            uUUuuuuuuuuUUuUuuuUuUUuuu\n\
+            UuUUUUUuuUuuUUUuUuUUUUUuU\n\
+            uUUuUUuUUUuUuUUU.....UUUU\n\
+            UUUUUUUUuuuuuuUu.....UuuU\n\
+            uuuuuuuUuuuuuUuu.....uUuu\n\
+            uUUUUUuUuuuUuuuu.....uUuu\n\
+            uUuuuUuUuUuuUUuU.....UUUu\n\
+            uUuuuUuUUUuuUUuUUUUUuUuUU\n\
+            uUuuuUuUuuUUUuUUuUUuuUuUu\n\
+            uUUUUUuUuUuuUUUuuUUuUuUuU\n\
+            uuuuuuuUuuUUuUUUuUuUuUUuu\n"
+        );
     }
 }
 
@@ -290,7 +913,7 @@ impl DeQR {
         while let Some((mut r, mut c)) = coords.next() {
             let mut codeword = 0;
             for _ in 0..8 {
-                while !matches!(self.get(r, c), Module::Unmarked(_)) {
+                while !matches!(self.get(r, c), DeModule::Unmarked(_)) {
                     (r, c) = match coords.next() {
                         Some(next) => next,
                         None => return codewords,

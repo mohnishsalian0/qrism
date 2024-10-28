@@ -4,7 +4,7 @@ use crate::{
     codec::{encode, encode_with_version},
     ecc::{ecc, error_correction_capacity},
     error::{QRError, QRResult},
-    mask::apply_best_mask,
+    mask::{apply_best_mask, MaskingPattern},
     metadata::{ECLevel, Palette, Version},
     qr::QR,
 };
@@ -14,11 +14,12 @@ pub struct QRBuilder<'a> {
     version: Option<Version>,
     ec_level: ECLevel,
     palette: Palette,
+    mask: Option<MaskingPattern>,
 }
 
 impl<'a> QRBuilder<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Self { data, version: None, ec_level: ECLevel::M, palette: Palette::Monochrome }
+        Self { data, version: None, ec_level: ECLevel::M, palette: Palette::Monochrome, mask: None }
     }
 
     pub fn data(&mut self, data: &'a [u8]) -> &mut Self {
@@ -43,6 +44,11 @@ impl<'a> QRBuilder<'a> {
 
     pub fn palette(&mut self, palette: Palette) -> &mut Self {
         self.palette = palette;
+        self
+    }
+
+    pub fn mask(&mut self, mask: MaskingPattern) -> &mut Self {
+        self.mask = Some(mask);
         self
     }
 
@@ -117,8 +123,17 @@ impl<'a> QRBuilder<'a> {
         println!("Drawing encoding region...");
         qr.draw_encoding_region(&payload);
 
-        println!("Finding & applying best mask...");
-        let best_mask = apply_best_mask(&mut qr);
+        let mask = match self.mask {
+            Some(m) => {
+                println!("Apply mask {m:?}...");
+                qr.mask(m);
+                m
+            }
+            None => {
+                println!("Finding & applying best mask...");
+                apply_best_mask(&mut qr)
+            }
+        };
 
         println!("\x1b[1;32mQR generated successfully!\n \x1b[0m");
 
@@ -129,7 +144,7 @@ impl<'a> QRBuilder<'a> {
         println!("Report:");
         println!(
             "Version: {version:?}, EC Level: {:?}, Palette: {:?}, Masking pattern: {}",
-            self.ec_level, self.palette, *best_mask
+            self.ec_level, self.palette, *mask
         );
         println!("Data capacity: {}, Error Capacity: {}", version_capacity, err_corr_cap);
         println!(
@@ -165,10 +180,31 @@ impl<'a> QRBuilder<'a> {
 
 #[cfg(test)]
 mod builder_tests {
+    use test_case::test_case;
+
     use crate::{
         builder::QRBuilder,
         metadata::{ECLevel, Version},
     };
+
+    #[test_case("Hello, world!🌎".to_string(), Version::Normal(1), ECLevel::L)]
+    #[test_case("TEST".to_string(), Version::Normal(1), ECLevel::L)]
+    fn test_builder_0(data: String, version: Version, ec_level: ECLevel) {
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(version)
+            .ec_level(ec_level)
+            .build()
+            .unwrap()
+            .render(10);
+
+        let mut img = rqrr::PreparedImage::prepare(qr);
+        let grids = img.detect_grids();
+        assert_eq!(grids.len(), 1);
+        let (meta, content) = grids[0].decode().unwrap();
+
+        assert_eq!(*version, meta.version.0);
+        assert_eq!(data, content);
+    }
 
     #[test]
     fn test_builder_1() {

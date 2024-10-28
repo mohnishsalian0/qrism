@@ -465,6 +465,8 @@ static DATA_CODEWORDS_PER_BLOCK: [[(usize, usize, usize, usize); 4]; 44] = [
 ];
 
 pub static FORMAT_INFO_BIT_LEN: usize = 15;
+pub static FORMAT_ERROR_BIT_LEN: usize = 10;
+pub static FORMAT_ERROR_CAPACITY: u32 = 3;
 
 pub static FORMAT_MASK: u32 = 0b101010000010010;
 
@@ -511,6 +513,8 @@ pub static FORMAT_INFO_COORDS_QR_SIDE: [(i16, i16); 15] = [
 ];
 
 pub static VERSION_INFO_BIT_LEN: usize = 18;
+pub static VERSION_ERROR_BIT_LEN: usize = 12;
+pub static VERSION_ERROR_CAPACITY: u32 = 3;
 
 pub static VERSION_INFOS: [u32; 34] = [
     0x07c94, 0x085bc, 0x09a99, 0x0a4d3, 0x0bbf6, 0x0c762, 0x0d847, 0x0e60d, 0x0f928, 0x10b78,

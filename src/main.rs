@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .ec_level(ECLevel::H)
         .build()
         .unwrap()
-        .render_as_string(1);
+        .to_str(1);
     println!("{qr}");
 
     // let path = "assets/test_image_1.png";

@@ -14,14 +14,13 @@ use crate::{
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum Module {
+pub enum Module {
     Empty,
     Func(Color),
     Version(Color),
     Format(Color),
     Palette(Color),
     Data(Color),
-    Unknown(Color), // For QR reader
 }
 
 impl Deref for Module {
@@ -34,7 +33,6 @@ impl Deref for Module {
             Module::Format(c) => c,
             Module::Palette(c) => c,
             Module::Data(c) => c,
-            Module::Unknown(c) => c,
         }
     }
 }
@@ -84,7 +82,7 @@ impl QR {
     }
 
     #[cfg(test)]
-    fn to_debug_str(&self) -> String {
+    pub fn to_debug_str(&self) -> String {
         let w = self.width as i16;
         let mut res = String::with_capacity((w * (w + 1)) as usize);
         res.push('\n');
@@ -102,8 +100,6 @@ impl QR {
                     Module::Palette(Color::Light | Color::Hue(_)) => 'P',
                     Module::Data(Color::Dark) => 'd',
                     Module::Data(Color::Light | Color::Hue(_)) => 'D',
-                    Module::Unknown(Color::Dark) => 'u',
-                    Module::Unknown(Color::Light | Color::Hue(_)) => 'U',
                 };
                 res.push(c);
             }
@@ -122,20 +118,16 @@ impl QR {
         (r * w + c) as _
     }
 
-    fn get(&self, r: i16, c: i16) -> Module {
+    pub fn get(&self, r: i16, c: i16) -> Module {
         self.grid[self.coord_to_index(r, c)]
     }
 
-    pub fn get_color(&self, r: i16, c: i16) -> Color {
-        *self.grid[self.coord_to_index(r, c)]
-    }
-
-    fn get_mut(&mut self, r: i16, c: i16) -> &mut Module {
+    pub fn get_mut(&mut self, r: i16, c: i16) -> &mut Module {
         let index = self.coord_to_index(r, c);
         &mut self.grid[index]
     }
 
-    fn set(&mut self, r: i16, c: i16, module: Module) {
+    pub fn set(&mut self, r: i16, c: i16, module: Module) {
         *self.get_mut(r, c) = module;
     }
 }
@@ -986,7 +978,6 @@ impl QR {
                     | Module::Palette(c)
                     | Module::Data(c) => c,
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
-                    Module::Unknown(_) => unreachable!("Unknown module found while rendering"),
                 };
 
                 let pixel = match color {
@@ -1002,7 +993,7 @@ impl QR {
         canvas
     }
 
-    pub fn render_as_string(&self, module_size: usize) -> String {
+    pub fn to_str(&self, module_size: usize) -> String {
         let qz_size = if let Version::Normal(_) = self.version { 4 } else { 2 } * module_size;
         let qr_size = self.width * module_size;
         let total_size = qz_size + qr_size + qz_size;
@@ -1024,7 +1015,6 @@ impl QR {
                     | Module::Palette(c)
                     | Module::Data(c) => c,
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
-                    Module::Unknown(_) => unreachable!("Unknown module found while rendering"),
                 };
                 canvas.push(color.select('█', ' '));
             }

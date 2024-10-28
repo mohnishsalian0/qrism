@@ -170,7 +170,7 @@ fn syndromes(block: &[u8], ecc_count: usize) -> QRResult<()> {
 
 // Rectifier for format and version infos
 pub fn rectify_info(info: u32, valid_numbers: &[u32], err_capacity: u32) -> QRResult<u32> {
-    let res = *valid_numbers.iter().min_by_key(|&n| (info ^ n).count_zeros()).unwrap();
+    let res = *valid_numbers.iter().min_by_key(|&n| (info ^ n).count_ones()).unwrap();
     if (info ^ res).count_ones() <= err_capacity {
         Ok(res)
     } else {
