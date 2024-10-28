@@ -897,17 +897,13 @@ impl QR {
         for &codeword in codewords.iter() {
             for i in (0..8).rev() {
                 let bit = (codeword >> i) & 1;
-                let module = if bit & 1 == 0 {
-                    Module::Data(Color::Light)
-                } else {
-                    Module::Data(Color::Dark)
-                };
-                let (mut r, mut c) =
-                    coords.next().expect("QR capacity overflow while drawing data");
-                while self.get(r, c) != Module::Empty {
-                    (r, c) = coords.next().expect("QR capacity overflow while drawing data");
+                let module = Module::Data(if bit & 1 == 0 { Color::Light } else { Color::Dark });
+                for (r, c) in coords.by_ref() {
+                    if matches!(self.get(r, c), Module::Empty) {
+                        self.set(r, c, module);
+                        break;
+                    }
                 }
-                self.set(r, c, module)
             }
         }
     }
@@ -921,8 +917,8 @@ impl QR {
                 (Version::Micro(_), 0)
                     | (Version::Normal(1), 0)
                     | (Version::Normal(2..=6), 7)
-                    | (Version::Normal(7..=14), 0)
-                    | (Version::Normal(15..=20), 3)
+                    | (Version::Normal(7..=13), 0)
+                    | (Version::Normal(14..=20), 3)
                     | (Version::Normal(21..=27), 4)
                     | (Version::Normal(28..=34), 3)
                     | (Version::Normal(35..=40), 0)

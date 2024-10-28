@@ -84,6 +84,13 @@ impl Version {
         }
     }
 
+    pub fn total_codewords(self) -> usize {
+        match self {
+            Version::Micro(v) => VERSION_TOTAL_CODEWORDS[39 + v],
+            Version::Normal(v) => VERSION_TOTAL_CODEWORDS[v - 1],
+        }
+    }
+
     pub fn data_codewords_per_block(self, ec_level: ECLevel) -> (usize, usize, usize, usize) {
         match self {
             Version::Micro(v) => DATA_CODEWORDS_PER_BLOCK[39 + v][ec_level as usize],
@@ -317,7 +324,7 @@ static ALIGNMENT_PATTERN_POSITIONS: [&[i16]; 40] = [
     &[6, 30, 58, 86, 114, 142, 170],
 ];
 
-// Bit capacity per error level per version
+// Data bit capacity per error level per version
 static VERSION_BIT_CAPACITY: [[usize; 4]; 44] = [
     [152, 128, 104, 72],
     [272, 224, 176, 128],
@@ -364,6 +371,13 @@ static VERSION_BIT_CAPACITY: [[usize; 4]; 44] = [
     [40, 32, 0, 0],
     [84, 68, 0, 0],
     [128, 112, 80, 0],
+];
+
+static VERSION_TOTAL_CODEWORDS: [usize; 44] = [
+    26, 44, 70, 100, 134, 172, 196, 242, 292, 346, 404, 466, 532, 581, 655, 733, 815, 901, 991,
+    1085, 1156, 1258, 1364, 1474, 1588, 1706, 1828, 1921, 2051, 2185, 2323, 2465, 2611, 2761, 2876,
+    3034, 3196, 3362, 3532, 3706, //Micro versions
+    5, 10, 17, 24,
 ];
 
 static ECC_PER_BLOCK: [[usize; 4]; 44] = [

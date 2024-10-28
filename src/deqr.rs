@@ -908,18 +908,18 @@ impl DeQR {
 
 impl DeQR {
     pub fn extract_payload(&mut self, version: Version) -> Vec<u8> {
-        let mut codewords = Vec::with_capacity(self.width * self.width);
+        let total_codewords = version.total_codewords();
+        let mut codewords = Vec::with_capacity(total_codewords);
         let mut coords = EncRegionIter::new(version);
-        while let Some((mut r, mut c)) = coords.next() {
+        for _ in 0..total_codewords {
             let mut codeword = 0;
             for _ in 0..8 {
-                while !matches!(self.get(r, c), DeModule::Unmarked(_)) {
-                    (r, c) = match coords.next() {
-                        Some(next) => next,
-                        None => return codewords,
-                    };
+                for (r, c) in coords.by_ref() {
+                    if matches!(self.get(r, c), DeModule::Unmarked(_)) {
+                        codeword = (codeword << 1) | u8::from(*self.get(r, c));
+                        break;
+                    }
                 }
-                codeword = (codeword << 1) | u8::from(*self.get(r, c));
             }
             codewords.push(codeword);
         }

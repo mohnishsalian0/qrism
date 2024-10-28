@@ -49,3 +49,31 @@ impl Iterator for EncRegionIter {
         Some(res)
     }
 }
+
+#[cfg(test)]
+mod iter_tests {
+    use crate::{
+        builder::QRBuilder,
+        iter::EncRegionIter,
+        metadata::{ECLevel, Version},
+        qr::Module,
+    };
+
+    #[test]
+    fn test_enc_region_iter() {
+        for v in 1..40 {
+            let data = "Hello, world!".as_bytes();
+            let version = Version::Normal(v);
+            let ec_level = ECLevel::L;
+            let qr = QRBuilder::new(data).version(version).ec_level(ec_level).build().unwrap();
+            let coords = EncRegionIter::new(version);
+            let total_codewords = coords
+                .into_iter()
+                .filter(|(r, c)| matches!(qr.get(*r, *c), Module::Data(_)))
+                .count()
+                / 8;
+            let exp_codewords = version.total_codewords();
+            assert_eq!(total_codewords, exp_codewords);
+        }
+    }
+}
