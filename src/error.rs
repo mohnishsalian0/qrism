@@ -21,24 +21,30 @@ pub enum QRError {
     InvalidInfo,
     InvalidFormatInfo,
     InvalidVersionInfo,
+    FinderMismatch,
+    TimingMismatch,
+    AlignmentMismatch,
 }
 
 impl Display for QRError {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
         let msg = match *self {
-            Self::EmptyData => "empty data",
-            Self::DataTooLong => "data too long",
-            Self::CapacityOverflow => "capacity overflow",
-            Self::InvalidVersion => "invalid version",
-            Self::InvalidECLevel => "invalid error correction level",
-            Self::InvalidPalette => "invalid color palette",
-            Self::InvalidColor => "invalid color",
-            Self::InvalidChar => "invalid character",
-            Self::InvalidMaskingPattern => "invalid masking pattern",
+            Self::EmptyData => "Empty data",
+            Self::DataTooLong => "Data too long",
+            Self::CapacityOverflow => "Capacity overflow",
+            Self::InvalidVersion => "Invalid version",
+            Self::InvalidECLevel => "Invalid error correction level",
+            Self::InvalidPalette => "Invalid color palette",
+            Self::InvalidColor => "Invalid color",
+            Self::InvalidChar => "Invalid character",
+            Self::InvalidMaskingPattern => "Invalid masking pattern",
             Self::ErrorDetected(_) => "Error detected in data",
             Self::InvalidInfo => "Invalid info",
             Self::InvalidFormatInfo => "Invalid format info detected",
             Self::InvalidVersionInfo => "Invalid version info detected",
+            Self::FinderMismatch => "Finder color mismatch",
+            Self::TimingMismatch => "Timing color mismatch",
+            Self::AlignmentMismatch => "Alignment color mismatch",
         };
         f.write_str(msg)
     }

@@ -283,19 +283,15 @@ impl QR {
 
         if r1 == r2 {
             for j in c1..=c2 {
-                self.set(
-                    r1,
-                    j,
-                    if j & 1 == 0 { Module::Func(Color::Dark) } else { Module::Func(Color::Light) },
-                );
+                let m =
+                    if j & 1 == 0 { Module::Func(Color::Dark) } else { Module::Func(Color::Light) };
+                self.set(r1, j, m);
             }
         } else {
             for i in r1..=r2 {
-                self.set(
-                    i,
-                    c1,
-                    if i & 1 == 0 { Module::Func(Color::Dark) } else { Module::Func(Color::Light) },
-                );
+                let m =
+                    if i & 1 == 0 { Module::Func(Color::Dark) } else { Module::Func(Color::Light) };
+                self.set(i, c1, m);
             }
         }
     }
@@ -509,7 +505,7 @@ mod alignment_pattern_tests {
     }
 }
 
-// Function patterns
+// ALl function patterns
 //------------------------------------------------------------------------------
 
 impl QR {
@@ -946,7 +942,7 @@ impl QR {
         empty_modules.iter().for_each(|(r, c)| self.set(*r, *c, Module::Data(Color::Light)));
     }
 
-    pub fn apply_mask_pattern(&mut self, pattern: MaskingPattern) {
+    pub fn mask(&mut self, pattern: MaskingPattern) {
         let mask_function = pattern.mask_functions();
         let w = self.width as i16;
         for r in 0..w {

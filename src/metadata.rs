@@ -240,6 +240,16 @@ impl Not for Color {
     }
 }
 
+impl From<Color> for u8 {
+    fn from(value: Color) -> Self {
+        match value {
+            Color::Light => 0,
+            Color::Dark => 1,
+            Color::Hue(h) => unreachable!("Trying to cast hue to u8"),
+        }
+    }
+}
+
 impl From<Color> for u32 {
     fn from(value: Color) -> Self {
         match value {

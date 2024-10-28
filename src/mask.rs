@@ -78,17 +78,17 @@ pub fn apply_best_mask(qr: &mut QR) -> MaskingPattern {
     let best_mask = (0..8)
         .min_by_key(|m| {
             let mut qr = qr.clone();
-            qr.apply_mask_pattern(MaskingPattern(*m));
+            qr.mask(MaskingPattern(*m));
             compute_total_penalty(&qr)
         })
         .expect("Should return atleast 1 mask");
     let best_mask = MaskingPattern(best_mask);
-    qr.apply_mask_pattern(best_mask);
+    qr.mask(best_mask);
     best_mask
 }
 
 pub fn apply_mask(qr: &mut QR, pattern: MaskingPattern) -> MaskingPattern {
-    qr.apply_mask_pattern(pattern);
+    qr.mask(pattern);
     pattern
 }
 
