@@ -1,6 +1,6 @@
 use std::ops::{Deref, Not};
 
-use image::{DynamicImage, GenericImageView, GrayImage, Luma};
+use image::{GrayImage, Luma};
 
 use crate::{
     ecc::rectify_info,
@@ -188,7 +188,7 @@ impl DeQR {
 impl DeQR {
     pub fn mark_finder_patterns(&mut self) {
         self.mark_finder_pattern_at(3, 3);
-        match self.version.expect("Version not found") {
+        match self.version {
             Version::Micro(_) => {}
             Version::Normal(_) => {
                 self.mark_finder_pattern_at(3, -4);
@@ -214,7 +214,7 @@ impl DeQR {
 impl DeQR {
     pub fn mark_timing_patterns(&mut self) {
         let w = self.width as i16;
-        let (offset, last) = match self.version.expect("Version not found") {
+        let (offset, last) = match self.version {
             Version::Micro(_) => (0, w - 1),
             Version::Normal(_) => (6, w - 9),
         };
@@ -242,7 +242,7 @@ impl DeQR {
 
 impl DeQR {
     pub fn mark_alignment_patterns(&mut self) {
-        let positions = self.version.expect("Version not found").alignment_pattern();
+        let positions = self.version.alignment_pattern();
         for &r in positions {
             for &c in positions {
                 self.mark_alignment_pattern_at(r, c);
