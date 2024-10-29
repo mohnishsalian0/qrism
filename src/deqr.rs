@@ -206,7 +206,7 @@ mod deqr_util_tests {
 //------------------------------------------------------------------------------
 
 impl DeQR {
-    pub fn identify_format_info(&mut self) -> QRResult<u32> {
+    pub fn read_format_info(&mut self) -> QRResult<u32> {
         let main = self.get_number(&FORMAT_INFO_COORDS_QR_MAIN);
         let f = rectify_info(main, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY)
             .or_else(|_| {
@@ -219,10 +219,10 @@ impl DeQR {
         Ok(f ^ FORMAT_MASK)
     }
 
-    pub fn identify_version_info(&mut self) -> QRResult<Version> {
+    pub fn read_version_info(&mut self) -> QRResult<Version> {
         debug_assert!(
             !matches!(self.version, Version::Micro(_) | Version::Normal(1..=6)),
-            "Version is too small to identify version info"
+            "Version is too small to read version info"
         );
         let bl = self.get_number(&VERSION_INFO_COORDS_BL);
         let v = rectify_info(bl, &VERSION_INFOS, VERSION_ERROR_CAPACITY)
@@ -264,7 +264,7 @@ mod deqr_infos_test {
     use super::DeQR;
 
     #[test]
-    fn test_identify_format_info() {
+    fn test_read_format_info() {
         let data = "Hello, world! 🌎";
         let version = Version::Normal(2);
         let size = version.width() as i16;
@@ -282,12 +282,12 @@ mod deqr_infos_test {
         let mut deqr = DeQR::from_string(&qr_str, version);
 
         let exp_format_info = format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
-        let format_info = deqr.identify_format_info().unwrap();
+        let format_info = deqr.read_format_info().unwrap();
         assert_eq!(format_info, exp_format_info);
     }
 
     #[test]
-    fn test_identify_format_info_one_corrupted() {
+    fn test_read_format_info_one_corrupted() {
         let data = "Hello, world! 🌎";
         let version = Version::Normal(2);
         let size = version.width() as i16;
@@ -308,12 +308,12 @@ mod deqr_infos_test {
         let mut deqr = DeQR::from_string(&qr_str, version);
 
         let exp_format_info = format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
-        let format_info = deqr.identify_format_info().unwrap();
+        let format_info = deqr.read_format_info().unwrap();
         assert_eq!(format_info, exp_format_info);
     }
 
     #[test]
-    fn test_identify_format_info_one_fully_corrupted() {
+    fn test_read_format_info_one_fully_corrupted() {
         let data = "Hello, world! 🌎";
         let version = Version::Normal(2);
         let size = version.width() as i16;
@@ -335,13 +335,13 @@ mod deqr_infos_test {
         let mut deqr = DeQR::from_string(&qr_str, version);
 
         let exp_format_info = format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
-        let format_info = deqr.identify_format_info().unwrap();
+        let format_info = deqr.read_format_info().unwrap();
         assert_eq!(format_info, exp_format_info);
     }
 
     #[test]
     #[should_panic]
-    fn test_identify_format_info_both_fully_corrupted() {
+    fn test_read_format_info_both_fully_corrupted() {
         let data = "Hello, world! 🌎";
         let version = Version::Normal(2);
         let size = version.width() as i16;
@@ -367,7 +367,7 @@ mod deqr_infos_test {
         let mut deqr = DeQR::from_string(&qr_str, version);
 
         let exp_format_info = format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
-        let format_info = deqr.identify_format_info().unwrap();
+        let format_info = deqr.read_format_info().unwrap();
         assert_eq!(format_info, exp_format_info);
     }
 
@@ -382,7 +382,7 @@ mod deqr_infos_test {
         let qr_str = qr.to_str(1);
 
         let mut deqr = DeQR::from_string(&qr_str, version);
-        let _ = deqr.identify_format_info();
+        let _ = deqr.read_format_info();
 
         assert_eq!(
             deqr.to_debug_str(),
@@ -416,7 +416,7 @@ mod deqr_infos_test {
     }
 
     #[test]
-    fn test_identify_version_info() {
+    fn test_read_version_info() {
         let data = "Hello, world! 🌎";
         let version = Version::Normal(7);
         let ec_level = ECLevel::L;
@@ -427,12 +427,12 @@ mod deqr_infos_test {
 
         let mut deqr = DeQR::from_string(&qr_str, version);
 
-        let version_info = deqr.identify_version_info().unwrap();
+        let version_info = deqr.read_version_info().unwrap();
         assert_eq!(version_info, version);
     }
 
     #[test]
-    fn test_identify_version_info_one_corrupted() {
+    fn test_read_version_info_one_corrupted() {
         let data = "Hello, world! 🌎";
         let version = Version::Normal(7);
         let ec_level = ECLevel::L;
@@ -446,12 +446,12 @@ mod deqr_infos_test {
 
         let mut deqr = DeQR::from_string(&qr_str, version);
 
-        let version_info = deqr.identify_version_info().unwrap();
+        let version_info = deqr.read_version_info().unwrap();
         assert_eq!(version_info, version);
     }
 
     #[test]
-    fn test_identify_version_info_one_fully_corrupted() {
+    fn test_read_version_info_one_fully_corrupted() {
         let data = "Hello, world! 🌎";
         let version = Version::Normal(7);
         let ec_level = ECLevel::L;
@@ -466,13 +466,13 @@ mod deqr_infos_test {
 
         let mut deqr = DeQR::from_string(&qr_str, version);
 
-        let version_info = deqr.identify_version_info().unwrap();
+        let version_info = deqr.read_version_info().unwrap();
         assert_eq!(version_info, version);
     }
 
     #[test]
     #[should_panic]
-    fn test_identify_version_info_both_fully_corrupted() {
+    fn test_read_version_info_both_fully_corrupted() {
         let data = "Hello, world! 🌎";
         let version = Version::Normal(7);
         let ec_level = ECLevel::L;
@@ -491,7 +491,7 @@ mod deqr_infos_test {
 
         let mut deqr = DeQR::from_string(&qr_str, version);
 
-        let version_info = deqr.identify_version_info().unwrap();
+        let version_info = deqr.read_version_info().unwrap();
     }
 
     #[test]
@@ -505,7 +505,7 @@ mod deqr_infos_test {
         let qr_str = qr.to_str(1);
 
         let mut deqr = DeQR::from_string(&qr_str, version);
-        let _ = deqr.identify_version_info();
+        let _ = deqr.read_version_info();
 
         assert_eq!(
             deqr.to_debug_str(),

@@ -912,17 +912,7 @@ impl QR {
         let empty_modules =
             coords.filter(|(r, c)| self.get(*r, *c) == Module::Empty).collect::<Vec<_>>();
         debug_assert!(
-            matches!(
-                (self.version, empty_modules.len()),
-                (Version::Micro(_), 0)
-                    | (Version::Normal(1), 0)
-                    | (Version::Normal(2..=6), 7)
-                    | (Version::Normal(7..=13), 0)
-                    | (Version::Normal(14..=20), 3)
-                    | (Version::Normal(21..=27), 4)
-                    | (Version::Normal(28..=34), 3)
-                    | (Version::Normal(35..=40), 0)
-            ),
+            self.version.remainder_bits() == empty_modules.len(),
             "Incorrect number of empty modules for remainder bits: Version {:?}, Empty bits {}",
             self.version,
             empty_modules.len()

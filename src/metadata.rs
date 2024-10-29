@@ -104,6 +104,19 @@ impl Version {
             Version::Normal(v) => ECC_PER_BLOCK[v - 1][ec_level as usize],
         }
     }
+
+    pub fn remainder_bits(self) -> usize {
+        match self {
+            Version::Micro(_) | Version::Normal(1) => 0,
+            Version::Normal(2..=6) => 7,
+            Version::Normal(7..=13) => 0,
+            Version::Normal(14..=20) => 3,
+            Version::Normal(21..=27) => 4,
+            Version::Normal(28..=34) => 3,
+            Version::Normal(35..=40) => 0,
+            _ => unreachable!("Invalid version"),
+        }
+    }
 }
 
 #[cfg(test)]
