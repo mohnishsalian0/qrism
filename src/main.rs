@@ -15,6 +15,7 @@ mod iter;
 pub mod mask;
 pub mod metadata;
 pub mod qr;
+mod reader;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let data = "Hello, world! 🌎";
