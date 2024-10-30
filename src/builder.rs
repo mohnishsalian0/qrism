@@ -187,6 +187,14 @@ mod builder_tests {
         metadata::{ECLevel, Version},
     };
 
+    #[test]
+    fn test_interleave() {
+        let blocks = vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9, 0]];
+        let interleaved = QRBuilder::interleave(&blocks);
+        let exp_interleaved = vec![1, 4, 7, 2, 5, 8, 3, 6, 9, 0];
+        assert_eq!(interleaved, exp_interleaved);
+    }
+
     #[test_case("Hello, world!🌎".to_string(), Version::Normal(1), ECLevel::L)]
     #[test_case("TEST".to_string(), Version::Normal(1), ECLevel::M)]
     #[test_case("12345".to_string(), Version::Normal(1), ECLevel::Q)]
