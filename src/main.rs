@@ -5,6 +5,7 @@ use std::error::Error;
 
 use builder::QRBuilder;
 use metadata::{ECLevel, Version};
+use reader::QRReader;
 
 mod builder;
 mod codec;
@@ -29,6 +30,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .unwrap()
         .to_str(1);
     println!("{qr}");
+
+    let extracted_data = QRReader::read_from_str(&qr, version).unwrap();
+    println!("Extracted Data: {extracted_data}");
 
     // let path = "assets/test_image_1.png";
     // let img = image::open(path)?.to_luma8();

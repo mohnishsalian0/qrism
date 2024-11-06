@@ -4,7 +4,7 @@ use crate::{
     codec::{encode, encode_with_version},
     ecc::{ecc, error_correction_capacity},
     error::{QRError, QRResult},
-    mask::{apply_best_mask, MaskingPattern},
+    mask::{apply_best_mask, MaskPattern},
     metadata::{ECLevel, Palette, Version},
     qr::QR,
 };
@@ -14,7 +14,7 @@ pub struct QRBuilder<'a> {
     version: Option<Version>,
     ec_level: ECLevel,
     palette: Palette,
-    mask: Option<MaskingPattern>,
+    mask: Option<MaskPattern>,
 }
 
 impl<'a> QRBuilder<'a> {
@@ -47,7 +47,7 @@ impl<'a> QRBuilder<'a> {
         self
     }
 
-    pub fn mask(&mut self, mask: MaskingPattern) -> &mut Self {
+    pub fn mask(&mut self, mask: MaskPattern) -> &mut Self {
         self.mask = Some(mask);
         self
     }

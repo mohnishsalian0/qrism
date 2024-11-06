@@ -4,9 +4,9 @@ use image::{GrayImage, Luma};
 
 use crate::{
     iter::EncRegionIter,
-    mask::MaskingPattern,
+    mask::MaskPattern,
     metadata::{
-        generate_format_info_qr, Color, ECLevel, Palette, Version, FORMAT_INFO_BIT_LEN,
+        generate_format_info_qr, Color, ECLevel, Metadata, Palette, Version, FORMAT_INFO_BIT_LEN,
         FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, PALETTE_INFO_BIT_LEN,
         PALETTE_INFO_COORDS_BL, PALETTE_INFO_COORDS_TR, VERSION_INFO_BIT_LEN,
         VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
@@ -43,6 +43,7 @@ pub struct QR {
     width: usize,
     ec_level: ECLevel,
     palette: Palette,
+    mask_pattern: Option<MaskPattern>,
     grid: Vec<Module>,
 }
 
@@ -58,7 +59,14 @@ impl QR {
         debug_assert!(0 < *palette && *palette < 17, "Invalid palette");
 
         let width = version.width();
-        Self { version, width, ec_level, palette, grid: vec![Module::Empty; width * width] }
+        Self {
+            version,
+            width,
+            ec_level,
+            palette,
+            mask_pattern: None,
+            grid: vec![Module::Empty; width * width],
+        }
     }
 
     pub fn version(&self) -> Version {
@@ -75,6 +83,15 @@ impl QR {
 
     pub fn palette(&self) -> Palette {
         self.palette
+    }
+
+    pub fn metadata(&self) -> Metadata {
+        Metadata::new(
+            Some(self.version),
+            Some(self.ec_level),
+            Some(self.palette),
+            self.mask_pattern,
+        )
     }
 
     pub fn count_dark_modules(&self) -> usize {
@@ -920,7 +937,7 @@ impl QR {
         empty_modules.iter().for_each(|(r, c)| self.set(*r, *c, Module::Data(Color::Light)));
     }
 
-    pub fn mask(&mut self, pattern: MaskingPattern) {
+    pub fn mask(&mut self, pattern: MaskPattern) {
         let mask_function = pattern.mask_functions();
         let w = self.width as i16;
         for r in 0..w {

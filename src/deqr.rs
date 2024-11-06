@@ -6,11 +6,12 @@ use crate::{
     ecc::rectify_info,
     error::{QRError, QRResult},
     iter::EncRegionIter,
-    mask::MaskingPattern,
+    mask::MaskPattern,
     metadata::{
-        Color, ECLevel, Version, FORMAT_ERROR_CAPACITY, FORMAT_INFOS_QR,
-        FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK, VERSION_ERROR_BIT_LEN,
-        VERSION_ERROR_CAPACITY, VERSION_INFOS, VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
+        parse_format_info_qr, Color, ECLevel, Metadata, Palette, Version, FORMAT_ERROR_CAPACITY,
+        FORMAT_INFOS_QR, FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK,
+        VERSION_ERROR_BIT_LEN, VERSION_ERROR_CAPACITY, VERSION_INFOS, VERSION_INFO_COORDS_BL,
+        VERSION_INFO_COORDS_TR,
     },
 };
 
@@ -49,6 +50,8 @@ pub struct DeQR {
     grid: Vec<DeModule>,
     version: Version,
     ec_level: Option<ECLevel>,
+    palette: Option<Palette>,
+    mask_pattern: Option<MaskPattern>,
 }
 
 impl DeQR {
@@ -84,7 +87,7 @@ impl DeQR {
             .map(|&bc| DeModule::Unmarked(if bc > half_area { Color::Dark } else { Color::Light }))
             .collect();
 
-        Self { width: qr_width, grid, version, ec_level: None }
+        Self { width: qr_width, grid, version, ec_level: None, palette: None, mask_pattern: None }
     }
 
     pub fn from_str(qr: &str, version: Version) -> Self {
@@ -103,7 +106,11 @@ impl DeQR {
             .map(|(i, clr)| DeModule::Unmarked(if clr == ' ' { Color::Dark } else { Color::Light }))
             .collect();
 
-        Self { width: qr_width, grid, version, ec_level: None }
+        Self { width: qr_width, grid, version, ec_level: None, palette: None, mask_pattern: None }
+    }
+
+    pub fn metadata(&self) -> Metadata {
+        Metadata::new(Some(self.version), self.ec_level, self.palette, self.mask_pattern)
     }
 
     pub fn count_dark_modules(&self) -> usize {
@@ -206,18 +213,24 @@ mod deqr_util_tests {
 //------------------------------------------------------------------------------
 
 impl DeQR {
-    pub fn read_format_info(&mut self) -> QRResult<u32> {
+    pub fn read_format_info(&mut self) -> QRResult<(ECLevel, MaskPattern)> {
         let main = self.get_number(&FORMAT_INFO_COORDS_QR_MAIN);
-        let f = rectify_info(main, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY)
+        let mut f = rectify_info(main, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY)
             .or_else(|_| {
                 let side = self.get_number(&FORMAT_INFO_COORDS_QR_SIDE);
                 rectify_info(side, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY)
             })
             .or(Err(QRError::InvalidFormatInfo))?;
+
         self.mark_coords(&FORMAT_INFO_COORDS_QR_MAIN);
         self.mark_coords(&FORMAT_INFO_COORDS_QR_SIDE);
         self.set(-8, 8, DeModule::Marked);
-        Ok(f ^ FORMAT_MASK)
+
+        f ^= FORMAT_MASK;
+        let (ec_level, mask_pattern) = parse_format_info_qr(f);
+        self.ec_level = Some(ec_level);
+        self.mask_pattern = Some(mask_pattern);
+        Ok((ec_level, mask_pattern))
     }
 
     pub fn read_version_info(&mut self) -> QRResult<Version> {
@@ -257,8 +270,8 @@ impl DeQR {
 mod deqr_infos_test {
     use crate::{
         builder::QRBuilder,
-        mask::MaskingPattern,
-        metadata::{generate_format_info_qr, Color, ECLevel, Version, FORMAT_MASK},
+        mask::MaskPattern,
+        metadata::{Color, ECLevel, Version},
     };
 
     use super::DeQR;
@@ -269,7 +282,7 @@ mod deqr_infos_test {
         let version = Version::Normal(2);
         let size = version.width() as i16;
         let ec_level = ECLevel::L;
-        let mask_pattern = MaskingPattern::new(1);
+        let mask_pattern = MaskPattern::new(1);
 
         let qr = QRBuilder::new(data.as_bytes())
             .version(version)
@@ -281,9 +294,8 @@ mod deqr_infos_test {
 
         let mut deqr = DeQR::from_str(&qr_str, version);
 
-        let exp_format_info = generate_format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
         let format_info = deqr.read_format_info().unwrap();
-        assert_eq!(format_info, exp_format_info);
+        assert_eq!(format_info, (ec_level, mask_pattern));
     }
 
     #[test]
@@ -292,7 +304,7 @@ mod deqr_infos_test {
         let version = Version::Normal(2);
         let size = version.width() as i16;
         let ec_level = ECLevel::L;
-        let mask_pattern = MaskingPattern::new(1);
+        let mask_pattern = MaskPattern::new(1);
 
         let mut qr = QRBuilder::new(data.as_bytes())
             .version(version)
@@ -307,9 +319,8 @@ mod deqr_infos_test {
 
         let mut deqr = DeQR::from_str(&qr_str, version);
 
-        let exp_format_info = generate_format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
         let format_info = deqr.read_format_info().unwrap();
-        assert_eq!(format_info, exp_format_info);
+        assert_eq!(format_info, (ec_level, mask_pattern));
     }
 
     #[test]
@@ -318,7 +329,7 @@ mod deqr_infos_test {
         let version = Version::Normal(2);
         let size = version.width() as i16;
         let ec_level = ECLevel::L;
-        let mask_pattern = MaskingPattern::new(1);
+        let mask_pattern = MaskPattern::new(1);
 
         let mut qr = QRBuilder::new(data.as_bytes())
             .version(version)
@@ -334,9 +345,8 @@ mod deqr_infos_test {
 
         let mut deqr = DeQR::from_str(&qr_str, version);
 
-        let exp_format_info = generate_format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
         let format_info = deqr.read_format_info().unwrap();
-        assert_eq!(format_info, exp_format_info);
+        assert_eq!(format_info, (ec_level, mask_pattern));
     }
 
     #[test]
@@ -346,7 +356,7 @@ mod deqr_infos_test {
         let version = Version::Normal(2);
         let size = version.width() as i16;
         let ec_level = ECLevel::L;
-        let mask_pattern = MaskingPattern::new(1);
+        let mask_pattern = MaskPattern::new(1);
 
         let mut qr = QRBuilder::new(data.as_bytes())
             .version(version)
@@ -366,9 +376,8 @@ mod deqr_infos_test {
 
         let mut deqr = DeQR::from_str(&qr_str, version);
 
-        let exp_format_info = generate_format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
         let format_info = deqr.read_format_info().unwrap();
-        assert_eq!(format_info, exp_format_info);
+        assert_eq!(format_info, (ec_level, mask_pattern));
     }
 
     #[test]
@@ -890,7 +899,7 @@ mod deqr_alignement_tests {
 //------------------------------------------------------------------------------
 
 impl DeQR {
-    pub fn unmask(&mut self, pattern: MaskingPattern) {
+    pub fn unmask(&mut self, pattern: MaskPattern) {
         let mask_function = pattern.mask_functions();
         let w = self.width as i16;
         for r in 0..w {

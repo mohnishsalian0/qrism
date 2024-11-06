@@ -5,7 +5,7 @@ use crate::{
     deqr::DeQR,
     ecc::rectify,
     error::{QRError, QRResult},
-    metadata::{parse_format_info_qr, Version},
+    metadata::Version,
 };
 
 pub struct QRReader();
@@ -21,8 +21,7 @@ impl QRReader {
         let mut deqr = DeQR::from_str(qr, version);
 
         println!("Reading format info...");
-        let format_info = deqr.read_format_info()?;
-        let (ec_level, mask_pattern) = parse_format_info_qr(format_info);
+        let (ec_level, mask_pattern) = deqr.read_format_info()?;
 
         println!("Reading version info...");
         let version = match version {
@@ -54,6 +53,9 @@ impl QRReader {
 
         println!("Decoding data blocks...");
         let data = decode(&data, version);
+
+        println!("\n{}\n", deqr.metadata());
+
         String::from_utf8(data).or(Err(QRError::InvalidUTF8Sequence))
     }
 

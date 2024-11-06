@@ -165,9 +165,6 @@ where
             let log_c = LOG_TABLE[*c as usize];
             let log_sum = (i * j + log_c as usize) % 255;
             *e ^= EXP_TABLE[log_sum];
-            if i == 0 {
-                println!("{:?} {log_c}", *e);
-            }
         }
     }
 

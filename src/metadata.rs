@@ -1,14 +1,61 @@
 use core::panic;
 use std::cmp::PartialOrd;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::ops::{Deref, Not};
 
 use crate::codec::Mode;
-use crate::mask::MaskingPattern;
+use crate::mask::MaskPattern;
+
+// Metadata
+//------------------------------------------------------------------------------
+
+#[derive(Debug, Copy, Clone)]
+pub struct Metadata {
+    version: Option<Version>,
+    ec_level: Option<ECLevel>,
+    palette: Option<Palette>,
+    mask_pattern: Option<MaskPattern>,
+}
+
+impl Metadata {
+    pub fn new(
+        version: Option<Version>,
+        ec_level: Option<ECLevel>,
+        palette: Option<Palette>,
+        mask_pattern: Option<MaskPattern>,
+    ) -> Self {
+        Self { version, ec_level, palette, mask_pattern }
+    }
+}
+
+impl Display for Metadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ver = match &self.version {
+            Some(v) => format!("{:?}", v),
+            None => "None".to_string(),
+        };
+        let ec = match &self.ec_level {
+            Some(e) => format!("{:?}", e),
+            None => "None".to_string(),
+        };
+        let plt = match &self.palette {
+            Some(p) => format!("{:?}", p),
+            None => "None".to_string(),
+        };
+        let mask = match &self.mask_pattern {
+            Some(m) => format!("{:?}", m),
+            None => "None".to_string(),
+        };
+        write!(
+            f,
+            "Metadata:\nVersion: {}, EC Level: {}, Palette: {}, Masking Pattern: {} ",
+            ver, ec, plt, mask
+        )
+    }
+}
 
 // Version
 //------------------------------------------------------------------------------
-
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Version {
     Micro(usize),
@@ -327,14 +374,14 @@ impl Color {
 // Format information
 //------------------------------------------------------------------------------
 
-pub fn generate_format_info_qr(ec_level: ECLevel, mask_pattern: MaskingPattern) -> u32 {
+pub fn generate_format_info_qr(ec_level: ECLevel, mask_pattern: MaskPattern) -> u32 {
     let format_data = ((ec_level as usize) ^ 1) << 3 | (*mask_pattern as usize);
     FORMAT_INFOS_QR[format_data]
 }
 
-pub fn parse_format_info_qr(info: u32) -> (ECLevel, MaskingPattern) {
+pub fn parse_format_info_qr(info: u32) -> (ECLevel, MaskPattern) {
     let ec_level = ECLevel::from(((info >> 13) ^ 1) as u8);
-    let mask_pattern = MaskingPattern::new(((info >> 10) & 7) as u8);
+    let mask_pattern = MaskPattern::new(((info >> 10) & 7) as u8);
     (ec_level, mask_pattern)
 }
 

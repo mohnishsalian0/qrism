@@ -6,16 +6,16 @@ use crate::{
 };
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, PartialOrd, Ord)]
-pub struct MaskingPattern(u8);
+pub struct MaskPattern(u8);
 
-impl MaskingPattern {
+impl MaskPattern {
     pub fn new(pattern: u8) -> Self {
         debug_assert!(pattern < 8, "Invalid masking pattern");
         Self(pattern)
     }
 }
 
-impl Deref for MaskingPattern {
+impl Deref for MaskPattern {
     type Target = u8;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -56,7 +56,7 @@ mod mask_functions {
     }
 }
 
-impl MaskingPattern {
+impl MaskPattern {
     pub fn mask_functions(self) -> fn(i16, i16) -> bool {
         debug_assert!(*self < 8, "Invalid pattern");
 
@@ -74,20 +74,20 @@ impl MaskingPattern {
     }
 }
 
-pub fn apply_best_mask(qr: &mut QR) -> MaskingPattern {
+pub fn apply_best_mask(qr: &mut QR) -> MaskPattern {
     let best_mask = (0..8)
         .min_by_key(|m| {
             let mut qr = qr.clone();
-            qr.mask(MaskingPattern(*m));
+            qr.mask(MaskPattern(*m));
             compute_total_penalty(&qr)
         })
         .expect("Should return atleast 1 mask");
-    let best_mask = MaskingPattern(best_mask);
+    let best_mask = MaskPattern(best_mask);
     qr.mask(best_mask);
     best_mask
 }
 
-pub fn apply_mask(qr: &mut QR, pattern: MaskingPattern) -> MaskingPattern {
+pub fn apply_mask(qr: &mut QR, pattern: MaskPattern) -> MaskPattern {
     qr.mask(pattern);
     pattern
 }
