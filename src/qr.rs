@@ -6,10 +6,10 @@ use crate::{
     iter::EncRegionIter,
     mask::MaskingPattern,
     metadata::{
-        Color, ECLevel, Palette, Version, FORMAT_INFOS_QR, FORMAT_INFO_BIT_LEN,
-        FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, PALETTE_INFOS,
-        PALETTE_INFO_BIT_LEN, PALETTE_INFO_COORDS_BL, PALETTE_INFO_COORDS_TR, VERSION_INFOS,
-        VERSION_INFO_BIT_LEN, VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
+        generate_format_info_qr, Color, ECLevel, Palette, Version, FORMAT_INFO_BIT_LEN,
+        FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, PALETTE_INFO_BIT_LEN,
+        PALETTE_INFO_COORDS_BL, PALETTE_INFO_COORDS_TR, VERSION_INFO_BIT_LEN,
+        VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
     },
 };
 
@@ -590,7 +590,7 @@ impl QR {
         match self.version {
             Version::Micro(_) | Version::Normal(1..=6) => {}
             Version::Normal(7..=40) => {
-                let version_info = version_info(self.version);
+                let version_info = self.version.info();
                 self.draw_number(
                     version_info,
                     VERSION_INFO_BIT_LEN,
@@ -616,7 +616,7 @@ impl QR {
             Version::Normal(_) => match self.palette {
                 Palette::Monochrome => {}
                 Palette::Polychrome(2..=16) => {
-                    let palette_info = palette_info(self.palette);
+                    let palette_info = self.palette.info();
                     self.draw_number(
                         palette_info,
                         PALETTE_INFO_BIT_LEN,
@@ -932,7 +932,7 @@ impl QR {
                 }
             }
         }
-        let format_info = format_info_qr(self.ec_level, pattern);
+        let format_info = generate_format_info_qr(self.ec_level, pattern);
         self.draw_format_info(format_info);
     }
 }
@@ -1008,30 +1008,6 @@ impl QR {
         }
 
         canvas
-    }
-}
-
-// Format information
-//------------------------------------------------------------------------------
-
-pub fn format_info_qr(ec_level: ECLevel, mask_pattern: MaskingPattern) -> u32 {
-    let format_data = ((ec_level as usize) ^ 1) << 3 | (*mask_pattern as usize);
-    FORMAT_INFOS_QR[format_data]
-}
-
-pub fn version_info(version: Version) -> u32 {
-    debug_assert!(matches!(version, Version::Normal(7..=40)), "Invalid version");
-    match version {
-        Version::Normal(v) => VERSION_INFOS[v - 7],
-        _ => unreachable!(),
-    }
-}
-pub fn palette_info(palette: Palette) -> u32 {
-    debug_assert!(0 < *palette && *palette < 17, "Invalid palette");
-
-    match palette {
-        Palette::Monochrome => 1,
-        Palette::Polychrome(p) => PALETTE_INFOS[p as usize],
     }
 }
 

@@ -101,7 +101,7 @@ impl<'a> QRBuilder<'a> {
             None => encode(self.data, self.ec_level)?,
         };
 
-        let version_capacity = version.bit_capacity(self.ec_level) / 8;
+        let version_capacity = version.bit_capacity(self.ec_level) >> 3;
         let err_corr_cap = error_correction_capacity(version, self.ec_level);
 
         // Compute error correction codewords
@@ -163,7 +163,7 @@ impl<'a> QRBuilder<'a> {
         Ok(qr)
     }
 
-    fn interleave<T: Copy, V: Deref<Target = [T]>>(blocks: &[V]) -> Vec<T> {
+    pub fn interleave<T: Copy, V: Deref<Target = [T]>>(blocks: &[V]) -> Vec<T> {
         let max_block_size = blocks.iter().map(|b| b.len()).max().expect("Blocks is empty");
         let total_size = blocks.iter().map(|b| b.len()).sum::<usize>();
         let mut res = Vec::with_capacity(total_size);

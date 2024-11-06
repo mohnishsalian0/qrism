@@ -1,8 +1,10 @@
+use core::panic;
 use std::cmp::PartialOrd;
 use std::fmt::Debug;
 use std::ops::{Deref, Not};
 
 use crate::codec::Mode;
+use crate::mask::MaskingPattern;
 
 // Version
 //------------------------------------------------------------------------------
@@ -117,6 +119,14 @@ impl Version {
             _ => unreachable!("Invalid version"),
         }
     }
+
+    pub fn info(self) -> u32 {
+        debug_assert!(matches!(self, Version::Normal(7..=40)), "Invalid version");
+        match self {
+            Version::Normal(v) => VERSION_INFOS[v - 7],
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -219,6 +229,18 @@ pub enum ECLevel {
     H = 3,
 }
 
+impl From<u8> for ECLevel {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => ECLevel::L,
+            1 => ECLevel::M,
+            2 => ECLevel::Q,
+            3 => ECLevel::H,
+            _ => panic!("Invalid u8 for ec level: {value}"),
+        }
+    }
+}
+
 // Palette
 //------------------------------------------------------------------------------
 
@@ -234,6 +256,17 @@ impl Deref for Palette {
         match self {
             Self::Monochrome => &1,
             Self::Polychrome(p) => p,
+        }
+    }
+}
+
+impl Palette {
+    pub fn info(self) -> u32 {
+        debug_assert!(0 < *self && *self < 17, "Invalid palette");
+
+        match self {
+            Palette::Monochrome => 1,
+            Palette::Polychrome(p) => PALETTE_INFOS[p as usize],
         }
     }
 }
@@ -289,6 +322,20 @@ impl Color {
             Self::Hue(_) => todo!(),
         }
     }
+}
+
+// Format information
+//------------------------------------------------------------------------------
+
+pub fn generate_format_info_qr(ec_level: ECLevel, mask_pattern: MaskingPattern) -> u32 {
+    let format_data = ((ec_level as usize) ^ 1) << 3 | (*mask_pattern as usize);
+    FORMAT_INFOS_QR[format_data]
+}
+
+pub fn parse_format_info_qr(info: u32) -> (ECLevel, MaskingPattern) {
+    let ec_level = ECLevel::from(((info >> 13) ^ 1) as u8);
+    let mask_pattern = MaskingPattern::new(((info >> 10) & 7) as u8);
+    (ec_level, mask_pattern)
 }
 
 // Global constants

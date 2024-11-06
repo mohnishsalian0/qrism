@@ -774,7 +774,6 @@ mod encoded_blob_encode_tests {
         for _ in 0..capacity - 1 {
             eb.push_bits(8, 0b11111111);
         }
-        println!("{}", eb.bit_offset);
         eb.push_terminator();
         assert_eq!(eb.bit_offset, 0);
     }
@@ -1212,7 +1211,7 @@ impl EncodedBlob {
             1 => Mode::Numeric,
             2 => Mode::Alphanumeric,
             4 => Mode::Byte,
-            _ => unreachable!("Invalid Mode"),
+            _ => unreachable!("Invalid Mode: {mode_bits}"),
         };
         let char_count_bit_len = self.version.char_count_bit_len(mode);
         let char_count = self.take_bits(char_count_bit_len);
@@ -1224,7 +1223,6 @@ impl EncodedBlob {
         while char_count > 0 {
             let bit_len = if char_count > 2 { 10 } else { (char_count % 3) * 3 + 1 };
             let chunk = self.take_bits(bit_len);
-            println!("Chunk: {chunk} {bit_len}");
             let bytes = Mode::Numeric.decode_chunk(chunk, bit_len);
             res.extend(bytes);
             char_count -= min(3, char_count);
@@ -1258,8 +1256,8 @@ impl EncodedBlob {
     fn take_bits(&mut self, bit_len: usize) -> u16 {
         let remaining_bits = self.bit_capacity - self.bit_cursor;
         debug_assert!(
-            bit_len <= remaining_bits + 4,
-            "Insufficient bits: Remaining bits {remaining_bits}, Bit len {bit_len}",
+            bit_len <= remaining_bits,
+            "Insufficient bits to take: Remaining bits {remaining_bits}, Bit len {bit_len}",
         );
 
         let index = self.bit_cursor >> 3;

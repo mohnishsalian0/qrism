@@ -1,16 +1,65 @@
 use image::GrayImage;
 
+use crate::{
+    codec::decode,
+    deqr::DeQR,
+    ecc::rectify,
+    error::{QRError, QRResult},
+    metadata::{parse_format_info_qr, Version},
+};
+
 pub struct QRReader();
 
 impl QRReader {
-    pub fn read(img: GrayImage) -> String {
+    pub fn read(qr: GrayImage) -> String {
         todo!()
     }
 
-    // Chunks is the list of chunks' size and count
-    fn deinterleave(data: &[u8], blocks: (usize, usize, usize, usize)) -> Vec<Vec<u8>> {
+    // TODO: Remove version
+    pub fn read_from_str(qr: &str, version: Version) -> QRResult<String> {
+        println!("Reading QR...");
+        let mut deqr = DeQR::from_str(qr, version);
+
+        println!("Reading format info...");
+        let format_info = deqr.read_format_info()?;
+        let (ec_level, mask_pattern) = parse_format_info_qr(format_info);
+
+        println!("Reading version info...");
+        let version = match version {
+            Version::Normal(7..=40) => deqr.read_version_info()?,
+            _ => version,
+        };
+
+        println!("Marking all function patterns...");
+        deqr.mark_all_function_patterns();
+
+        println!("Unmasking payload...");
+        deqr.unmask(mask_pattern);
+
+        println!("Extracting payload...");
+        let payload = deqr.extract_payload(version);
+
+        let data_size = version.bit_capacity(ec_level) >> 3;
+        let block_info = version.data_codewords_per_block(ec_level);
+        let total_blocks = block_info.1 + block_info.3;
+        let epb = version.ecc_per_block(ec_level);
+
+        println!("Deinterleaving data and ecc...");
+        let data_blocks: Vec<Vec<u8>> = Self::deinterleave(&payload[..data_size], block_info);
+        let ecc_blocks: Vec<Vec<u8>> =
+            Self::deinterleave(&payload[data_size..], (epb, total_blocks, 0, 0));
+
+        println!("Rectifying data...");
+        let data = rectify(&data_blocks, &ecc_blocks);
+
+        println!("Decoding data blocks...");
+        let data = decode(&data, version);
+        String::from_utf8(data).or(Err(QRError::InvalidUTF8Sequence))
+    }
+
+    fn deinterleave(data: &[u8], block_info: (usize, usize, usize, usize)) -> Vec<Vec<u8>> {
         let len = data.len();
-        let (block1_size, block1_count, block2_size, block2_count) = blocks;
+        let (block1_size, block1_count, block2_size, block2_count) = block_info;
 
         let total_blocks = block1_count + block2_count;
         let partition = block1_size * total_blocks;
@@ -22,22 +71,72 @@ impl QRReader {
         data[..partition]
             .chunks(total_blocks)
             .for_each(|ch| ch.iter().enumerate().for_each(|(i, v)| res[i].push(*v)));
-        data[partition..]
-            .chunks(block2_count)
-            .for_each(|ch| ch.iter().enumerate().for_each(|(i, v)| res[block1_count + i].push(*v)));
+        if block2_count > 0 {
+            data[partition..].chunks(block2_count).for_each(|ch| {
+                ch.iter().enumerate().for_each(|(i, v)| res[block1_count + i].push(*v))
+            });
+        }
         res
     }
 }
 
 #[cfg(test)]
 mod reader_tests {
+    use test_case::test_case;
+
     use super::QRReader;
+    use crate::{
+        builder::QRBuilder,
+        ecc::blockify,
+        metadata::{ECLevel, Version},
+    };
 
     #[test]
     fn test_deinterleave() {
-        let data = vec![1, 4, 7, 2, 5, 8, 3, 6, 9, 0];
-        let deinterleaved = QRReader::deinterleave(&data, (3, 2, 4, 1));
-        let exp_deinterleaved = vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9, 0]];
-        assert_eq!(deinterleaved, exp_deinterleaved);
+        // Data length has to match version capacity
+        let data = "Hello, world!!!🌍".as_bytes();
+        let version = Version::Normal(1);
+        let ec_level = ECLevel::L;
+
+        let data_blocks = blockify(data, version, ec_level);
+
+        let interleaved = QRBuilder::interleave(&data_blocks);
+
+        let block_info = version.data_codewords_per_block(ec_level);
+        let deinterleaved = QRReader::deinterleave(&interleaved, block_info);
+        assert_eq!(data_blocks, deinterleaved);
+    }
+
+    #[test_case("Hello, world!🌎".to_string(), Version::Normal(1), ECLevel::L)]
+    #[test_case("TEST".to_string(), Version::Normal(1), ECLevel::M)]
+    #[test_case("12345".to_string(), Version::Normal(1), ECLevel::Q)]
+    #[test_case("OK".to_string(), Version::Normal(1), ECLevel::H)]
+    #[test_case("B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(3).to_string(), Version::Normal(7), ECLevel::L)]
+    #[test_case("A11111111111111".repeat(11).to_string(), Version::Normal(7), ECLevel::M)]
+    #[test_case("aAAAAAA1111111111111AAAAAAa".repeat(3).to_string(), Version::Normal(7), ECLevel::Q)]
+    #[test_case("1234567890".repeat(15).to_string(), Version::Normal(7), ECLevel::H)]
+    #[test_case( "B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(4).to_string(), Version::Normal(10), ECLevel::L)]
+    #[test_case("A11111111111111".repeat(20).to_string(), Version::Normal(10), ECLevel::M)]
+    #[test_case("aAAAAAAAAA1111111111111111AAAAAAAAAAa".repeat(4).to_string(), Version::Normal(10), ECLevel::Q)]
+    #[test_case("1234567890".repeat(28).to_string(), Version::Normal(10), ECLevel::H)]
+    #[test_case("B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(22).to_string(), Version::Normal(27), ECLevel::L)]
+    #[test_case("A111111111111111".repeat(100).to_string(), Version::Normal(27), ECLevel::M)]
+    #[test_case("aAAAAAAAAA111111111111111111AAAAAAAAAAa".repeat(20).to_string(), Version::Normal(27), ECLevel::Q)]
+    #[test_case("1234567890".repeat(145).to_string(), Version::Normal(27), ECLevel::H)]
+    #[test_case("B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(57).to_string(), Version::Normal(40), ECLevel::L)]
+    #[test_case("A111111111111111".repeat(97).to_string(), Version::Normal(40), ECLevel::M)]
+    #[test_case( "aAAAAAAAAA111111111111111111AAAAAAAAAAa".repeat(42).to_string(), Version::Normal(40), ECLevel::Q)]
+    #[test_case("1234567890".repeat(305).to_string(), Version::Normal(40), ECLevel::H)]
+    fn test_reader(data: String, version: Version, ec_level: ECLevel) {
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(version)
+            .ec_level(ec_level)
+            .build()
+            .unwrap()
+            .to_str(1);
+
+        let decoded_data = QRReader::read_from_str(&qr, version).unwrap();
+
+        assert_eq!(decoded_data, data);
     }
 }

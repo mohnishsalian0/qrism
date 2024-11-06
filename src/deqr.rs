@@ -87,7 +87,7 @@ impl DeQR {
         Self { width: qr_width, grid, version, ec_level: None }
     }
 
-    pub fn from_string(qr: &str, version: Version) -> Self {
+    pub fn from_str(qr: &str, version: Version) -> Self {
         let qr_width = version.width();
         let qz_size = if let Version::Normal(_) = version { 4 } else { 2 };
         let full_width = qz_size + qr_width + qz_size;
@@ -111,7 +111,7 @@ impl DeQR {
     }
 
     #[cfg(test)]
-    fn to_debug_str(&self) -> String {
+    pub fn to_debug_str(&self) -> String {
         let w = self.width as i16;
         let mut res = String::with_capacity((w * (w + 1)) as usize);
         res.push('\n');
@@ -162,7 +162,7 @@ mod deqr_util_tests {
     };
 
     #[test]
-    fn test_from_string() {
+    fn test_from_str() {
         let data = "Hello, world! 🌎";
         let version = Version::Normal(2);
         let size = version.width() as i16;
@@ -172,7 +172,7 @@ mod deqr_util_tests {
             QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let deqr = DeQR::from_string(&qr_str, version);
+        let deqr = DeQR::from_str(&qr_str, version);
 
         for r in 0..size {
             for c in 0..size {
@@ -216,6 +216,7 @@ impl DeQR {
             .or(Err(QRError::InvalidFormatInfo))?;
         self.mark_coords(&FORMAT_INFO_COORDS_QR_MAIN);
         self.mark_coords(&FORMAT_INFO_COORDS_QR_SIDE);
+        self.set(-8, 8, DeModule::Marked);
         Ok(f ^ FORMAT_MASK)
     }
 
@@ -257,8 +258,7 @@ mod deqr_infos_test {
     use crate::{
         builder::QRBuilder,
         mask::MaskingPattern,
-        metadata::{Color, ECLevel, Version, FORMAT_MASK},
-        qr::format_info_qr,
+        metadata::{generate_format_info_qr, Color, ECLevel, Version, FORMAT_MASK},
     };
 
     use super::DeQR;
@@ -279,9 +279,9 @@ mod deqr_infos_test {
             .unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_string(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, version);
 
-        let exp_format_info = format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
+        let exp_format_info = generate_format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
         let format_info = deqr.read_format_info().unwrap();
         assert_eq!(format_info, exp_format_info);
     }
@@ -305,9 +305,9 @@ mod deqr_infos_test {
         qr.set(8, 4, crate::qr::Module::Format(Color::Dark));
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_string(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, version);
 
-        let exp_format_info = format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
+        let exp_format_info = generate_format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
         let format_info = deqr.read_format_info().unwrap();
         assert_eq!(format_info, exp_format_info);
     }
@@ -332,9 +332,9 @@ mod deqr_infos_test {
         qr.set(8, 4, crate::qr::Module::Format(Color::Dark));
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_string(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, version);
 
-        let exp_format_info = format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
+        let exp_format_info = generate_format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
         let format_info = deqr.read_format_info().unwrap();
         assert_eq!(format_info, exp_format_info);
     }
@@ -364,9 +364,9 @@ mod deqr_infos_test {
         qr.set(-5, 8, crate::qr::Module::Format(Color::Dark));
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_string(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, version);
 
-        let exp_format_info = format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
+        let exp_format_info = generate_format_info_qr(ec_level, mask_pattern) ^ FORMAT_MASK;
         let format_info = deqr.read_format_info().unwrap();
         assert_eq!(format_info, exp_format_info);
     }
@@ -381,7 +381,7 @@ mod deqr_infos_test {
             QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_string(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, version);
         let _ = deqr.read_format_info();
 
         assert_eq!(
@@ -404,7 +404,7 @@ mod deqr_infos_test {
             uUUuuuuuuuuUUuUuuuUuUUuuu\n\
             UuUUUUUuuUuuUUUuUuUUUUUuU\n\
             uUUuUUuUUUuUuUUUuuuuuUUUU\n\
-            UUUUUUUUuuuuuuUuuUUUuUuuU\n\
+            UUUUUUUU.uuuuuUuuUUUuUuuU\n\
             uuuuuuuU.uuuuUuuuUuUuuUuu\n\
             uUUUUUuU.uuUuuuuuUUUuuUuu\n\
             uUuuuUuU.UuuUUuUuuuuuUUUu\n\
@@ -425,7 +425,7 @@ mod deqr_infos_test {
             QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_string(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, version);
 
         let version_info = deqr.read_version_info().unwrap();
         assert_eq!(version_info, version);
@@ -444,7 +444,7 @@ mod deqr_infos_test {
         qr.set(-11, 5, crate::qr::Module::Format(Color::Dark));
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_string(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, version);
 
         let version_info = deqr.read_version_info().unwrap();
         assert_eq!(version_info, version);
@@ -464,7 +464,7 @@ mod deqr_infos_test {
         qr.set(-9, 4, crate::qr::Module::Format(Color::Light));
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_string(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, version);
 
         let version_info = deqr.read_version_info().unwrap();
         assert_eq!(version_info, version);
@@ -489,7 +489,7 @@ mod deqr_infos_test {
         qr.set(4, -9, crate::qr::Module::Format(Color::Light));
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_string(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, version);
 
         let version_info = deqr.read_version_info().unwrap();
     }
@@ -504,7 +504,7 @@ mod deqr_infos_test {
             QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_string(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, version);
         let _ = deqr.read_version_info();
 
         assert_eq!(
@@ -589,7 +589,7 @@ mod deqr_all_function_tests {
             QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_string(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, version);
         deqr.mark_all_function_patterns();
 
         println!("{}", deqr.to_debug_str());
@@ -690,7 +690,7 @@ mod deqr_finder_tests {
             QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_string(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, version);
         deqr.mark_finder_patterns();
 
         assert_eq!(
@@ -772,7 +772,7 @@ mod deqr_timing_tests {
             QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_string(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, version);
         deqr.mark_timing_patterns();
 
         assert_eq!(
@@ -851,7 +851,7 @@ mod deqr_alignement_tests {
             QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_string(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, version);
         deqr.mark_alignment_patterns();
 
         assert_eq!(

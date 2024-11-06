@@ -24,6 +24,7 @@ pub enum QRError {
     FinderMismatch,
     TimingMismatch,
     AlignmentMismatch,
+    InvalidUTF8Sequence,
 }
 
 impl Display for QRError {
@@ -45,6 +46,7 @@ impl Display for QRError {
             Self::FinderMismatch => "Finder color mismatch",
             Self::TimingMismatch => "Timing color mismatch",
             Self::AlignmentMismatch => "Alignment color mismatch",
+            Self::InvalidUTF8Sequence => "Invalid UTF8 sequence",
         };
         f.write_str(msg)
     }

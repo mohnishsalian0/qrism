@@ -5,6 +5,16 @@ use crate::{
 
 // ECC: Error Correction Codeword generator
 pub fn ecc(data: &[u8], version: Version, ec_level: ECLevel) -> (Vec<&[u8]>, Vec<Vec<u8>>) {
+    let data_blocks = blockify(data, version, ec_level);
+
+    let ecc_size_per_block = version.ecc_per_block(ec_level);
+    let ecc_blocks =
+        data_blocks.iter().map(|b| ecc_per_block(b, ecc_size_per_block)).collect::<Vec<_>>();
+
+    (data_blocks, ecc_blocks)
+}
+
+pub fn blockify(data: &[u8], version: Version, ec_level: ECLevel) -> Vec<&[u8]> {
     let (block1_size, block1_count, block2_size, block2_count) =
         version.data_codewords_per_block(ec_level);
 
@@ -24,12 +34,7 @@ pub fn ecc(data: &[u8], version: Version, ec_level: ECLevel) -> (Vec<&[u8]>, Vec
     if block2_size > 0 {
         data_blocks.extend(data[total_block1_size..].chunks(block2_size));
     }
-
-    let ecc_size_per_block = version.ecc_per_block(ec_level);
-    let ecc_blocks =
-        data_blocks.iter().map(|b| ecc_per_block(b, ecc_size_per_block)).collect::<Vec<_>>();
-
-    (data_blocks, ecc_blocks)
+    data_blocks
 }
 
 // Performs polynomial long division with data polynomial(num)
@@ -131,46 +136,52 @@ mod ec_tests {
 
 // Rectifier
 //------------------------------------------------------------------------------
-pub fn rectify(data_blocks: Vec<Vec<u8>>, ecc_blocks: Vec<Vec<u8>>) -> Vec<u8> {
-    todo!()
+
+pub fn rectify(data_blocks: &[Vec<u8>], ecc_blocks: &[Vec<u8>]) -> Vec<u8> {
+    let total_size = data_blocks.iter().map(|b| b.len()).sum::<usize>();
+    let mut res = Vec::with_capacity(total_size);
+    for (db, eb) in data_blocks.iter().zip(ecc_blocks) {
+        res.extend(rectify_block(db.to_vec(), eb.to_vec()));
+    }
+    res
 }
 
-pub fn rectify_per_block(data: Vec<u8>, ecc: Vec<u8>) -> Vec<u8> {
-    todo!()
+pub fn rectify_block(data: Vec<u8>, ecc: Vec<u8>) -> Vec<u8> {
+    let combined = ecc.iter().rev().chain(data.iter().rev());
+    syndromes(combined, ecc.len()).map(|_| data).unwrap()
 }
 
 // Computes syndromes for a block
-fn syndromes(block: &[u8], ecc_count: usize) -> QRResult<()> {
-    let len = block.len();
-    let mut s = [0_u8; 64];
-    let mut err_flag = false;
-    for e in s.iter_mut().take(ecc_count) {
-        for (j, &c) in block.iter().rev().enumerate() {
-            let log_c = LOG_TABLE[c as usize];
-            let mut log_sum = log_c as usize + (*e as usize * j);
-            if log_sum > 255 {
-                log_sum -= 255;
+fn syndromes<'a, I>(block: I, ecc_count: usize) -> QRResult<()>
+where
+    I: Iterator<Item = &'a u8> + Clone,
+{
+    let mut res = [0_u8; 64];
+    for (i, e) in res.iter_mut().take(ecc_count).enumerate() {
+        for (j, c) in block.clone().enumerate() {
+            if *c == 0 {
+                continue;
             }
-            let mut exp_sum = *e as u16 + EXP_TABLE[log_sum] as u16;
-            if exp_sum > 255 {
-                exp_sum -= 255;
+            let log_c = LOG_TABLE[*c as usize];
+            let log_sum = (i * j + log_c as usize) % 255;
+            *e ^= EXP_TABLE[log_sum];
+            if i == 0 {
+                println!("{:?} {log_c}", *e);
             }
-            *e = exp_sum as u8;
-        }
-        if *e != 0 {
-            err_flag = true;
         }
     }
-    if !err_flag {
+
+    if res.iter().all(|&s| s == 0) {
         Ok(())
     } else {
-        Err(QRError::ErrorDetected(s))
+        Err(QRError::ErrorDetected(res))
     }
 }
 
 // Rectifier for format and version infos
 pub fn rectify_info(info: u32, valid_numbers: &[u32], err_capacity: u32) -> QRResult<u32> {
     let res = *valid_numbers.iter().min_by_key(|&n| (info ^ n).count_ones()).unwrap();
+
     if (info ^ res).count_ones() <= err_capacity {
         Ok(res)
     } else {
