@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use crate::{
     codec::{encode, encode_with_version},
-    ecc::{ecc, error_correction_capacity},
+    ec::{ecc, error_correction_capacity},
     error::{QRError, QRResult},
     mask::{apply_best_mask, MaskPattern},
     metadata::{ECLevel, Palette, Version},
@@ -142,10 +142,7 @@ impl<'a> QRBuilder<'a> {
         let light_modules = total_modules - dark_modules;
 
         println!("Report:");
-        println!(
-            "Version: {version:?}, EC Level: {:?}, Palette: {:?}, Masking pattern: {}",
-            self.ec_level, self.palette, *mask
-        );
+        println!("{}", qr.metadata());
         println!("Data capacity: {}, Error Capacity: {}", version_capacity, err_corr_cap);
         println!(
             "Data size: {}, Encoded size: {}, Compression: {}%",

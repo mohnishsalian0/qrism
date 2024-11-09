@@ -10,7 +10,7 @@ use reader::QRReader;
 mod builder;
 mod codec;
 mod deqr;
-mod ecc;
+mod ec;
 mod error;
 mod iter;
 pub mod mask;
@@ -34,6 +34,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let extracted_data = QRReader::read_from_str(&qr, version).unwrap();
     println!("Extracted Data: {extracted_data}");
 
+    // FIXME: Remove
     // let path = "assets/test_image_1.png";
     // let img = image::open(path)?.to_luma8();
     // let mut img = rqrr::PreparedImage::prepare(img);

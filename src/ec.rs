@@ -87,7 +87,7 @@ pub fn error_correction_capacity(version: Version, ec_level: ECLevel) -> usize {
 mod ec_tests {
 
     use crate::{
-        ecc::{ecc, ecc_per_block},
+        ec::{ecc, ecc_per_block},
         metadata::{ECLevel, Version},
     };
 

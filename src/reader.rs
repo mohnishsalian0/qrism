@@ -3,7 +3,7 @@ use image::GrayImage;
 use crate::{
     codec::decode,
     deqr::DeQR,
-    ecc::rectify,
+    ec::rectify,
     error::{QRError, QRResult},
     metadata::Version,
 };
@@ -89,7 +89,7 @@ mod reader_tests {
     use super::QRReader;
     use crate::{
         builder::QRBuilder,
-        ecc::blockify,
+        ec::blockify,
         metadata::{ECLevel, Version},
     };
 

@@ -3,7 +3,7 @@ use std::ops::{Deref, Not};
 use image::{GrayImage, Luma};
 
 use crate::{
-    ecc::rectify_info,
+    ec::rectify_info,
     error::{QRError, QRResult},
     iter::EncRegionIter,
     mask::MaskPattern,

@@ -48,7 +48,7 @@ impl Display for Metadata {
         };
         write!(
             f,
-            "Metadata:\nVersion: {}, EC Level: {}, Palette: {}, Masking Pattern: {} ",
+            "Metadata: Version: {}, EC Level: {}, Palette: {}, Masking Pattern: {} ",
             ver, ec, plt, mask
         )
     }
@@ -56,6 +56,7 @@ impl Display for Metadata {
 
 // Version
 //------------------------------------------------------------------------------
+
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Version {
     Micro(usize),
