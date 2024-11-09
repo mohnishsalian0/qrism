@@ -3,6 +3,8 @@ use std::cmp::PartialOrd;
 use std::fmt::{Debug, Display};
 use std::ops::{Deref, Not};
 
+use image::Rgb;
+
 use crate::codec::Mode;
 use crate::mask::MaskPattern;
 
@@ -127,11 +129,15 @@ impl Version {
         }
     }
 
-    pub fn bit_capacity(self, ec_level: ECLevel) -> usize {
-        match self {
+    pub fn bit_capacity(self, ec_level: ECLevel, palette: Palette) -> usize {
+        let mut bc = match self {
             Version::Micro(v) => VERSION_BIT_CAPACITY[39 + v][ec_level as usize],
             Version::Normal(v) => VERSION_BIT_CAPACITY[v - 1][ec_level as usize],
+        };
+        if matches!(palette, Palette::Poly) {
+            bc *= 3;
         }
+        bc
     }
 
     pub fn total_codewords(self) -> usize {
@@ -294,28 +300,16 @@ impl From<u8> for ECLevel {
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Palette {
-    Monochrome,
-    Polychrome(u8),
-}
-
-impl Deref for Palette {
-    type Target = u8;
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Monochrome => &1,
-            Self::Polychrome(p) => p,
-        }
-    }
+    Mono,
+    Poly,
 }
 
 impl Palette {
-    pub fn info(self) -> u32 {
-        debug_assert!(0 < *self && *self < 17, "Invalid palette");
+    pub fn color(self, bits: u8) -> Rgb<u8> {
+        debug_assert!(matches!(self, Palette::Poly), "Palette is not poly");
+        debug_assert!(bits < 8, "Bits should be between 0 and 7");
 
-        match self {
-            Palette::Monochrome => 1,
-            Palette::Polychrome(p) => PALETTE_INFOS[p as usize],
-        }
+        PALETTE[bits as usize]
     }
 }
 
@@ -689,8 +683,16 @@ pub static VERSION_INFO_COORDS_TR: [(i16, i16); 18] = [
 
 pub static PALETTE_INFO_BIT_LEN: usize = 12;
 
-// TODO: Fill out palette info
-pub static PALETTE_INFOS: [u32; 12] = [0xFFF; 12];
+pub static PALETTE: [Rgb<u8>; 8] = [
+    Rgb([0, 0, 0]),
+    Rgb([255, 255, 0]),
+    Rgb([255, 0, 255]),
+    Rgb([255, 0, 0]),
+    Rgb([0, 255, 255]),
+    Rgb([0, 255, 0]),
+    Rgb([0, 0, 255]),
+    Rgb([255, 255, 255]),
+];
 
 pub static PALETTE_INFO_COORDS_BL: [(i16, i16); 12] = [
     (-1, 10),

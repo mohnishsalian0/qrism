@@ -1,6 +1,6 @@
 use crate::{
     error::{QRError, QRResult},
-    metadata::{ECLevel, Version},
+    metadata::{ECLevel, Palette, Version},
 };
 use std::{
     cmp::{min, Ordering},
@@ -575,7 +575,7 @@ impl EncodedBlob {
 mod encoded_blob_encode_tests {
     use crate::{
         codec::{Mode, PADDING_CODEWORDS},
-        metadata::{ECLevel, Version},
+        metadata::{ECLevel, Palette, Version},
     };
 
     use super::EncodedBlob;
@@ -584,7 +584,8 @@ mod encoded_blob_encode_tests {
     fn test_len() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let bit_capacity = version.bit_capacity(ec_level);
+        let palette = Palette::Mono;
+        let bit_capacity = version.bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         assert_eq!(eb.bit_len(), 0);
         eb.push_bits(0, 0);
@@ -603,7 +604,8 @@ mod encoded_blob_encode_tests {
     fn test_push_bits() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let bit_capacity = version.bit_capacity(ec_level);
+        let palette = Palette::Mono;
+        let bit_capacity = version.bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_bits(0, 0);
         assert_eq!(eb.data, vec![]);
@@ -660,7 +662,8 @@ mod encoded_blob_encode_tests {
     fn test_push_bits_capacity_overflow() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let bit_capacity = version.bit_capacity(ec_level);
+        let palette = Palette::Mono;
+        let bit_capacity = version.bit_capacity(ec_level, palette);
         let capacity = (bit_capacity + 7) >> 3;
         let mut eb = EncodedBlob::new(version, bit_capacity);
         for _ in 0..capacity {
@@ -673,7 +676,8 @@ mod encoded_blob_encode_tests {
     fn test_push_header_v1() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let bit_capacity = version.bit_capacity(ec_level);
+        let palette = Palette::Mono;
+        let bit_capacity = version.bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_header(Mode::Numeric, 0b11_1111_1111);
         assert_eq!(eb.data, vec![0b00011111, 0b11111100]);
@@ -687,7 +691,8 @@ mod encoded_blob_encode_tests {
     fn test_push_header_v10() {
         let version = Version::Normal(10);
         let ec_level = ECLevel::L;
-        let bit_capacity = version.bit_capacity(ec_level);
+        let palette = Palette::Mono;
+        let bit_capacity = version.bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_header(Mode::Numeric, 0b1111_1111_1111);
         assert_eq!(eb.data, vec![0b00011111, 0b11111111]);
@@ -706,7 +711,8 @@ mod encoded_blob_encode_tests {
     fn test_push_header_v27() {
         let version = Version::Normal(27);
         let ec_level = ECLevel::L;
-        let bit_capacity = version.bit_capacity(ec_level);
+        let palette = Palette::Mono;
+        let bit_capacity = version.bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_header(Mode::Numeric, 0b11_1111_1111_1111);
         assert_eq!(eb.data, vec![0b00011111, 0b11111111, 0b11000000]);
@@ -725,7 +731,8 @@ mod encoded_blob_encode_tests {
     fn test_push_numeric_data() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let bit_capacity = version.bit_capacity(ec_level);
+        let palette = Palette::Mono;
+        let bit_capacity = version.bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_numeric_data("01234567".as_bytes());
         assert_eq!(
@@ -741,7 +748,8 @@ mod encoded_blob_encode_tests {
     fn test_push_alphanumeric_data() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let bit_capacity = version.bit_capacity(ec_level);
+        let palette = Palette::Mono;
+        let bit_capacity = version.bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_alphanumeric_data("AC-42".as_bytes());
         assert_eq!(
@@ -754,7 +762,8 @@ mod encoded_blob_encode_tests {
     fn test_push_byte_data() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let bit_capacity = version.bit_capacity(ec_level);
+        let palette = Palette::Mono;
+        let bit_capacity = version.bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_byte_data("a".as_bytes());
         assert_eq!(eb.data, vec![0b01000000, 0b00010110, 0b00010000])
@@ -764,7 +773,8 @@ mod encoded_blob_encode_tests {
     fn test_push_terminator() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let bit_capacity = version.bit_capacity(ec_level);
+        let palette = Palette::Mono;
+        let bit_capacity = version.bit_capacity(ec_level, palette);
         let capacity = (bit_capacity + 7) >> 3;
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_bits(1, 0b1);
@@ -782,7 +792,8 @@ mod encoded_blob_encode_tests {
     fn test_push_padding_bits() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let bit_capacity = version.bit_capacity(ec_level);
+        let palette = Palette::Mono;
+        let bit_capacity = version.bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_bits(1, 0b1);
         eb.push_padding_bits();
@@ -794,7 +805,8 @@ mod encoded_blob_encode_tests {
     fn test_push_padding_codewords() {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let bit_capacity = version.bit_capacity(ec_level);
+        let palette = Palette::Mono;
+        let bit_capacity = version.bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_bits(1, 0b1);
         eb.push_padding_bits();
@@ -809,9 +821,13 @@ mod encoded_blob_encode_tests {
 //------------------------------------------------------------------------------
 
 // TODO: Write testcases
-pub fn encode(data: &[u8], ec_level: ECLevel) -> QRResult<(Vec<u8>, usize, Version)> {
-    let (version, segments) = find_optimal_version_and_segments(data, ec_level)?;
-    let bit_capacity = version.bit_capacity(ec_level);
+pub fn encode(
+    data: &[u8],
+    ec_level: ECLevel,
+    palette: Palette,
+) -> QRResult<(Vec<u8>, usize, Version)> {
+    let (version, segments) = find_optimal_version_and_segments(data, ec_level, palette)?;
+    let bit_capacity = version.bit_capacity(ec_level, palette);
     let mut encoded_blob = EncodedBlob::new(version, bit_capacity);
     for seg in segments {
         encoded_blob.push_segment(seg);
@@ -827,14 +843,15 @@ pub fn encode_with_version(
     data: &[u8],
     ec_level: ECLevel,
     version: Version,
+    palette: Palette,
 ) -> QRResult<(Vec<u8>, usize, Version)> {
-    let capacity = version.bit_capacity(ec_level);
+    let capacity = version.bit_capacity(ec_level, palette);
     let segments = compute_optimal_segments(data, version);
     let size: usize = segments.iter().map(|s| s.bit_len(version)).sum();
     if size > capacity {
         return Err(QRError::DataTooLong);
     }
-    let bit_capacity = version.bit_capacity(ec_level);
+    let bit_capacity = version.bit_capacity(ec_level, palette);
     let mut eb = EncodedBlob::new(version, bit_capacity);
     for seg in segments {
         eb.push_segment(seg);
@@ -848,12 +865,13 @@ pub fn encode_with_version(
 fn find_optimal_version_and_segments(
     data: &[u8],
     ec_level: ECLevel,
+    palette: Palette,
 ) -> QRResult<(Version, Vec<Segment>)> {
     let mut segments = vec![];
     let mut size = 0;
     for v in 1..=40 {
         let version = Version::Normal(v);
-        let capacity = version.bit_capacity(ec_level);
+        let capacity = version.bit_capacity(ec_level, palette);
         if v == 1 || v == 10 || v == 27 {
             segments = compute_optimal_segments(data, version);
             size = segments.iter().map(|s| s.bit_len(version)).sum();
@@ -956,10 +974,12 @@ fn build_segments(char_modes: Vec<Mode>, data: &[u8]) -> Vec<Segment> {
 
 #[cfg(test)]
 mod encode_tests {
+    use test_case::test_case;
+
     use super::{compute_optimal_segments, find_optimal_version_and_segments, Mode, Segment};
     use crate::{
         codec::build_segments,
-        metadata::{ECLevel, Version},
+        metadata::{ECLevel, Palette, Version},
     };
 
     #[test]
@@ -978,130 +998,36 @@ mod encode_tests {
         assert_eq!(segs[2], seg_3);
     }
 
+    #[test_case("1111111".to_string(), Version::Normal(1), vec![(Mode::Numeric, 0, None)])]
+    #[test_case("AAAAA".to_string(), Version::Normal(1), vec![(Mode::Alphanumeric, 0, None)])]
+    #[test_case("aaaaa".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, None)])]
+    #[test_case("1111111AAAA".to_string(), Version::Normal(1), vec![(Mode::Numeric, 0, Some(7)), (Mode::Alphanumeric, 7, None)])]
+    #[test_case("111111AAAA".to_string(), Version::Normal(1), vec![(Mode::Alphanumeric, 0,None)])]
+    #[test_case("aaa11111a".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, None)])]
+    #[test_case("aaa111111a".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, Some(3)), (Mode::Numeric, 3, Some(9)), (Mode::Byte, 9, None)])]
+    #[test_case("aaa1111A".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, None)])]
+    #[test_case("aaa1111AA".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, Some(3)), (Mode::Alphanumeric, 3, None)])]
+    #[test_case("aaa1111111AA".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, Some(3)), (Mode::Numeric, 3, Some(10)), (Mode::Alphanumeric, 10, None)])]
+    #[test_case(("A11111111111111".repeat(23) + "A").to_string(), Version::Normal(10), vec![(Mode::Alphanumeric, 0, None)])]
+    #[test_case("Golden ratio φ = 1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072072041893911374......".to_string(), Version::Normal(9), vec![(Mode::Byte, 0, Some(20)), (Mode::Numeric, 20, Some(120)), (Mode::Alphanumeric, 120, Some(126))])]
+    fn test_compute_optimal_segments(
+        data: String,
+        version: Version,
+        chunks: Vec<(Mode, usize, Option<usize>)>,
+    ) {
+        let segs = compute_optimal_segments(data.as_bytes(), version);
+        assert_eq!(segs.len(), chunks.len());
+        for (seg, &(mode, start, end)) in segs.iter().zip(chunks.iter()) {
+            let exp_seg = match end {
+                Some(e) => Segment::new(mode, data[start..e].as_bytes()),
+                None => Segment::new(mode, data[start..].as_bytes()),
+            };
+            assert_eq!(*seg, exp_seg);
+        }
+    }
+
     #[test]
     fn test_compute_optimal_segments_1() {
-        let data = "1111111";
-        let version = Version::Normal(1);
-        let segs = compute_optimal_segments(data.as_bytes(), version);
-        let seg_1 = Segment::new(Mode::Numeric, data[..].as_bytes());
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0], seg_1);
-    }
-
-    #[test]
-    fn test_compute_optimal_segments_2() {
-        let data = "AAAAA";
-        let version = Version::Normal(1);
-        let segs = compute_optimal_segments(data.as_bytes(), version);
-        let seg_1 = Segment::new(Mode::Alphanumeric, data[..].as_bytes());
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0], seg_1);
-    }
-
-    #[test]
-    fn test_compute_optimal_segments_3() {
-        let data = "aaaaa";
-        let version = Version::Normal(1);
-        let segs = compute_optimal_segments(data.as_bytes(), version);
-        let seg_1 = Segment::new(Mode::Byte, data[..].as_bytes());
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0], seg_1);
-    }
-
-    #[test]
-    fn test_compute_optimal_segments_4() {
-        let data = "1111111AAAA";
-        let version = Version::Normal(1);
-        let segs = compute_optimal_segments(data.as_bytes(), version);
-        let seg_1 = Segment::new(Mode::Numeric, data[0..7].as_bytes());
-        let seg_2 = Segment::new(Mode::Alphanumeric, data[7..].as_bytes());
-        assert_eq!(segs.len(), 2);
-        assert_eq!(segs[0], seg_1);
-        assert_eq!(segs[1], seg_2);
-    }
-
-    #[test]
-    fn test_compute_optimal_segments_5() {
-        let data = "111111AAAA";
-        let version = Version::Normal(1);
-        let segs = compute_optimal_segments(data.as_bytes(), version);
-        let seg_1 = Segment::new(Mode::Alphanumeric, data[..].as_bytes());
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0], seg_1);
-    }
-
-    #[test]
-    fn test_compute_optimal_segments_6() {
-        let data = "aaa11111a";
-        let version = Version::Normal(1);
-        let segs = compute_optimal_segments(data.as_bytes(), version);
-        let seg_1 = Segment::new(Mode::Byte, data[..].as_bytes());
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0], seg_1);
-    }
-
-    #[test]
-    fn test_compute_optimal_segments_7() {
-        let data = "aaa111111a";
-        let version = Version::Normal(1);
-        let segs = compute_optimal_segments(data.as_bytes(), version);
-        let seg_1 = Segment::new(Mode::Byte, data[..3].as_bytes());
-        let seg_2 = Segment::new(Mode::Numeric, data[3..9].as_bytes());
-        let seg_3 = Segment::new(Mode::Byte, data[9..].as_bytes());
-        assert_eq!(segs.len(), 3);
-        assert_eq!(segs[0], seg_1);
-        assert_eq!(segs[1], seg_2);
-        assert_eq!(segs[2], seg_3);
-    }
-
-    #[test]
-    fn test_compute_optimal_segments_8() {
-        let data = "aaa1111A";
-        let version = Version::Normal(1);
-        let segs = compute_optimal_segments(data.as_bytes(), version);
-        let seg_1 = Segment::new(Mode::Byte, data[..].as_bytes());
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0], seg_1);
-    }
-
-    #[test]
-    fn test_compute_optimal_segments_9() {
-        let data = "aaa1111AA";
-        let version = Version::Normal(1);
-        let segs = compute_optimal_segments(data.as_bytes(), version);
-        let seg_1 = Segment::new(Mode::Byte, data[..3].as_bytes());
-        let seg_2 = Segment::new(Mode::Alphanumeric, data[3..].as_bytes());
-        assert_eq!(segs.len(), 2);
-        assert_eq!(segs[0], seg_1);
-        assert_eq!(segs[1], seg_2);
-    }
-
-    #[test]
-    fn test_compute_optimal_segments_10() {
-        let data = "aaa1111111AA";
-        let version = Version::Normal(1);
-        let segs = compute_optimal_segments(data.as_bytes(), version);
-        let seg_1 = Segment::new(Mode::Byte, data[..3].as_bytes());
-        let seg_2 = Segment::new(Mode::Numeric, data[3..10].as_bytes());
-        let seg_3 = Segment::new(Mode::Alphanumeric, data[10..].as_bytes());
-        assert_eq!(segs.len(), 3);
-        assert_eq!(segs[0], seg_1);
-        assert_eq!(segs[1], seg_2);
-        assert_eq!(segs[2], seg_3);
-    }
-
-    #[test]
-    fn test_compute_optimal_segments_11() {
-        let data = "A11111111111111".repeat(23) + "A";
-        let version = Version::Normal(10);
-        let segs = compute_optimal_segments(data.as_bytes(), version);
-        let seg_1 = Segment::new(Mode::Alphanumeric, data[..].as_bytes());
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0], seg_1);
-    }
-
-    #[test]
-    fn test_compute_optimal_segments_12() {
         let data = "A11111111111111".repeat(23);
         let version = Version::Normal(9);
         let segs = compute_optimal_segments(data.as_bytes(), version);
@@ -1114,66 +1040,21 @@ mod encode_tests {
         }
     }
 
-    #[test]
-    fn test_compute_optimal_segments_13() {
-        let data = "Golden ratio φ = 1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072072041893911374......";
-        let version = Version::Normal(9);
-        let segs = compute_optimal_segments(data.as_bytes(), version);
-        assert_eq!(segs.len(), 3);
-        let seg_1 = Segment::new(Mode::Byte, data[..20].as_bytes());
-        let seg_2 = Segment::new(Mode::Numeric, data[20..120].as_bytes());
-        let seg_3 = Segment::new(Mode::Alphanumeric, data[120..126].as_bytes());
-        assert_eq!(segs[0], seg_1);
-        assert_eq!(segs[1], seg_2);
-        assert_eq!(segs[2], seg_3);
-    }
-
-    #[test]
-    fn test_find_optimal_version_and_segments_1() {
-        let data = "aaaaa11111AAA";
-        let ec_level = ECLevel::L;
-        let (version, _) = find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
-        assert_eq!(version, Version::Normal(1));
-    }
-
-    #[test]
-    fn test_find_optimal_version_and_segments_2() {
-        let data = "A11111111111111".repeat(2);
-        let ec_level = ECLevel::L;
-        let (version, _) = find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
-        assert_eq!(version, Version::Normal(2));
-    }
-
-    #[test]
-    fn test_find_optimal_version_and_segments_3() {
-        let data = "A11111111111111".repeat(4);
-        let ec_level = ECLevel::L;
-        let (version, _) = find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
-        assert_eq!(version, Version::Normal(3));
-    }
-
-    #[test]
-    fn test_find_optimal_version_and_segments_4() {
-        let data = "aAAAAAAAAAAA".repeat(5) + "a";
-        let ec_level = ECLevel::L;
-        let (version, _) = find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
-        assert_eq!(version, Version::Normal(4));
-    }
-
-    #[test]
-    fn test_find_optimal_version_and_segments_5() {
-        let data = "aAAAAAAAAAAA".repeat(21) + "a";
-        let ec_level = ECLevel::L;
-        let (version, _) = find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
-        assert_eq!(version, Version::Normal(10));
-    }
-
-    #[test]
-    fn test_find_optimal_version_and_segments_max_capacity() {
-        let data = "a".repeat(2953);
-        let ec_level = ECLevel::L;
-        let (version, _) = find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
-        assert_eq!(version, Version::Normal(40));
+    #[test_case("aaaaa11111AAA".to_string(), Version::Normal(1), ECLevel::L, Palette::Mono)]
+    #[test_case("A11111111111111".repeat(2).to_string(), Version::Normal(2), ECLevel::L, Palette::Mono)]
+    #[test_case("A11111111111111".repeat(4).to_string(), Version::Normal(3), ECLevel::L, Palette::Mono)]
+    #[test_case("aAAAAAAAAAAA".repeat(5).to_string(), Version::Normal(4), ECLevel::L, Palette::Mono)]
+    #[test_case("aAAAAAAAAAAA".repeat(21).to_string(), Version::Normal(10), ECLevel::L, Palette::Mono)]
+    #[test_case("a".repeat(2953).to_string(), Version::Normal(40), ECLevel::L, Palette::Mono)]
+    fn test_find_optimal_version_and_segments(
+        data: String,
+        exp_version: Version,
+        ec_level: ECLevel,
+        palette: Palette,
+    ) {
+        let (version, _) =
+            find_optimal_version_and_segments(data.as_bytes(), ec_level, palette).unwrap();
+        assert_eq!(version, exp_version);
     }
 
     #[test]
@@ -1181,7 +1062,8 @@ mod encode_tests {
     fn test_find_optimal_version_and_segments_panic() {
         let data = "a".repeat(2954);
         let ec_level = ECLevel::L;
-        find_optimal_version_and_segments(data.as_bytes(), ec_level).unwrap();
+        let palette = Palette::Mono;
+        find_optimal_version_and_segments(data.as_bytes(), ec_level, palette).unwrap();
     }
 }
 
@@ -1288,7 +1170,7 @@ impl EncodedBlob {
 mod encoded_blob_decode_tests {
     use crate::{
         codec::{encode_with_version, EncodedBlob, Mode},
-        metadata::{ECLevel, Version},
+        metadata::{ECLevel, Palette, Version},
     };
 
     #[test]
@@ -1392,7 +1274,10 @@ mod encoded_blob_decode_tests {
     fn test_take_numeric_data() {
         let data = "12345".as_bytes();
         let version = Version::Normal(1);
-        let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
+        let ec_level = ECLevel::L;
+        let palette = Palette::Mono;
+        let (encoded_data, len, version) =
+            encode_with_version(data, ec_level, version, palette).unwrap();
         let mut eb = EncodedBlob::from_data(encoded_data, version);
         eb.take_header().unwrap();
         let numeric_data = eb.take_numeric_data(3);
@@ -1400,7 +1285,8 @@ mod encoded_blob_decode_tests {
         let numeric_data = eb.take_numeric_data(2);
         assert_eq!(numeric_data, "45".as_bytes().to_vec());
         let data = "6".as_bytes();
-        let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
+        let (encoded_data, len, version) =
+            encode_with_version(data, ECLevel::L, version, palette).unwrap();
         let mut eb = EncodedBlob::from_data(encoded_data, version);
         eb.take_header().unwrap();
         let numeric_data = eb.take_numeric_data(1);
@@ -1411,7 +1297,10 @@ mod encoded_blob_decode_tests {
     fn test_take_alphanumeric_data() {
         let data = "AC-".as_bytes();
         let version = Version::Normal(1);
-        let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
+        let ec_level = ECLevel::L;
+        let palette = Palette::Mono;
+        let (encoded_data, len, version) =
+            encode_with_version(data, ec_level, version, palette).unwrap();
         let mut eb = EncodedBlob::from_data(encoded_data, version);
         eb.take_header().unwrap();
         let alphanumeric_data = eb.take_alphanumeric_data(2);
@@ -1419,7 +1308,8 @@ mod encoded_blob_decode_tests {
         let alphanumeric_data = eb.take_alphanumeric_data(1);
         assert_eq!(alphanumeric_data, "-".as_bytes().to_vec());
         let data = "%".as_bytes();
-        let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
+        let (encoded_data, len, version) =
+            encode_with_version(data, ECLevel::L, version, palette).unwrap();
         let mut eb = EncodedBlob::from_data(encoded_data, version);
         eb.take_header().unwrap();
         let alphanumeric_data = eb.take_alphanumeric_data(1);
@@ -1430,7 +1320,10 @@ mod encoded_blob_decode_tests {
     fn test_take_byte_data() {
         let data = "abc".as_bytes();
         let version = Version::Normal(1);
-        let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
+        let ec_level = ECLevel::L;
+        let palette = Palette::Mono;
+        let (encoded_data, len, version) =
+            encode_with_version(data, ec_level, version, palette).unwrap();
         let mut eb = EncodedBlob::from_data(encoded_data, version);
         eb.take_header().unwrap();
         let byte_data = eb.take_byte_data(2);
@@ -1443,7 +1336,10 @@ mod encoded_blob_decode_tests {
     fn test_take_segment() {
         let data = "abcABCDEF1234567890123ABCDEFabc".as_bytes();
         let version = Version::Normal(2);
-        let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
+        let ec_level = ECLevel::L;
+        let palette = Palette::Mono;
+        let (encoded_data, len, version) =
+            encode_with_version(data, ec_level, version, palette).unwrap();
         let mut eb = EncodedBlob::from_data(encoded_data, version);
         let seg_data = eb.take_segment().unwrap();
         assert_eq!(seg_data, "abc".as_bytes().to_vec());
@@ -1475,14 +1371,17 @@ mod decode_tests {
     use super::decode;
     use crate::{
         codec::encode_with_version,
-        metadata::{ECLevel, Version},
+        metadata::{ECLevel, Palette, Version},
     };
 
     #[test]
     fn test_decode() {
         let data = "abcABCDEF1234567890123ABCDEFabc".as_bytes();
         let version = Version::Normal(2);
-        let (encoded_data, len, version) = encode_with_version(data, ECLevel::L, version).unwrap();
+        let ec_level = ECLevel::L;
+        let palette = Palette::Mono;
+        let (encoded_data, len, version) =
+            encode_with_version(data, ec_level, version, palette).unwrap();
         let decoded_data = decode(&encoded_data, version);
         assert_eq!(decoded_data, data);
     }

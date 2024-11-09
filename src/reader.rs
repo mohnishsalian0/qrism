@@ -5,7 +5,7 @@ use crate::{
     deqr::DeQR,
     ec::rectify,
     error::{QRError, QRResult},
-    metadata::Version,
+    metadata::{Palette, Version},
 };
 
 pub struct QRReader();
@@ -38,7 +38,8 @@ impl QRReader {
         println!("Extracting payload...");
         let payload = deqr.extract_payload(version);
 
-        let data_size = version.bit_capacity(ec_level) >> 3;
+        // TODO: Dynamically identify and enter palette type
+        let data_size = version.bit_capacity(ec_level, Palette::Mono) >> 3;
         let block_info = version.data_codewords_per_block(ec_level);
         let total_blocks = block_info.1 + block_info.3;
         let epb = version.ecc_per_block(ec_level);

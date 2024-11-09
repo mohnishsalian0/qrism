@@ -19,7 +19,7 @@ pub struct QRBuilder<'a> {
 
 impl<'a> QRBuilder<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Self { data, version: None, ec_level: ECLevel::M, palette: Palette::Monochrome, mask: None }
+        Self { data, version: None, ec_level: ECLevel::M, palette: Palette::Mono, mask: None }
     }
 
     pub fn data(&mut self, data: &'a [u8]) -> &mut Self {
@@ -76,12 +76,12 @@ mod qrbuilder_util_tests {
         let data = "Hello, world!".as_bytes();
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
-        let palette = Palette::Monochrome;
+        let palette = Palette::Mono;
         let mut qr_builder = QRBuilder::new(data);
         qr_builder.version(version).ec_level(ec_level).palette(palette);
-        assert_eq!(qr_builder.metadata(), "{ Version: 1, Ec level: L, Palette: Monochrome }");
+        assert_eq!(qr_builder.metadata(), "{ Version: 1, Ec level: L, Palette: Mono }");
         qr_builder.unset_version();
-        assert_eq!(qr_builder.metadata(), "{ Version: None, Ec level: L, Palette: Monochrome }");
+        assert_eq!(qr_builder.metadata(), "{ Version: None, Ec level: L, Palette: Mono }");
     }
 }
 
@@ -97,11 +97,11 @@ impl<'a> QRBuilder<'a> {
         // Encode data optimally
         println!("Encoding data...");
         let (encoded_data, encoded_len, version) = match self.version {
-            Some(v) => encode_with_version(self.data, self.ec_level, v)?,
-            None => encode(self.data, self.ec_level)?,
+            Some(v) => encode_with_version(self.data, self.ec_level, v, self.palette)?,
+            None => encode(self.data, self.ec_level, self.palette)?,
         };
 
-        let version_capacity = version.bit_capacity(self.ec_level) >> 3;
+        let version_capacity = version.bit_capacity(self.ec_level, self.palette) >> 3;
         let err_corr_cap = error_correction_capacity(version, self.ec_level);
 
         // Compute error correction codewords
