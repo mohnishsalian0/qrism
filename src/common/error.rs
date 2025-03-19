@@ -1,0 +1,57 @@
+use std::fmt::{Debug, Display, Error, Formatter};
+
+// Error
+//------------------------------------------------------------------------------
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub enum QRError {
+    // QR builder
+    EmptyData,
+    DataTooLong,
+    CapacityOverflow,
+    InvalidVersion,
+    InvalidECLevel,
+    InvalidPalette,
+    InvalidColor,
+    InvalidChar,
+    InvalidMaskingPattern,
+
+    // QR reader
+    ErrorDetected([u8; 64]),
+    InvalidInfo,
+    InvalidFormatInfo,
+    InvalidVersionInfo,
+    FinderMismatch,
+    TimingMismatch,
+    AlignmentMismatch,
+    InvalidUTF8Sequence,
+}
+
+impl Display for QRError {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        let msg = match *self {
+            Self::EmptyData => "Empty data",
+            Self::DataTooLong => "Data too long",
+            Self::CapacityOverflow => "Capacity overflow",
+            Self::InvalidVersion => "Invalid version",
+            Self::InvalidECLevel => "Invalid error correction level",
+            Self::InvalidPalette => "Invalid color palette",
+            Self::InvalidColor => "Invalid color",
+            Self::InvalidChar => "Invalid character",
+            Self::InvalidMaskingPattern => "Invalid masking pattern",
+            Self::ErrorDetected(_) => "Error detected in data",
+            Self::InvalidInfo => "Invalid info",
+            Self::InvalidFormatInfo => "Invalid format info detected",
+            Self::InvalidVersionInfo => "Invalid version info detected",
+            Self::FinderMismatch => "Finder color mismatch",
+            Self::TimingMismatch => "Timing color mismatch",
+            Self::AlignmentMismatch => "Alignment color mismatch",
+            Self::InvalidUTF8Sequence => "Invalid UTF8 sequence",
+        };
+        f.write_str(msg)
+    }
+}
+
+impl std::error::Error for QRError {}
+
+pub type QRResult<T> = Result<T, QRError>;
