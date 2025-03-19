@@ -3,29 +3,18 @@
 
 use std::error::Error;
 
-use builder::QRBuilder;
-use metadata::{ECLevel, Version};
-use reader::QRReader;
-
-mod builder;
-mod codec;
-mod deqr;
-mod ec;
-mod error;
-mod iter;
-pub mod mask;
-pub mod metadata;
-pub mod qr;
-mod reader;
+use qr_pro_max::reader::QRReader;
+use qr_pro_max::QRBuilder;
+use qr_pro_max::{ECLevel, Version};
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let data = "Hello, world! 🌎";
+    let data = "Hello, world!";
     let version = Version::Normal(3);
-    let ec_level = ECLevel::H;
+    let ec_level = ECLevel::L;
 
     let qr = QRBuilder::new(data.as_bytes())
         .version(Version::Normal(3))
-        .ec_level(ECLevel::H)
+        .ec_level(ECLevel::L)
         .build()
         .unwrap()
         .to_str(1);
