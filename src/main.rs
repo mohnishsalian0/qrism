@@ -1,6 +1,3 @@
-// TODO: Remember to remove unused_variables & dead_code
-#![allow(clippy::items_after_test_module, unused_variables, dead_code, mixed_script_confusables)]
-
 use std::error::Error;
 
 use qr_pro_max::reader::QRReader;

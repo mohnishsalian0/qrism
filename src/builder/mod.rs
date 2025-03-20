@@ -6,7 +6,7 @@ use std::ops::Deref;
 
 use crate::common::{
     codec::{encode, encode_with_version},
-    ec::{ecc, error_correction_capacity},
+    ec::ecc,
     error::{QRError, QRResult},
     mask::{apply_best_mask, MaskPattern},
     metadata::{ECLevel, Palette, Version},
@@ -105,11 +105,11 @@ impl QRBuilder<'_> {
         };
 
         let version_capacity = version.bit_capacity(self.ec_level, self.palette) >> 3;
-        let err_corr_cap = error_correction_capacity(version, self.ec_level);
+        let err_corr_cap = Self::error_correction_capacity(version, self.ec_level);
 
         // Compute error correction codewords
         println!("Computing ecc...");
-        let (data_blocks, ecc_blocks) = ecc(&encoded_data, version, self.ec_level);
+        let (data_blocks, ecc_blocks) = Self::compute_ecc(&encoded_data, version, self.ec_level);
 
         // Interleave data and error correction codewords
         println!("Interleaving and chaining data & ecc...");
@@ -163,6 +163,55 @@ impl QRBuilder<'_> {
         Ok(qr)
     }
 
+    // ECC: Error Correction Codeword generator
+    fn compute_ecc(data: &[u8], version: Version, ec_level: ECLevel) -> (Vec<&[u8]>, Vec<Vec<u8>>) {
+        let data_blocks = Self::blockify(data, version, ec_level);
+
+        let ecc_size_per_block = version.ecc_per_block(ec_level);
+        let ecc_blocks = data_blocks.iter().map(|b| ecc(b, ecc_size_per_block)).collect::<Vec<_>>();
+
+        (data_blocks, ecc_blocks)
+    }
+
+    fn blockify(data: &[u8], version: Version, ec_level: ECLevel) -> Vec<&[u8]> {
+        let (block1_size, block1_count, block2_size, block2_count) =
+            version.data_codewords_per_block(ec_level);
+
+        let total_blocks = block1_count + block2_count;
+        let total_block1_size = block1_size * block1_count;
+        let total_size = total_block1_size + block2_size * block2_count;
+
+        debug_assert!(
+            total_size == data.len(),
+            "Data len doesn't match total size of blocks: Data len {}, Total block size {}",
+            data.len(),
+            total_size
+        );
+
+        let mut data_blocks = Vec::with_capacity(total_blocks);
+        data_blocks.extend(data[..total_block1_size].chunks(block1_size));
+        if block2_size > 0 {
+            data_blocks.extend(data[total_block1_size..].chunks(block2_size));
+        }
+        data_blocks
+    }
+
+    pub fn error_correction_capacity(version: Version, ec_level: ECLevel) -> usize {
+        let p = match (version, ec_level) {
+            (Version::Micro(2) | Version::Normal(1), ECLevel::L) => 3,
+            (Version::Micro(_) | Version::Normal(2), ECLevel::L)
+            | (Version::Micro(2) | Version::Normal(1), ECLevel::M) => 2,
+            (Version::Normal(1), _) | (Version::Normal(3), ECLevel::L) => 1,
+            _ => 0,
+        };
+
+        let ec_bytes_per_block = version.ecc_per_block(ec_level);
+        let (_, count1, _, count2) = version.data_codewords_per_block(ec_level);
+        let ec_bytes = (count1 + count2) * ec_bytes_per_block;
+
+        (ec_bytes - p) / 2
+    }
+
     pub fn interleave<T: Copy, V: Deref<Target = [T]>>(blocks: &[V]) -> Vec<T> {
         let max_block_size = blocks.iter().map(|b| b.len()).max().expect("Blocks is empty");
         let total_size = blocks.iter().map(|b| b.len()).sum::<usize>();
@@ -184,6 +233,30 @@ mod builder_tests {
 
     use super::QRBuilder;
     use crate::common::{ECLevel, Version};
+
+    // TODO: assert data blocks as well
+    #[test]
+    fn test_add_ec_simple() {
+        let msg = b" [\x0bx\xd1r\xdcMC@\xec\x11\xec\x11\xec\x11";
+        let expected_ecc = [b"\xc4\x23\x27\x77\xeb\xd7\xe7\xe2\x5d\x17"];
+        let (_, ecc) = QRBuilder::compute_ecc(msg, Version::Normal(1), ECLevel::M);
+        assert_eq!(&*ecc, expected_ecc);
+    }
+
+    #[test]
+    fn test_add_ec_complex() {
+        let msg = b"CUF\x86W&U\xc2w2\x06\x12\x06g&\xf6\xf6B\x07v\x86\xf2\x07&V\x16\xc6\xc7\x92\x06\
+                    \xb6\xe6\xf7w2\x07v\x86W&R\x06\x86\x972\x07F\xf7vV\xc2\x06\x972\x10\xec\x11\xec\
+                    \x11\xec\x11\xec";
+        let expected_ec = [
+            b"\xd5\xc7\x0b\x2d\x73\xf7\xf1\xdf\xe5\xf8\x9a\x75\x9a\x6f\x56\xa1\x6f\x27",
+            b"\x57\xcc\x60\x3c\xca\xb6\x7c\x9d\xc8\x86\x1b\x81\xd1\x11\xa3\xa3\x78\x85",
+            b"\x94\x74\xb1\xd4\x4c\x85\x4b\xf2\xee\x4c\xc3\xe6\xbd\x0a\x6c\xf0\xc0\x8d",
+            b"\xeb\x9f\x05\xad\x18\x93\x3b\x21\x6a\x28\xff\xac\x52\x02\x83\x20\xb2\xec",
+        ];
+        let (_, ecc) = QRBuilder::compute_ecc(msg, Version::Normal(5), ECLevel::Q);
+        assert_eq!(&*ecc, &expected_ec[..]);
+    }
 
     #[test]
     fn test_interleave() {
