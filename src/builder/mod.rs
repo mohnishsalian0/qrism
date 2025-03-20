@@ -107,14 +107,20 @@ impl QRBuilder<'_> {
         let version_capacity = version.bit_capacity(self.ec_level, self.palette) >> 3;
         let err_corr_cap = Self::error_correction_capacity(version, self.ec_level);
 
-        // Compute error correction codewords
-        println!("Computing ecc...");
-        let (data_blocks, ecc_blocks) = Self::compute_ecc(&encoded_data, version, self.ec_level);
+        println!("Constructing payload with ecc & interleaving...");
+        let mut payload: Vec<u8> = Vec::with_capacity(encoded_data.len());
+        let mut chunk_size = encoded_data.len();
+        if matches!(self.palette, Palette::Poly) {
+            chunk_size /= 3;
+        }
+        encoded_data.chunks_exact(chunk_size).for_each(|c| {
+            // Compute error correction codewords
+            let (data_blocks, ecc_blocks) = Self::compute_ecc(c, version, self.ec_level);
 
-        // Interleave data and error correction codewords
-        println!("Interleaving and chaining data & ecc...");
-        let mut payload = Self::interleave(&data_blocks);
-        payload.extend(Self::interleave(&ecc_blocks));
+            // Interleave data & error correction codewords, and store in payload
+            payload.extend(Self::interleave(&data_blocks));
+            payload.extend(Self::interleave(&ecc_blocks));
+        });
 
         // Construct QR
         println!("Constructing QR...");
@@ -173,7 +179,7 @@ impl QRBuilder<'_> {
         (data_blocks, ecc_blocks)
     }
 
-    fn blockify(data: &[u8], version: Version, ec_level: ECLevel) -> Vec<&[u8]> {
+    pub(crate) fn blockify(data: &[u8], version: Version, ec_level: ECLevel) -> Vec<&[u8]> {
         let (block1_size, block1_count, block2_size, block2_count) =
             version.data_codewords_per_block(ec_level);
 

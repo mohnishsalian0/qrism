@@ -318,7 +318,7 @@ impl Palette {
 pub enum Color {
     Light,
     Dark,
-    Hue(u32),
+    Hue(u8, u8, u8),
 }
 
 // TODO: Figure out how to handle hue
@@ -328,7 +328,7 @@ impl Not for Color {
         match self {
             Self::Light => Self::Dark,
             Self::Dark => Self::Light,
-            Self::Hue(h) => Self::Hue(!h),
+            Self::Hue(r, g, b) => Self::Hue(!r, !g, !b),
         }
     }
 }
@@ -338,7 +338,7 @@ impl From<Color> for u8 {
         match value {
             Color::Light => 0,
             Color::Dark => 1,
-            Color::Hue(_) => unreachable!("Trying to cast hue to u8"),
+            Color::Hue(..) => unreachable!("Trying to cast hue to u8"),
         }
     }
 }
@@ -348,7 +348,7 @@ impl From<Color> for u32 {
         match value {
             Color::Light => 0,
             Color::Dark => 1,
-            Color::Hue(h) => h,
+            Color::Hue(r, g, b) => ((r as u32) << 16) | ((g as u32) << 8) | (b as u32),
         }
     }
 }
@@ -359,7 +359,7 @@ impl Color {
         match self {
             Self::Light => light,
             Self::Dark => dark,
-            Self::Hue(_) => todo!(),
+            Self::Hue(..) => todo!(),
         }
     }
 }

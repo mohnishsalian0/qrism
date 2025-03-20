@@ -1,6 +1,6 @@
 use super::{
     error::{QRError, QRResult},
-    metadata::{ECLevel, Palette, Version},
+    // metadata::{ECLevel, Palette, Version},
 };
 use std::{
     cmp::{min, Ordering},

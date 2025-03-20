@@ -91,10 +91,7 @@ mod reader_tests {
 
     use super::QRReader;
     use crate::builder::QRBuilder;
-    use crate::common::{
-        ec::blockify,
-        metadata::{ECLevel, Version},
-    };
+    use crate::common::metadata::{ECLevel, Version};
 
     #[test]
     fn test_deinterleave() {
@@ -103,7 +100,7 @@ mod reader_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
 
-        let data_blocks = blockify(data, version, ec_level);
+        let data_blocks = QRBuilder::blockify(data, version, ec_level);
 
         let interleaved = QRBuilder::interleave(&data_blocks);
 

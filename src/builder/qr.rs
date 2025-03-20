@@ -1,6 +1,6 @@
+use image::{GrayImage, Luma, Rgb, RgbImage};
+use itertools::izip;
 use std::ops::Deref;
-
-use image::{GrayImage, Luma};
 
 use crate::common::{
     iter::EncRegionIter,
@@ -106,15 +106,15 @@ impl QR {
                 let c = match self.get(i, j) {
                     Module::Empty => '.',
                     Module::Func(Color::Dark) => 'f',
-                    Module::Func(Color::Light | Color::Hue(_)) => 'F',
+                    Module::Func(Color::Light | Color::Hue(..)) => 'F',
                     Module::Version(Color::Dark) => 'v',
-                    Module::Version(Color::Light | Color::Hue(_)) => 'V',
+                    Module::Version(Color::Light | Color::Hue(..)) => 'V',
                     Module::Format(Color::Dark) => 'm',
-                    Module::Format(Color::Light | Color::Hue(_)) => 'M',
+                    Module::Format(Color::Light | Color::Hue(..)) => 'M',
                     Module::Palette(Color::Dark) => 'p',
-                    Module::Palette(Color::Light | Color::Hue(_)) => 'P',
+                    Module::Palette(Color::Light | Color::Hue(..)) => 'P',
                     Module::Data(Color::Dark) => 'd',
-                    Module::Data(Color::Light | Color::Hue(_)) => 'D',
+                    Module::Data(Color::Light | Color::Hue(..)) => 'D',
                 };
                 res.push(c);
             }
@@ -829,7 +829,10 @@ impl QR {
 
     fn draw_payload(&mut self, payload: &[u8]) {
         let mut coords = EncRegionIter::new(self.version);
-        self.draw_codewords(payload, &mut coords);
+        match self.palette {
+            Palette::Mono => self.draw_codewords(payload, &mut coords),
+            Palette::Poly => self.draw_color_codewords(payload, &mut coords),
+        }
         self.fill_remainder_bits(&mut coords);
     }
 
@@ -838,6 +841,29 @@ impl QR {
             for i in (0..8).rev() {
                 let bit = (codeword >> i) & 1;
                 let module = Module::Data(if bit & 1 == 0 { Color::Light } else { Color::Dark });
+                for (r, c) in coords.by_ref() {
+                    if matches!(self.get(r, c), Module::Empty) {
+                        self.set(r, c, module);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    fn draw_color_codewords(&mut self, codewords: &[u8], coords: &mut EncRegionIter) {
+        let chunk_size = codewords.len() / 3;
+        let (red_data, green_data, blue_data) = (
+            &codewords[..chunk_size],
+            &codewords[chunk_size..2 * chunk_size],
+            &codewords[2 * chunk_size..],
+        );
+        for (rc, gc, bc) in izip!(red_data.iter(), green_data.iter(), blue_data.iter()) {
+            for i in (0..8).rev() {
+                let rb = (1 - ((rc >> i) & 1)) * 255;
+                let gb = (1 - ((gc >> i) & 1)) * 255;
+                let bb = (1 - ((bc >> i) & 1)) * 255;
+                let module = Module::Data(Color::Hue(rb, gb, bb));
                 for (r, c) in coords.by_ref() {
                     if matches!(self.get(r, c), Module::Empty) {
                         self.set(r, c, module);
@@ -882,6 +908,7 @@ impl QR {
 
 // TODO: Write testcases
 impl QR {
+    // TODO: Merge render gray and poly if possible and improve the functions
     pub fn render(&self, module_size: u32) -> GrayImage {
         let qz_size = if let Version::Normal(_) = self.version { 4 } else { 2 } * module_size;
         let qr_size = self.width as u32 * module_size;
@@ -909,7 +936,44 @@ impl QR {
                 let pixel = match color {
                     Color::Dark => Luma([0]),
                     Color::Light => Luma([255]),
-                    Color::Hue(_) => todo!(),
+                    Color::Hue(..) => todo!(),
+                };
+
+                canvas.put_pixel(j, i, pixel);
+            }
+        }
+
+        canvas
+    }
+
+    pub fn render_color(&self, module_size: u32) -> RgbImage {
+        let qz_size = if let Version::Normal(_) = self.version { 4 } else { 2 } * module_size;
+        let qr_size = self.width as u32 * module_size;
+        let total_size = qz_size + qr_size + qz_size;
+
+        let mut canvas = RgbImage::new(total_size, total_size);
+        for i in 0..total_size {
+            for j in 0..total_size {
+                if i < qz_size || i >= qz_size + qr_size || j < qz_size || j >= qz_size + qr_size {
+                    canvas.put_pixel(j, i, Rgb([255, 255, 255]));
+                    continue;
+                }
+                let r = (i - qz_size) / module_size;
+                let c = (j - qz_size) / module_size;
+
+                let color = match self.get(r as i16, c as i16) {
+                    Module::Func(c)
+                    | Module::Format(c)
+                    | Module::Version(c)
+                    | Module::Palette(c)
+                    | Module::Data(c) => c,
+                    Module::Empty => panic!("Empty module found at: {r} {c}"),
+                };
+
+                let pixel = match color {
+                    Color::Dark => Rgb([0, 0, 0]),
+                    Color::Light => Rgb([255, 255, 255]),
+                    Color::Hue(r, g, b) => Rgb([r, g, b]),
                 };
 
                 canvas.put_pixel(j, i, pixel);
