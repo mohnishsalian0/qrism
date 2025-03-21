@@ -98,7 +98,7 @@ impl Version {
         }
     }
 
-    pub fn char_count_bit_len(&self, mode: Mode) -> usize {
+    pub fn char_count_bits(&self, mode: Mode) -> usize {
         debug_assert!(
             matches!(self, Version::Micro(1..=4) | Version::Normal(1..=40)),
             "Invalid version"
@@ -230,43 +230,43 @@ mod version_tests {
     }
 
     #[test]
-    fn test_char_count_bit_len() {
-        assert_eq!(Normal(1).char_count_bit_len(Mode::Numeric), 10);
-        assert_eq!(Normal(9).char_count_bit_len(Mode::Numeric), 10);
-        assert_eq!(Normal(10).char_count_bit_len(Mode::Numeric), 12);
-        assert_eq!(Normal(26).char_count_bit_len(Mode::Numeric), 12);
-        assert_eq!(Normal(27).char_count_bit_len(Mode::Numeric), 14);
-        assert_eq!(Normal(40).char_count_bit_len(Mode::Numeric), 14);
-        assert_eq!(Normal(1).char_count_bit_len(Mode::Alphanumeric), 9);
-        assert_eq!(Normal(9).char_count_bit_len(Mode::Alphanumeric), 9);
-        assert_eq!(Normal(10).char_count_bit_len(Mode::Alphanumeric), 11);
-        assert_eq!(Normal(26).char_count_bit_len(Mode::Alphanumeric), 11);
-        assert_eq!(Normal(27).char_count_bit_len(Mode::Alphanumeric), 13);
-        assert_eq!(Normal(40).char_count_bit_len(Mode::Alphanumeric), 13);
-        assert_eq!(Normal(1).char_count_bit_len(Mode::Byte), 8);
-        assert_eq!(Normal(9).char_count_bit_len(Mode::Byte), 8);
-        assert_eq!(Normal(10).char_count_bit_len(Mode::Byte), 16);
-        assert_eq!(Normal(26).char_count_bit_len(Mode::Byte), 16);
-        assert_eq!(Normal(27).char_count_bit_len(Mode::Byte), 16);
-        assert_eq!(Normal(40).char_count_bit_len(Mode::Byte), 16);
+    fn test_char_count_bits() {
+        assert_eq!(Normal(1).char_count_bits(Mode::Numeric), 10);
+        assert_eq!(Normal(9).char_count_bits(Mode::Numeric), 10);
+        assert_eq!(Normal(10).char_count_bits(Mode::Numeric), 12);
+        assert_eq!(Normal(26).char_count_bits(Mode::Numeric), 12);
+        assert_eq!(Normal(27).char_count_bits(Mode::Numeric), 14);
+        assert_eq!(Normal(40).char_count_bits(Mode::Numeric), 14);
+        assert_eq!(Normal(1).char_count_bits(Mode::Alphanumeric), 9);
+        assert_eq!(Normal(9).char_count_bits(Mode::Alphanumeric), 9);
+        assert_eq!(Normal(10).char_count_bits(Mode::Alphanumeric), 11);
+        assert_eq!(Normal(26).char_count_bits(Mode::Alphanumeric), 11);
+        assert_eq!(Normal(27).char_count_bits(Mode::Alphanumeric), 13);
+        assert_eq!(Normal(40).char_count_bits(Mode::Alphanumeric), 13);
+        assert_eq!(Normal(1).char_count_bits(Mode::Byte), 8);
+        assert_eq!(Normal(9).char_count_bits(Mode::Byte), 8);
+        assert_eq!(Normal(10).char_count_bits(Mode::Byte), 16);
+        assert_eq!(Normal(26).char_count_bits(Mode::Byte), 16);
+        assert_eq!(Normal(27).char_count_bits(Mode::Byte), 16);
+        assert_eq!(Normal(40).char_count_bits(Mode::Byte), 16);
     }
 
     #[test]
     #[should_panic]
-    fn test_char_count_bit_len_invalid_version_low() {
-        Normal(0).char_count_bit_len(Mode::Numeric);
+    fn test_char_count_bits_invalid_version_low() {
+        Normal(0).char_count_bits(Mode::Numeric);
     }
 
     #[test]
     #[should_panic]
-    fn test_char_count_bit_len_invalid_version_high() {
-        Normal(41).char_count_bit_len(Mode::Alphanumeric);
+    fn test_char_count_bits_invalid_version_high() {
+        Normal(41).char_count_bits(Mode::Alphanumeric);
     }
 
     #[test]
     #[should_panic]
-    fn test_char_count_bit_len_invalid_version_max() {
-        Normal(usize::MAX).char_count_bit_len(Mode::Alphanumeric);
+    fn test_char_count_bits_invalid_version_max() {
+        Normal(usize::MAX).char_count_bits(Mode::Alphanumeric);
     }
 }
 

@@ -1,6 +1,6 @@
 use super::{
     error::{QRError, QRResult},
-    // metadata::{ECLevel, Palette, Version},
+    metadata::{ECLevel, Palette, Version},
 };
 use std::{
     cmp::{min, Ordering},
@@ -345,7 +345,7 @@ impl<'a> Segment<'a> {
 
     pub fn bit_len(&self, version: Version) -> usize {
         let mode_len = version.mode_len();
-        let char_count_len = version.char_count_bit_len(self.mode);
+        let char_count_len = version.char_count_bits(self.mode);
         let encoded_len = self.mode.encoded_len(self.data.len());
         mode_len + char_count_len + encoded_len
     }
@@ -464,9 +464,9 @@ impl EncodedBlob {
 
     fn push_header(&mut self, mode: Mode, char_count: usize) {
         self.push_bits(4, mode as u16);
-        let char_count_bit_len = self.version.char_count_bit_len(mode);
-        debug_assert!(char_count < (1 << char_count_bit_len), "Char count exceeds bit length");
-        self.push_bits(char_count_bit_len, char_count as u16);
+        let char_count_bits = self.version.char_count_bits(mode);
+        debug_assert!(char_count < (1 << char_count_bits), "Char count exceeds bit length");
+        self.push_bits(char_count_bits, char_count as u16);
     }
 
     fn push_segment(&mut self, seg: Segment) {
@@ -890,7 +890,7 @@ fn compute_optimal_segments(data: &[u8], version: Version) -> Vec<Segment> {
     MODES
         .iter()
         .enumerate()
-        .for_each(|(i, &m)| prev_cost[i] = (4 + version.char_count_bit_len(m)) * 6);
+        .for_each(|(i, &m)| prev_cost[i] = (4 + version.char_count_bits(m)) * 6);
     let mut cur_cost: [usize; 3] = [usize::MAX; 3];
     let mut min_path: Vec<Vec<usize>> = vec![vec![usize::MAX; 3]; len];
     for (i, b) in data.iter().enumerate() {
@@ -910,7 +910,7 @@ fn compute_optimal_segments(data: &[u8], version: Version) -> Vec<Segment> {
                 let mut cost = 0;
                 if to_mode != from_mode {
                     cost += (prev_cost[k] + 5) / 6 * 6;
-                    cost += (4 + version.char_count_bit_len(*to_mode)) * 6;
+                    cost += (4 + version.char_count_bits(*to_mode)) * 6;
                 } else {
                     cost += prev_cost[k];
                 }
@@ -1092,8 +1092,8 @@ impl EncodedBlob {
             4 => Mode::Byte,
             _ => unreachable!("Invalid Mode: {mode_bits}"),
         };
-        let char_count_bit_len = self.version.char_count_bit_len(mode);
-        let char_count = self.take_bits(char_count_bit_len);
+        let char_count_bits = self.version.char_count_bits(mode);
+        let char_count = self.take_bits(char_count_bits);
         Some((mode, char_count.into()))
     }
 
