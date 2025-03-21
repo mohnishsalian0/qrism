@@ -1,6 +1,6 @@
 mod deqr;
 
-use image::GrayImage;
+use image::RgbImage;
 
 use crate::common::{
     codec::decode,
@@ -10,17 +10,29 @@ use crate::common::{
 };
 use deqr::DeQR;
 
+pub trait QRReadable {
+    fn to_deqr(&self, version: Version) -> DeQR;
+}
+
+impl QRReadable for String {
+    fn to_deqr(&self, version: Version) -> DeQR {
+        DeQR::from_str(self, version)
+    }
+}
+
+impl QRReadable for RgbImage {
+    fn to_deqr(&self, version: Version) -> DeQR {
+        DeQR::from_clr_img(self, version)
+    }
+}
+
 pub struct QRReader();
 
 impl QRReader {
-    pub fn read(_qr: GrayImage) -> String {
-        todo!()
-    }
-
     // TODO: Remove version
-    pub fn read_from_str(qr: &str, version: Version) -> QRResult<String> {
+    pub fn read<T: QRReadable>(qr: &T, version: Version) -> QRResult<String> {
         println!("Reading QR...");
-        let mut deqr = DeQR::from_str(qr, version);
+        let mut deqr = qr.to_deqr(version);
 
         println!("Reading format info...");
         let (ec_level, mask_pattern) = deqr.read_format_info()?;
@@ -40,26 +52,32 @@ impl QRReader {
         println!("Extracting payload...");
         let payload = deqr.extract_payload(version);
 
-        // TODO: Dynamically identify and enter palette type
         let data_size = version.bit_capacity(ec_level, Palette::Mono) >> 3;
         let block_info = version.data_codewords_per_block(ec_level);
         let total_blocks = block_info.1 + block_info.3;
         let epb = version.ecc_per_block(ec_level);
 
-        println!("Deinterleaving data and ecc...");
-        let data_blocks: Vec<Vec<u8>> = Self::deinterleave(&payload[..data_size], block_info);
-        let ecc_blocks: Vec<Vec<u8>> =
-            Self::deinterleave(&payload[data_size..], (epb, total_blocks, 0, 0));
+        // Extracting encoded data from payload
+        let mut encoded_data = Vec::with_capacity(payload.len());
+        let chunk_size = payload.len() / 3;
 
-        println!("Rectifying data...");
-        let data = rectify(&data_blocks, &ecc_blocks);
+        println!("Separating channels, deinterleaving & rectifying payload...");
+        payload.chunks_exact(chunk_size).for_each(|c| {
+            let data_blocks: Vec<Vec<u8>> = Self::deinterleave(&c[..data_size], block_info);
+            let ecc_blocks: Vec<Vec<u8>> =
+                Self::deinterleave(&c[data_size..], (epb, total_blocks, 0, 0));
+
+            let rectified_data = rectify(&data_blocks, &ecc_blocks);
+
+            encoded_data.extend(rectified_data);
+        });
 
         println!("Decoding data blocks...");
-        let data = decode(&data, version);
+        let message = decode(&encoded_data, version);
 
         println!("\n{}\n", deqr.metadata());
 
-        String::from_utf8(data).or(Err(QRError::InvalidUTF8Sequence))
+        String::from_utf8(message).or(Err(QRError::InvalidUTF8Sequence))
     }
 
     fn deinterleave(data: &[u8], block_info: (usize, usize, usize, usize)) -> Vec<Vec<u8>> {
@@ -137,7 +155,7 @@ mod reader_tests {
             .unwrap()
             .to_str(1);
 
-        let decoded_data = QRReader::read_from_str(&qr, version).unwrap();
+        let decoded_data = QRReader::read(&qr, version).unwrap();
 
         assert_eq!(decoded_data, data);
     }

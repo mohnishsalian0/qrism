@@ -852,11 +852,11 @@ impl QR {
     }
 
     fn draw_color_codewords(&mut self, codewords: &[u8], coords: &mut EncRegionIter) {
-        let chunk_size = codewords.len() / 3;
+        let chan_cap = codewords.len() / 3;
         let (red_data, green_data, blue_data) = (
-            &codewords[..chunk_size],
-            &codewords[chunk_size..2 * chunk_size],
-            &codewords[2 * chunk_size..],
+            &codewords[..chan_cap],
+            &codewords[chan_cap..2 * chan_cap],
+            &codewords[2 * chan_cap..],
         );
         for (rc, gc, bc) in izip!(red_data.iter(), green_data.iter(), blue_data.iter()) {
             for i in (0..8).rev() {
@@ -887,6 +887,7 @@ impl QR {
     }
 
     pub fn mask(&mut self, pattern: MaskPattern) {
+        self.mask_pattern = Some(pattern);
         let mask_function = pattern.mask_functions();
         let w = self.width as i16;
         for r in 0..w {

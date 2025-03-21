@@ -328,7 +328,7 @@ impl Not for Color {
         match self {
             Self::Light => Self::Dark,
             Self::Dark => Self::Light,
-            Self::Hue(r, g, b) => Self::Hue(!r, !g, !b),
+            Self::Hue(r, g, b) => Self::Hue(255 - r, 255 - g, 255 - b),
         }
     }
 }
@@ -348,7 +348,7 @@ impl From<Color> for u32 {
         match value {
             Color::Light => 0,
             Color::Dark => 1,
-            Color::Hue(r, g, b) => ((r as u32) << 16) | ((g as u32) << 8) | (b as u32),
+            Color::Hue(r, ..) => (r < 128) as u32,
         }
     }
 }

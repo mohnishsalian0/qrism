@@ -826,14 +826,15 @@ pub fn encode(
 ) -> QRResult<(Vec<u8>, usize, Version)> {
     let (version, segments) = find_optimal_version_and_segments(data, ec_level, palette)?;
     let bit_capacity = version.bit_capacity(ec_level, palette);
-    let mut encoded_blob = EncodedBlob::new(version, bit_capacity);
+    let mut eb = EncodedBlob::new(version, bit_capacity);
     for seg in segments {
-        encoded_blob.push_segment(seg);
+        eb.push_segment(seg);
     }
-    let encoded_len = (encoded_blob.bit_len() + 7) >> 3;
-    encoded_blob.push_terminator();
-    encoded_blob.pad_remaining_capacity();
-    Ok((encoded_blob.data, encoded_len, encoded_blob.version))
+    let encoded_len = (eb.bit_len() + 7) >> 3;
+
+    eb.push_terminator();
+    eb.pad_remaining_capacity();
+    Ok((eb.data, encoded_len, eb.version))
 }
 
 // TODO: Write testcases

@@ -1,6 +1,6 @@
 use std::ops::{Deref, Not};
 
-use image::{GrayImage, Luma};
+use image::{GrayImage, Luma, Rgb, RgbImage};
 
 use crate::common::{
     ec::rectify_info,
@@ -55,6 +55,53 @@ pub struct DeQR {
 }
 
 impl DeQR {
+    pub fn from_clr_img(qr: &RgbImage, version: Version) -> Self {
+        let qr_width = version.width();
+        let (w, h) = qr.dimensions();
+        let (w, h) = (w as i16, h as i16);
+        let qz_size = if let Version::Normal(_) = version { 4 } else { 2 };
+        let mod_width = w / (qr_width + 2 * qz_size) as i16;
+        let qz_width = qz_size as i16 * mod_width;
+
+        debug_assert!(w == h, "Image is not perfect square");
+        let img_width = w - 2 * qz_width;
+        debug_assert!(
+            img_width % qr_width as i16 == 0,
+            "Image width {img_width} is not a multiple of qr size {qr_width}"
+        );
+
+        let threshold = (mod_width * mod_width * 255 / 2) as u32;
+
+        let mut grid = vec![(0u32, 0u32, 0u32); qr_width * qr_width];
+        for (c, r, pixel) in qr.enumerate_pixels() {
+            let (r, c) = (r as i16, c as i16);
+            if r < qz_width || r >= w - qz_width || c < qz_width || c >= w - qz_width {
+                continue;
+            }
+            let index = Self::coord_to_index(
+                (r - qz_width) / mod_width,
+                (c - qz_width) / mod_width,
+                qr_width,
+            );
+            let Rgb([r, g, b]) = *pixel;
+            grid[index].0 += r as u32;
+            grid[index].1 += g as u32;
+            grid[index].2 += b as u32;
+        }
+
+        let grid = grid
+            .iter()
+            .map(|&m| {
+                let r = if m.0 < threshold { 0 } else { 255 };
+                let g = if m.1 < threshold { 0 } else { 255 };
+                let b = if m.2 < threshold { 0 } else { 255 };
+                DeModule::Unmarked(Color::Hue(r, g, b))
+            })
+            .collect();
+
+        Self { width: qr_width, grid, version, ec_level: None, palette: None, mask_pattern: None }
+    }
+
     pub fn from_image(qr: &GrayImage, version: Version) -> Self {
         let qr_width = version.width();
         let (w, h) = qr.dimensions();
@@ -126,7 +173,7 @@ impl DeQR {
             for j in 0..w {
                 let c = match self.get(i, j) {
                     DeModule::Unmarked(Color::Dark) => 'u',
-                    DeModule::Unmarked(Color::Light | Color::Hue(_)) => 'U',
+                    DeModule::Unmarked(Color::Light | Color::Hue(..)) => 'U',
                     DeModule::Marked => '.',
                 };
                 res.push(c);
@@ -915,22 +962,46 @@ impl DeQR {
 //------------------------------------------------------------------------------
 
 impl DeQR {
+    // TODO: Write testcases
     pub fn extract_payload(&mut self, version: Version) -> Vec<u8> {
-        let total_codewords = version.total_codewords();
-        let mut codewords = Vec::with_capacity(total_codewords);
-        let mut coords = EncRegionIter::new(version);
-        for _ in 0..total_codewords {
-            let mut codeword = 0;
+        let size = version.total_codewords();
+        let (r_off, g_off, b_off) = (0, size, 2 * size);
+        let mut payload = vec![0u8; size * 3];
+        let mut region_iter = EncRegionIter::new(version);
+
+        for i in 0..size {
+            let (mut r_byte, mut g_byte, mut b_byte) = (0u8, 0u8, 0u8);
+
             for _ in 0..8 {
-                for (r, c) in coords.by_ref() {
-                    if matches!(self.get(r, c), DeModule::Unmarked(_)) {
-                        codeword = (codeword << 1) | u8::from(*self.get(r, c));
+                for (r, c) in region_iter.by_ref() {
+                    if let DeModule::Unmarked(color) = self.get(r, c) {
+                        let (r, g, b) = match color {
+                            Color::Light => (0, 0, 0),
+                            Color::Dark => (1, 1, 1),
+                            Color::Hue(r, g, b) => {
+                                let r = if r == 255 { 0 } else { 1 };
+                                let g = if g == 255 { 0 } else { 1 };
+                                let b = if b == 255 { 0 } else { 1 };
+                                (r, g, b)
+                            }
+                        };
+                        r_byte = (r_byte << 1) | r;
+                        g_byte = (g_byte << 1) | g;
+                        b_byte = (b_byte << 1) | b;
                         break;
                     }
                 }
             }
-            codewords.push(codeword);
+
+            if i == 0 {
+                println!("RByte: {r_byte}");
+            }
+
+            payload[i + r_off] = r_byte;
+            payload[i + g_off] = g_byte;
+            payload[i + b_off] = b_byte;
         }
-        codewords
+
+        payload
     }
 }

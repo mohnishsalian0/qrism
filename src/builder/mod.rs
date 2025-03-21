@@ -104,16 +104,20 @@ impl QRBuilder<'_> {
             None => encode(self.data, self.ec_level, self.palette)?,
         };
 
-        let version_capacity = version.bit_capacity(self.ec_level, self.palette) >> 3;
+        let mut ver_cap = version.total_codewords();
+        if matches!(self.palette, Palette::Poly) {
+            ver_cap *= 3;
+        }
+        let data_cap = version.bit_capacity(self.ec_level, self.palette) >> 3;
         let err_corr_cap = Self::error_correction_capacity(version, self.ec_level);
 
         println!("Constructing payload with ecc & interleaving...");
-        let mut payload: Vec<u8> = Vec::with_capacity(encoded_data.len());
-        let mut chunk_size = encoded_data.len();
+        let mut payload: Vec<u8> = Vec::with_capacity(ver_cap);
+        let mut channel_cap = encoded_data.len();
         if matches!(self.palette, Palette::Poly) {
-            chunk_size /= 3;
+            channel_cap /= 3;
         }
-        encoded_data.chunks_exact(chunk_size).for_each(|c| {
+        encoded_data.chunks_exact(channel_cap).for_each(|c| {
             // Compute error correction codewords
             let (data_blocks, ecc_blocks) = Self::compute_ecc(c, version, self.ec_level);
 
@@ -152,7 +156,7 @@ impl QRBuilder<'_> {
 
         println!("Report:");
         println!("{}", qr.metadata());
-        println!("Data capacity: {}, Error Capacity: {}", version_capacity, err_corr_cap);
+        println!("Data capacity: {}, Error Capacity: {}", data_cap, err_corr_cap);
         println!(
             "Data size: {}, Encoded size: {}, Compression: {}%",
             data_len,
