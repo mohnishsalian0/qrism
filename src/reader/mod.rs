@@ -52,20 +52,20 @@ impl QRReader {
         println!("Extracting payload...");
         let payload = deqr.extract_payload(version);
 
-        let data_size = version.bit_capacity(ec_level, Palette::Mono) >> 3;
+        let data_len = version.data_bit_capacity(ec_level, Palette::Mono) >> 3;
         let block_info = version.data_codewords_per_block(ec_level);
         let total_blocks = block_info.1 + block_info.3;
         let epb = version.ecc_per_block(ec_level);
 
         // Extracting encoded data from payload
         let mut encoded_data = Vec::with_capacity(payload.len());
-        let chunk_size = payload.len() / 3;
+        let channel_capacity = version.channel_codewords();
 
         println!("Separating channels, deinterleaving & rectifying payload...");
-        payload.chunks_exact(chunk_size).for_each(|c| {
-            let data_blocks: Vec<Vec<u8>> = Self::deinterleave(&c[..data_size], block_info);
+        payload.chunks_exact(channel_capacity).for_each(|c| {
+            let data_blocks: Vec<Vec<u8>> = Self::deinterleave(&c[..data_len], block_info);
             let ecc_blocks: Vec<Vec<u8>> =
-                Self::deinterleave(&c[data_size..], (epb, total_blocks, 0, 0));
+                Self::deinterleave(&c[data_len..], (epb, total_blocks, 0, 0));
 
             let rectified_data = rectify(&data_blocks, &ecc_blocks);
 

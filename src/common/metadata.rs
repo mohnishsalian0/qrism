@@ -91,7 +91,7 @@ impl Version {
         }
     }
 
-    pub fn mode_len(self) -> usize {
+    pub fn mode_bits(self) -> usize {
         match self {
             Version::Micro(v) => v - 1,
             Version::Normal(_) => 4,
@@ -128,10 +128,10 @@ impl Version {
         }
     }
 
-    pub fn bit_capacity(self, ec_level: ECLevel, palette: Palette) -> usize {
+    pub fn data_bit_capacity(self, ec_level: ECLevel, palette: Palette) -> usize {
         let mut bc = match self {
-            Version::Micro(v) => VERSION_BIT_CAPACITY[39 + v][ec_level as usize],
-            Version::Normal(v) => VERSION_BIT_CAPACITY[v - 1][ec_level as usize],
+            Version::Micro(v) => VERSION_DATA_BIT_CAPACITY[39 + v][ec_level as usize],
+            Version::Normal(v) => VERSION_DATA_BIT_CAPACITY[v - 1][ec_level as usize],
         };
         if matches!(palette, Palette::Poly) {
             bc *= 3;
@@ -139,7 +139,26 @@ impl Version {
         bc
     }
 
-    pub fn total_codewords(self) -> usize {
+    pub fn total_codewords(self, palette: Palette) -> usize {
+        let mut tc = match self {
+            Version::Micro(v) => VERSION_TOTAL_CODEWORDS[39 + v],
+            Version::Normal(v) => VERSION_TOTAL_CODEWORDS[v - 1],
+        };
+        if matches!(palette, Palette::Poly) {
+            tc *= 3;
+        }
+        tc
+    }
+
+    pub fn channel_data_capacity(self, ec_level: ECLevel) -> usize {
+        let bc = match self {
+            Version::Micro(v) => VERSION_DATA_BIT_CAPACITY[39 + v][ec_level as usize],
+            Version::Normal(v) => VERSION_DATA_BIT_CAPACITY[v - 1][ec_level as usize],
+        };
+        bc >> 3
+    }
+
+    pub fn channel_codewords(self) -> usize {
         match self {
             Version::Micro(v) => VERSION_TOTAL_CODEWORDS[39 + v],
             Version::Normal(v) => VERSION_TOTAL_CODEWORDS[v - 1],
@@ -425,7 +444,7 @@ static ALIGNMENT_PATTERN_POSITIONS: [&[i16]; 40] = [
 ];
 
 // Data bit capacity per error level per version
-static VERSION_BIT_CAPACITY: [[usize; 4]; 44] = [
+static VERSION_DATA_BIT_CAPACITY: [[usize; 4]; 44] = [
     [152, 128, 104, 72],
     [272, 224, 176, 128],
     [440, 352, 272, 208],

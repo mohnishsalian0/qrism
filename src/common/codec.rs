@@ -344,10 +344,10 @@ impl<'a> Segment<'a> {
     }
 
     pub fn bit_len(&self, version: Version) -> usize {
-        let mode_len = version.mode_len();
-        let char_count_len = version.char_count_bits(self.mode);
-        let encoded_len = self.mode.encoded_len(self.data.len());
-        mode_len + char_count_len + encoded_len
+        let mode_bits = version.mode_bits();
+        let char_count_bits = version.char_count_bits(self.mode);
+        let encoded_bits = self.mode.encoded_len(self.data.len());
+        mode_bits + char_count_bits + encoded_bits
     }
 }
 
@@ -583,7 +583,7 @@ mod encoded_blob_encode_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
         let palette = Palette::Mono;
-        let bit_capacity = version.bit_capacity(ec_level, palette);
+        let bit_capacity = version.data_bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         assert_eq!(eb.bit_len(), 0);
         eb.push_bits(0, 0);
@@ -603,7 +603,7 @@ mod encoded_blob_encode_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
         let palette = Palette::Mono;
-        let bit_capacity = version.bit_capacity(ec_level, palette);
+        let bit_capacity = version.data_bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_bits(0, 0);
         assert_eq!(eb.data, vec![]);
@@ -661,7 +661,7 @@ mod encoded_blob_encode_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
         let palette = Palette::Mono;
-        let bit_capacity = version.bit_capacity(ec_level, palette);
+        let bit_capacity = version.data_bit_capacity(ec_level, palette);
         let capacity = (bit_capacity + 7) >> 3;
         let mut eb = EncodedBlob::new(version, bit_capacity);
         for _ in 0..capacity {
@@ -675,7 +675,7 @@ mod encoded_blob_encode_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
         let palette = Palette::Mono;
-        let bit_capacity = version.bit_capacity(ec_level, palette);
+        let bit_capacity = version.data_bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_header(Mode::Numeric, 0b11_1111_1111);
         assert_eq!(eb.data, vec![0b00011111, 0b11111100]);
@@ -690,7 +690,7 @@ mod encoded_blob_encode_tests {
         let version = Version::Normal(10);
         let ec_level = ECLevel::L;
         let palette = Palette::Mono;
-        let bit_capacity = version.bit_capacity(ec_level, palette);
+        let bit_capacity = version.data_bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_header(Mode::Numeric, 0b1111_1111_1111);
         assert_eq!(eb.data, vec![0b00011111, 0b11111111]);
@@ -710,7 +710,7 @@ mod encoded_blob_encode_tests {
         let version = Version::Normal(27);
         let ec_level = ECLevel::L;
         let palette = Palette::Mono;
-        let bit_capacity = version.bit_capacity(ec_level, palette);
+        let bit_capacity = version.data_bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_header(Mode::Numeric, 0b11_1111_1111_1111);
         assert_eq!(eb.data, vec![0b00011111, 0b11111111, 0b11000000]);
@@ -730,7 +730,7 @@ mod encoded_blob_encode_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
         let palette = Palette::Mono;
-        let bit_capacity = version.bit_capacity(ec_level, palette);
+        let bit_capacity = version.data_bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_numeric_data("01234567".as_bytes());
         assert_eq!(
@@ -747,7 +747,7 @@ mod encoded_blob_encode_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
         let palette = Palette::Mono;
-        let bit_capacity = version.bit_capacity(ec_level, palette);
+        let bit_capacity = version.data_bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_alphanumeric_data("AC-42".as_bytes());
         assert_eq!(
@@ -761,7 +761,7 @@ mod encoded_blob_encode_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
         let palette = Palette::Mono;
-        let bit_capacity = version.bit_capacity(ec_level, palette);
+        let bit_capacity = version.data_bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_byte_data("a".as_bytes());
         assert_eq!(eb.data, vec![0b01000000, 0b00010110, 0b00010000])
@@ -772,7 +772,7 @@ mod encoded_blob_encode_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
         let palette = Palette::Mono;
-        let bit_capacity = version.bit_capacity(ec_level, palette);
+        let bit_capacity = version.data_bit_capacity(ec_level, palette);
         let capacity = (bit_capacity + 7) >> 3;
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_bits(1, 0b1);
@@ -791,7 +791,7 @@ mod encoded_blob_encode_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
         let palette = Palette::Mono;
-        let bit_capacity = version.bit_capacity(ec_level, palette);
+        let bit_capacity = version.data_bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_bits(1, 0b1);
         eb.push_padding_bits();
@@ -804,7 +804,7 @@ mod encoded_blob_encode_tests {
         let version = Version::Normal(1);
         let ec_level = ECLevel::L;
         let palette = Palette::Mono;
-        let bit_capacity = version.bit_capacity(ec_level, palette);
+        let bit_capacity = version.data_bit_capacity(ec_level, palette);
         let mut eb = EncodedBlob::new(version, bit_capacity);
         eb.push_bits(1, 0b1);
         eb.push_padding_bits();
@@ -825,7 +825,7 @@ pub fn encode(
     palette: Palette,
 ) -> QRResult<(Vec<u8>, usize, Version)> {
     let (version, segments) = find_optimal_version_and_segments(data, ec_level, palette)?;
-    let bit_capacity = version.bit_capacity(ec_level, palette);
+    let bit_capacity = version.data_bit_capacity(ec_level, palette);
     let mut eb = EncodedBlob::new(version, bit_capacity);
     for seg in segments {
         eb.push_segment(seg);
@@ -844,13 +844,13 @@ pub fn encode_with_version(
     version: Version,
     palette: Palette,
 ) -> QRResult<(Vec<u8>, usize, Version)> {
-    let capacity = version.bit_capacity(ec_level, palette);
+    let capacity = version.data_bit_capacity(ec_level, palette);
     let segments = compute_optimal_segments(data, version);
     let size: usize = segments.iter().map(|s| s.bit_len(version)).sum();
     if size > capacity {
         return Err(QRError::DataTooLong);
     }
-    let bit_capacity = version.bit_capacity(ec_level, palette);
+    let bit_capacity = version.data_bit_capacity(ec_level, palette);
     let mut eb = EncodedBlob::new(version, bit_capacity);
     for seg in segments {
         eb.push_segment(seg);
@@ -870,7 +870,7 @@ fn find_optimal_version_and_segments(
     let mut size = 0;
     for v in 1..=40 {
         let version = Version::Normal(v);
-        let capacity = version.bit_capacity(ec_level, palette);
+        let capacity = version.data_bit_capacity(ec_level, palette);
         if v == 1 || v == 10 || v == 27 {
             segments = compute_optimal_segments(data, version);
             size = segments.iter().map(|s| s.bit_len(version)).sum();

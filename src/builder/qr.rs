@@ -852,11 +852,17 @@ impl QR {
     }
 
     fn draw_color_codewords(&mut self, codewords: &[u8], coords: &mut EncRegionIter) {
-        let chan_cap = codewords.len() / 3;
+        let channel_capacity = self.version.channel_codewords();
+        debug_assert_eq!(
+            channel_capacity * 3,
+            codewords.len(),
+            "Channel capacity {channel_capacity} is not equal to 1/3rd of codewords size {}",
+            codewords.len()
+        );
         let (red_data, green_data, blue_data) = (
-            &codewords[..chan_cap],
-            &codewords[chan_cap..2 * chan_cap],
-            &codewords[2 * chan_cap..],
+            &codewords[..channel_capacity],
+            &codewords[channel_capacity..2 * channel_capacity],
+            &codewords[2 * channel_capacity..],
         );
         for (rc, gc, bc) in izip!(red_data.iter(), green_data.iter(), blue_data.iter()) {
             for i in (0..8).rev() {

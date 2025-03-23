@@ -101,23 +101,25 @@ impl QRBuilder<'_> {
         println!("Encoding data...");
         let (encoded_data, encoded_len, version) = match self.version {
             Some(v) => encode_with_version(self.data, self.ec_level, v, self.palette)?,
-            None => encode(self.data, self.ec_level, self.palette)?,
+            None => {
+                println!("Finding best version...");
+                encode(self.data, self.ec_level, self.palette)?
+            }
         };
 
-        let mut ver_cap = version.total_codewords();
-        if matches!(self.palette, Palette::Poly) {
-            ver_cap *= 3;
-        }
-        let data_cap = version.bit_capacity(self.ec_level, self.palette) >> 3;
-        let err_corr_cap = Self::error_correction_capacity(version, self.ec_level);
+        let total_codewords = version.total_codewords(self.palette);
+        let data_len = version.data_bit_capacity(self.ec_level, self.palette) >> 3;
+        let ec_capacity = Self::error_correction_capacity(version, self.ec_level);
 
         println!("Constructing payload with ecc & interleaving...");
-        let mut payload: Vec<u8> = Vec::with_capacity(ver_cap);
-        let mut channel_cap = encoded_data.len();
-        if matches!(self.palette, Palette::Poly) {
-            channel_cap /= 3;
-        }
-        encoded_data.chunks_exact(channel_cap).for_each(|c| {
+        let mut payload: Vec<u8> = Vec::with_capacity(total_codewords);
+        let channel_data_capacity = version.channel_data_capacity(self.ec_level);
+        debug_assert!(
+            encoded_data.len() % channel_data_capacity == 0,
+            "Encoded data length {} is not divisible by channel_codewords {channel_data_capacity}",
+            encoded_data.len()
+        );
+        encoded_data.chunks_exact(channel_data_capacity).for_each(|c| {
             // Compute error correction codewords
             let (data_blocks, ecc_blocks) = Self::compute_ecc(c, version, self.ec_level);
 
@@ -156,7 +158,7 @@ impl QRBuilder<'_> {
 
         println!("Report:");
         println!("{}", qr.metadata());
-        println!("Data capacity: {}, Error Capacity: {}", data_cap, err_corr_cap);
+        println!("Data capacity: {}, Error Capacity: {}", data_len, ec_capacity);
         println!(
             "Data size: {}, Encoded size: {}, Compression: {}%",
             data_len,

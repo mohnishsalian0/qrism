@@ -964,12 +964,12 @@ impl DeQR {
 impl DeQR {
     // TODO: Write testcases
     pub fn extract_payload(&mut self, version: Version) -> Vec<u8> {
-        let size = version.total_codewords();
-        let (r_off, g_off, b_off) = (0, size, 2 * size);
-        let mut payload = vec![0u8; size * 3];
+        let channel_codewords = version.channel_codewords();
+        let (r_off, g_off, b_off) = (0, channel_codewords, 2 * channel_codewords);
+        let mut payload = vec![0u8; channel_codewords * 3];
         let mut region_iter = EncRegionIter::new(version);
 
-        for i in 0..size {
+        for i in 0..channel_codewords {
             let (mut r_byte, mut g_byte, mut b_byte) = (0u8, 0u8, 0u8);
 
             for _ in 0..8 {
@@ -991,10 +991,6 @@ impl DeQR {
                         break;
                     }
                 }
-            }
-
-            if i == 0 {
-                println!("RByte: {r_byte}");
             }
 
             payload[i + r_off] = r_byte;

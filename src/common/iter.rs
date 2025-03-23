@@ -69,7 +69,7 @@ mod iter_tests {
                 .filter(|(r, c)| matches!(qr.get(*r, *c), Module::Data(_)))
                 .count()
                 / 8;
-            let exp_codewords = version.total_codewords();
+            let exp_codewords = version.channel_codewords();
             assert_eq!(total_codewords, exp_codewords);
         }
     }
