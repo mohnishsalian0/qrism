@@ -58,19 +58,8 @@ mod ec_tests {
 // Rectifier
 //------------------------------------------------------------------------------
 
-// TODO: Move this to reader
-pub fn rectify(data_blocks: &[Vec<u8>], ecc_blocks: &[Vec<u8>]) -> Vec<u8> {
-    let total_size = data_blocks.iter().map(|b| b.len()).sum::<usize>();
-    let mut res = Vec::with_capacity(total_size);
-    for (db, eb) in data_blocks.iter().zip(ecc_blocks) {
-        res.extend(rectify_block(db.to_vec(), eb.to_vec()));
-    }
-    res
-}
-
 pub fn rectify_block(data: Vec<u8>, ecc: Vec<u8>) -> Vec<u8> {
     let combined = ecc.iter().rev().chain(data.iter().rev());
-    // TODO: Handle the case when err is detected. At the moment this will panic.
     syndromes(combined, ecc.len()).map(|_| data).unwrap()
 }
 
@@ -96,6 +85,10 @@ where
     } else {
         Err(QRError::ErrorDetected(res))
     }
+}
+
+fn berlkamp_massey() {
+    todo!()
 }
 
 // Rectifier for format and version infos

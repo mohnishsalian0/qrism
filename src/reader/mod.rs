@@ -4,7 +4,7 @@ use image::RgbImage;
 
 use crate::common::{
     codec::decode,
-    ec::rectify,
+    ec::rectify_block,
     error::{QRError, QRResult},
     metadata::{Palette, Version},
 };
@@ -55,7 +55,7 @@ impl QRReader {
         let data_len = version.data_bit_capacity(ec_level, Palette::Mono) >> 3;
         let block_info = version.data_codewords_per_block(ec_level);
         let total_blocks = block_info.1 + block_info.3;
-        let epb = version.ecc_per_block(ec_level);
+        let ecc_per_block = version.ecc_per_block(ec_level);
 
         // Extracting encoded data from payload
         let mut encoded_data = Vec::with_capacity(payload.len());
@@ -65,9 +65,9 @@ impl QRReader {
         payload.chunks_exact(channel_capacity).for_each(|c| {
             let data_blocks: Vec<Vec<u8>> = Self::deinterleave(&c[..data_len], block_info);
             let ecc_blocks: Vec<Vec<u8>> =
-                Self::deinterleave(&c[data_len..], (epb, total_blocks, 0, 0));
+                Self::deinterleave(&c[data_len..], (ecc_per_block, total_blocks, 0, 0));
 
-            let rectified_data = rectify(&data_blocks, &ecc_blocks);
+            let rectified_data = Self::rectify(&data_blocks, &ecc_blocks);
 
             encoded_data.extend(rectified_data);
         });
@@ -88,7 +88,7 @@ impl QRReader {
         let partition = block1_size * total_blocks;
         let total_size = block1_size * block1_count + block2_size * block2_count;
 
-        debug_assert!(len == total_size, "Data size doesn't match chunk total size: Data size {len}, Chunks total size {total_size}");
+        debug_assert!(len == total_size, "Data size doesn't match total blocks size: Data size {len}, Total blocks size {total_size}");
 
         let mut res = vec![Vec::with_capacity(block2_size); total_blocks];
         data[..partition]
@@ -98,6 +98,15 @@ impl QRReader {
             data[partition..].chunks(block2_count).for_each(|ch| {
                 ch.iter().enumerate().for_each(|(i, v)| res[block1_count + i].push(*v))
             });
+        }
+        res
+    }
+
+    fn rectify(data_blocks: &[Vec<u8>], ecc_blocks: &[Vec<u8>]) -> Vec<u8> {
+        let total_size = data_blocks.iter().map(|b| b.len()).sum::<usize>();
+        let mut res = Vec::with_capacity(total_size);
+        for (db, eb) in data_blocks.iter().zip(ecc_blocks) {
+            res.extend(rectify_block(db.to_vec(), eb.to_vec()));
         }
         res
     }
