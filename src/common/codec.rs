@@ -1032,11 +1032,6 @@ mod reader {
 
     use super::Mode;
 
-    // fn from_data(data: Vec<u8>, version: Version) -> Self {
-    //     let bit_capacity = data.len() * 8;
-    //     Self { data, bit_offset: 0, version, bit_capacity, bit_cursor: 0 }
-    // }
-
     pub fn take_segment(inp: &mut BitStream, version: Version) -> Option<Vec<u8>> {
         let (mode, char_count) = take_header(inp, version)?;
         let byte_data = match mode {
@@ -1095,36 +1090,6 @@ mod reader {
         }
         res
     }
-
-    // fn take_bits(&mut self, bit_len: usize) -> u16 {
-    //     let remaining_bits = self.bit_capacity - self.bit_cursor;
-    //     debug_assert!(
-    //         bit_len <= remaining_bits,
-    //         "Insufficient bits to take: Remaining bits {remaining_bits}, Bit len {bit_len}",
-    //     );
-    //
-    //     let index = self.bit_cursor >> 3;
-    //     let offset = self.bit_cursor & 7;
-    //     let shifted_len = offset + bit_len;
-    //     let mut res = if index < self.data.len() {
-    //         ((self.data[index] << offset) >> offset) as u16
-    //     } else {
-    //         0
-    //     };
-    //     if shifted_len <= 8 {
-    //         res >>= 8 - shifted_len;
-    //     } else if shifted_len <= 16 && index + 1 < self.data.len() {
-    //         res <<= shifted_len - 8;
-    //         res |= (self.data[index + 1] >> (16 - shifted_len)) as u16;
-    //     } else if index + 2 < self.data.len() {
-    //         res <<= 8;
-    //         res |= self.data[index + 1] as u16;
-    //         res <<= shifted_len - 16;
-    //         res |= (self.data[index + 2] >> (24 - shifted_len)) as u16;
-    //     };
-    //     self.bit_cursor += min(bit_len, remaining_bits);
-    //     res
-    // }
 
     #[cfg(test)]
     mod reader_tests {
