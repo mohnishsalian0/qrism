@@ -99,8 +99,8 @@ impl QRBuilder<'_> {
 
         // Encode data optimally
         println!("Encoding data...");
-        let (encoded_data, encoded_len, version) = match self.version {
-            Some(v) => encode_with_version(self.data, self.ec_level, v, self.palette)?,
+        let (encoded_data, version) = match self.version {
+            Some(v) => (encode_with_version(self.data, self.ec_level, v, self.palette)?, v),
             None => {
                 println!("Finding best version...");
                 encode(self.data, self.ec_level, self.palette)?
@@ -119,7 +119,7 @@ impl QRBuilder<'_> {
             "Encoded data length {} is not divisible by channel_codewords {channel_data_capacity}",
             encoded_data.len()
         );
-        encoded_data.chunks_exact(channel_data_capacity).for_each(|c| {
+        encoded_data.data().chunks_exact(channel_data_capacity).for_each(|c| {
             // Compute error correction codewords
             let (data_blocks, ecc_blocks) = Self::compute_ecc(c, version, self.ec_level);
 
@@ -162,8 +162,8 @@ impl QRBuilder<'_> {
         println!(
             "Data size: {}, Encoded size: {}, Compression: {}%",
             data_len,
-            encoded_len,
-            encoded_len * 100 / data_len
+            encoded_data.len() >> 3,
+            (encoded_data.len() >> 3) * 100 / data_len
         );
         println!(
             "Dark Cells: {}, Light Cells: {}, Balance: {}\n",

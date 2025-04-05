@@ -1,5 +1,5 @@
 use core::panic;
-use std::{cmp::min, fmt::Display, mem};
+use std::{fmt::Display, mem};
 
 use num_traits::PrimInt;
 
@@ -14,16 +14,17 @@ pub struct BitStream {
     cursor: usize,
 }
 
-// EncodedBlob methods for encoding
-//------------------------------------------------------------------------------
-
 impl BitStream {
     pub fn new(capacity: usize) -> Self {
         Self { data: [0; MAX_PAYLOAD_SIZE], len: 0, capacity, cursor: 0 }
     }
 
-    pub fn with(data: [u8; MAX_PAYLOAD_SIZE], len: usize) -> Self {
-        Self { data, len, capacity: len, cursor: 0 }
+    pub fn from(inp: &[u8]) -> Self {
+        let len = inp.len();
+        let bit_len = len << 3;
+        let mut data = [0; MAX_PAYLOAD_SIZE];
+        data[..len].copy_from_slice(inp);
+        Self { data, len: bit_len, capacity: bit_len, cursor: 0 }
     }
 
     pub fn len(&self) -> usize {
@@ -35,9 +36,14 @@ impl BitStream {
     }
 
     pub fn data(&self) -> &[u8] {
-        &self.data
+        &self.data[..(self.len + 7) >> 3]
     }
+}
 
+// Push bits
+//------------------------------------------------------------------------------
+
+impl BitStream {
     pub fn push_bits<T>(&mut self, bits: T, size: usize)
     where
         T: PrimInt + Display,
@@ -55,7 +61,7 @@ impl BitStream {
         );
 
         match size {
-            0 => return,
+            0 => (),
             1..=8 => {
                 let bits = bits.to_u8().unwrap();
                 let offset = self.len & 7;
@@ -72,7 +78,7 @@ impl BitStream {
             }
             9..=16 => {
                 self.push_bits((bits >> 8).to_u8().unwrap(), size - 8);
-                self.push_bits(((bits << 8) >> 8).to_u8().unwrap(), 8);
+                self.push_bits((bits & T::from(0xFF).unwrap()).to_u8().unwrap(), 8);
             }
             _ => panic!("Bits from only u8 and u16 can be pushed"),
         }
@@ -123,6 +129,109 @@ impl BitStream {
 
         self.len += 1;
     }
+}
+
+#[cfg(test)]
+mod bit_stream_push_tests {
+
+    use super::BitStream;
+
+    #[test]
+    fn test_len() {
+        let bit_capacity = 152;
+        let mut bs = BitStream::new(bit_capacity);
+        assert_eq!(bs.len(), 0);
+        bs.push_bits(0, 0);
+        assert_eq!(bs.len(), 0);
+        bs.push_bits(0b1000, 4);
+        assert_eq!(bs.len(), 4);
+        bs.push_bits(0b1000, 8);
+        assert_eq!(bs.len(), 12);
+        bs.push_bits(0b1000, 4);
+        assert_eq!(bs.len(), 16);
+        bs.push_bits(0b1111111, 7);
+        assert_eq!(bs.len(), 23);
+        bs.push_bits(0b111111111111, 12);
+        assert_eq!(bs.len(), 35);
+        bs.push_bits(0b111111111111, 16);
+        assert_eq!(bs.len(), 51);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_len() {
+        let bit_capacity = 152;
+        let mut bs = BitStream::new(bit_capacity);
+        bs.push_bits(256, 17);
+    }
+
+    #[test]
+    fn test_push() {
+        let mut bs = BitStream::new(2);
+        bs.push(false);
+        assert_eq!(bs.data[..1], vec![0b00000000]);
+        bs.push(true);
+        assert_eq!(bs.data[..1], vec![0b01000000]);
+    }
+
+    #[test]
+    fn test_push_bits() {
+        let bit_capacity = 152;
+        let exp_vec = [210, 52, 141, 35, 72, 210, 183, 42, 7, 219, 91, 14, 253, 68, 120, 193];
+        let mut inp = BitStream::from(&exp_vec);
+        let mut out = BitStream::new(bit_capacity);
+        for n in [0, 1, 2, 3, 4, 5, 6, 7, 8, 4, 8, 9, 11, 15, 16, 5, 16] {
+            let bits = inp.take_bits(n).unwrap();
+            out.push_bits(bits, n);
+            let out_off = out.len() & 7;
+            let len = out.len() >> 3;
+            assert_eq!(out.data[..len], exp_vec[..len], "n {n}");
+            if out_off > 0 {
+                assert_eq!(out.data[len] >> (8 - out_off), exp_vec[len] >> (8 - out_off));
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_push_bits_capacity_overflow() {
+        let bit_capacity = 152;
+        let capacity = (bit_capacity + 7) >> 3;
+        let mut bs = BitStream::new(bit_capacity);
+        for _ in 0..capacity {
+            bs.push_bits(8, 0b1);
+        }
+        bs.push_bits(1, 0b1)
+    }
+}
+
+// Take bits
+//------------------------------------------------------------------------------
+
+impl BitStream {
+    pub fn take_bits(&mut self, n: usize) -> Option<u16> {
+        debug_assert!(n <= 16, "Cannot take more than 16 bits: N {n}");
+
+        if self.cursor + n >= self.len {
+            return None;
+        }
+
+        let offset = self.cursor & 7;
+        let pos = self.cursor >> 3;
+
+        let mut res = (self.data[pos] as u32) << 16;
+        if offset + n > 8 {
+            res |= (self.data[pos + 1] as u32) << 8;
+        }
+        if offset + n > 16 {
+            res |= self.data[pos + 2] as u32;
+        }
+        res >>= 24 - offset - n;
+        res &= (1 << n) - 1;
+
+        self.cursor += n;
+        Some(res as u16)
+    }
 
     pub fn take(&mut self) -> Option<bool> {
         if self.cursor == self.len {
@@ -137,175 +246,55 @@ impl BitStream {
 
         Some(bit != 0)
     }
-
-    pub fn take_byte(&mut self) -> Option<u8> {
-        if self.cursor == self.len {
-            return None;
-        }
-
-        let size = min(8, self.len - self.cursor);
-        let offset = self.cursor & 7;
-        let pos = self.cursor >> 3;
-
-        let mut res = (self.data[pos] as u16) << 8;
-        if offset + size > 8 {
-            res |= self.data[pos + 1] as u16;
-        }
-        res >>= 16 - offset - size;
-        res &= (1 << size) - 1;
-
-        self.cursor += size;
-        Some(res as u8)
-    }
 }
 
 #[cfg(test)]
-mod bit_stream_tests {
+mod bit_stream_take_tests {
 
     use super::BitStream;
 
     #[test]
-    fn test_len() {
-        let bit_capacity = 152;
-        let mut eb = BitStream::new(bit_capacity);
-        assert_eq!(eb.len(), 0);
-        eb.push_bits(0, 0);
-        assert_eq!(eb.len(), 0);
-        eb.push_bits(0b1000, 4);
-        assert_eq!(eb.len(), 4);
-        eb.push_bits(0b1000, 8);
-        assert_eq!(eb.len(), 12);
-        eb.push_bits(0b1000, 4);
-        assert_eq!(eb.len(), 16);
-        eb.push_bits(0b1111111, 7);
-        assert_eq!(eb.len(), 23);
-    }
-
-    #[test]
-    fn test_push() {
-        let mut eb = BitStream::new(2);
-        eb.push(false);
-        assert_eq!(eb.data[..1], vec![0b00000000]);
-        eb.push(true);
-        assert_eq!(eb.data[..1], vec![0b01000000]);
-    }
-
-    #[test]
-    fn test_push_bits() {
-        let bit_capacity = 152;
-        let exp_vec = [0b11010010, 0b00110100, 0b10001101, 0b00100011, 0b01001000, 0b11010010];
-        let mut cursor = 0;
-        let mut eb = BitStream::new(bit_capacity);
-        for n in [0, 1, 2, 3, 4, 5, 6, 7, 8, 4, 8] {
-            let offset = cursor & 7;
-            let pos = cursor >> 3;
-            let bits = if n == 0 {
-                0
-            } else if n + offset <= 8 {
-                (exp_vec[pos] << offset) >> (8 - n)
-            } else {
-                let bits = (exp_vec[pos] << offset) >> (8 - n);
-                bits | (exp_vec[pos + 1] >> (16 - offset - n))
-            };
-            cursor += n;
-            eb.push_bits(bits, n);
-            let eb_offset = eb.len() & 7;
-            let len = eb.len() >> 3;
-            assert_eq!(eb.data[..len], exp_vec[..len], "n {n}");
-            if eb_offset > 0 {
-                assert_eq!(eb.data[len] >> (8 - eb_offset), exp_vec[len] >> (8 - eb_offset));
-            }
-        }
+    fn test_take_bits() {
+        let data = [
+            0b11010010, 0b00110100, 0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00110100,
+            0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00110100, 0b10001100,
+        ];
+        let mut bs = BitStream::from(&data);
+        let bits = bs.take_bits(0);
+        assert_eq!(bits, Some(0));
+        let bits = bs.take_bits(4);
+        assert_eq!(bits, Some(0b1101));
+        let bits = bs.take_bits(4);
+        assert_eq!(bits, Some(0b0010));
+        let bits = bs.take_bits(8);
+        assert_eq!(bits, Some(0b00110100));
+        let bits = bs.take_bits(9);
+        assert_eq!(bits, Some(0b100011010));
+        let bits = bs.take_bits(7);
+        assert_eq!(bits, Some(0b0100011));
+        let bits = bs.take_bits(16);
+        assert_eq!(bits, Some(0b01001000_11010010));
+        let bits = bs.take_bits(1);
+        assert_eq!(bits, Some(0b0));
+        let bits = bs.take_bits(11);
+        assert_eq!(bits, Some(0b01101001000));
+        let bits = bs.take_bits(14);
+        assert_eq!(bits, Some(0b11010010001101));
+        let bits = bs.take_bits(16);
+        assert_eq!(bits, Some(0b0010001101001000));
+        let bits = bs.take_bits(4);
+        assert_eq!(bits, Some(0b1101));
+        let bits = bs.take_bits(4);
+        assert_eq!(bits, Some(0b0010));
     }
 
     #[test]
     #[should_panic]
-    fn test_push_bits_capacity_overflow() {
-        let bit_capacity = 152;
-        let capacity = (bit_capacity + 7) >> 3;
-        let mut eb = BitStream::new(bit_capacity);
-        for _ in 0..capacity {
-            eb.push_bits(8, 0b1);
-        }
-        eb.push_bits(1, 0b1)
+    fn test_take_bits_over_capacity() {
+        let data = vec![];
+        let mut eb = BitStream::from(&data);
+        eb.take_bits(5).unwrap();
     }
-
-    // #[test]
-    // fn test_len() {
-    //     let version = Version::Normal(1);
-    //     let ec_level = ECLevel::L;
-    //     let palette = Palette::Mono;
-    //     let bit_capacity = version.data_bit_capacity(ec_level, palette);
-    //     let mut eb = EncodedBlob::new(version, bit_capacity);
-    //     assert_eq!(eb.bit_len(), 0);
-    //     eb.push_bits(0, 0);
-    //     assert_eq!(eb.bit_len(), 0);
-    //     eb.push_bits(4, 0b1000);
-    //     assert_eq!(eb.bit_len(), 4);
-    //     eb.push_bits(8, 0b1000);
-    //     assert_eq!(eb.bit_len(), 12);
-    //     eb.push_bits(4, 0b1000);
-    //     assert_eq!(eb.bit_len(), 16);
-    //     eb.push_bits(7, 0b1111111);
-    //     assert_eq!(eb.bit_len(), 23);
-    // }
-    //
-    // #[test]
-    // fn test_push_bits() {
-    //     let version = Version::Normal(1);
-    //     let ec_level = ECLevel::L;
-    //     let palette = Palette::Mono;
-    //     let bit_capacity = version.data_bit_capacity(ec_level, palette);
-    //     let mut eb = EncodedBlob::new(version, bit_capacity);
-    //     eb.push_bits(0, 0);
-    //     assert_eq!(eb.data, vec![]);
-    //     eb.push_bits(4, 0b1101);
-    //     assert_eq!(eb.data, vec![0b11010000]);
-    //     eb.push_bits(4, 0b0010);
-    //     assert_eq!(eb.data, vec![0b11010010]);
-    //     eb.push_bits(8, 0b00110100);
-    //     assert_eq!(eb.data, vec![0b11010010, 0b00110100]);
-    //     eb.push_bits(9, 0b100011010);
-    //     assert_eq!(eb.data, vec![0b11010010, 0b00110100, 0b10001101, 0b00000000]);
-    //     eb.push_bits(7, 0b0100011);
-    //     assert_eq!(eb.data, vec![0b11010010, 0b00110100, 0b10001101, 0b00100011]);
-    //     eb.push_bits(16, 0b01001000_11010010);
-    //     assert_eq!(
-    //         eb.data,
-    //         vec![0b11010010, 0b00110100, 0b10001101, 0b00100011, 0b01001000, 0b11010010]
-    //     );
-    //     eb.push_bits(1, 0b0);
-    //     assert_eq!(
-    //         eb.data,
-    //         vec![
-    //             0b11010010, 0b00110100, 0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00000000
-    //         ]
-    //     );
-    //     eb.push_bits(11, 0b01101001000);
-    //     assert_eq!(
-    //         eb.data,
-    //         vec![
-    //             0b11010010, 0b00110100, 0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00110100,
-    //             0b10000000
-    //         ]
-    //     );
-    //     eb.push_bits(14, 0b11010010001101);
-    //     assert_eq!(
-    //         eb.data,
-    //         vec![
-    //             0b11010010, 0b00110100, 0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00110100,
-    //             0b10001101, 0b00100011, 0b01000000
-    //         ]
-    //     );
-    //     eb.push_bits(16, 0b0010001101001000);
-    //     assert_eq!(
-    //         eb.data,
-    //         vec![
-    //             0b11010010, 0b00110100, 0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00110100,
-    //             0b10001101, 0b00100011, 0b01001000, 0b11010010, 0b00000000
-    //         ]
-    //     );
-    // }
 }
 
 // Global constants
