@@ -8,11 +8,12 @@ use crate::common::{
     iter::EncRegionIter,
     mask::MaskPattern,
     metadata::{
-        parse_format_info_qr, Color, ECLevel, Metadata, Palette, Version, FORMAT_ERROR_CAPACITY,
+        parse_format_info_qr, Color, ECLevel, Metadata, Version, FORMAT_ERROR_CAPACITY,
         FORMAT_INFOS_QR, FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK,
         VERSION_ERROR_BIT_LEN, VERSION_ERROR_CAPACITY, VERSION_INFOS, VERSION_INFO_COORDS_BL,
         VERSION_INFO_COORDS_TR,
     },
+    BitArray,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -50,7 +51,6 @@ pub struct DeQR {
     grid: Vec<DeModule>,
     version: Version,
     ec_level: Option<ECLevel>,
-    palette: Option<Palette>,
     mask_pattern: Option<MaskPattern>,
 }
 
@@ -99,7 +99,7 @@ impl DeQR {
             })
             .collect();
 
-        Self { width: qr_width, grid, version, ec_level: None, palette: None, mask_pattern: None }
+        Self { width: qr_width, grid, version, ec_level: None, mask_pattern: None }
     }
 
     pub fn from_image(qr: &GrayImage, version: Version) -> Self {
@@ -134,7 +134,7 @@ impl DeQR {
             .map(|&bc| DeModule::Unmarked(if bc > half_area { Color::Dark } else { Color::Light }))
             .collect();
 
-        Self { width: qr_width, grid, version, ec_level: None, palette: None, mask_pattern: None }
+        Self { width: qr_width, grid, version, ec_level: None, mask_pattern: None }
     }
 
     pub fn from_str(qr: &str, version: Version) -> Self {
@@ -153,11 +153,11 @@ impl DeQR {
             .map(|(i, clr)| DeModule::Unmarked(if clr == ' ' { Color::Dark } else { Color::Light }))
             .collect();
 
-        Self { width: qr_width, grid, version, ec_level: None, palette: None, mask_pattern: None }
+        Self { width: qr_width, grid, version, ec_level: None, mask_pattern: None }
     }
 
     pub fn metadata(&self) -> Metadata {
-        Metadata::new(Some(self.version), self.ec_level, self.palette, self.mask_pattern)
+        Metadata::new(Some(self.version), self.ec_level, self.mask_pattern)
     }
 
     pub fn count_dark_modules(&self) -> usize {
@@ -963,41 +963,27 @@ impl DeQR {
 
 impl DeQR {
     // TODO: Write testcases
-    pub fn extract_payload(&mut self, version: Version) -> Vec<u8> {
-        let channel_codewords = version.channel_codewords();
-        let (r_off, g_off, b_off) = (0, channel_codewords, 2 * channel_codewords);
-        let mut payload = vec![0u8; channel_codewords * 3];
+    pub fn extract_payload(&mut self, version: Version) -> BitArray {
+        let ch_bits = version.channel_codewords() << 3;
+        let (r_off, g_off, b_off) = (0, ch_bits, 2 * ch_bits);
+        let mut payload = BitArray::new(ch_bits * 3);
         let mut region_iter = EncRegionIter::new(version);
 
-        for i in 0..channel_codewords {
-            let (mut r_byte, mut g_byte, mut b_byte) = (0u8, 0u8, 0u8);
-
-            for _ in 0..8 {
-                for (r, c) in region_iter.by_ref() {
-                    if let DeModule::Unmarked(color) = self.get(r, c) {
-                        let (r, g, b) = match color {
-                            Color::Light => (0, 0, 0),
-                            Color::Dark => (1, 1, 1),
-                            Color::Hue(r, g, b) => {
-                                let r = if r == 255 { 0 } else { 1 };
-                                let g = if g == 255 { 0 } else { 1 };
-                                let b = if b == 255 { 0 } else { 1 };
-                                (r, g, b)
-                            }
-                        };
-                        r_byte = (r_byte << 1) | r;
-                        g_byte = (g_byte << 1) | g;
-                        b_byte = (b_byte << 1) | b;
-                        break;
-                    }
+        for i in 0..ch_bits {
+            for (r, c) in region_iter.by_ref() {
+                if let DeModule::Unmarked(color) = self.get(r, c) {
+                    let (r, g, b) = match color {
+                        Color::Light => (false, false, false),
+                        Color::Dark => (true, true, true),
+                        Color::Hue(r, g, b) => (r != 255, g != 255, b != 255),
+                    };
+                    payload.put(i, r);
+                    payload.put(i + g_off, g);
+                    payload.put(i + b_off, b);
+                    break;
                 }
             }
-
-            payload[i + r_off] = r_byte;
-            payload[i + g_off] = g_byte;
-            payload[i + b_off] = b_byte;
         }
-
         payload
     }
 }

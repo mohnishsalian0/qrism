@@ -1,5 +1,5 @@
+use core::panic;
 use image::{GrayImage, Luma, Rgb, RgbImage};
-use itertools::izip;
 use std::ops::Deref;
 
 use crate::common::{
@@ -10,6 +10,7 @@ use crate::common::{
         FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, VERSION_INFO_BIT_LEN,
         VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
     },
+    BitStream,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -84,12 +85,7 @@ impl QR {
     }
 
     pub fn metadata(&self) -> Metadata {
-        Metadata::new(
-            Some(self.version),
-            Some(self.ec_level),
-            Some(self.palette),
-            self.mask_pattern,
-        )
+        Metadata::new(Some(self.version), Some(self.ec_level), self.mask_pattern)
     }
 
     pub fn count_dark_modules(&self) -> usize {
@@ -819,77 +815,79 @@ mod qr_information_tests {
 //------------------------------------------------------------------------------
 
 impl QR {
-    pub fn draw_encoding_region(&mut self, payload: &[u8]) {
+    pub fn draw_encoding_region(&mut self, payload: BitStream) {
         self.reserve_format_area();
         self.draw_version_info();
-        self.draw_payload(payload);
+        match self.palette {
+            Palette::Mono => self.draw_payload(payload),
+            Palette::Poly => self.draw_color_payload(payload),
+        }
 
         debug_assert!(!self.grid.contains(&Module::Empty), "Empty module found in debug");
     }
 
-    fn draw_payload(&mut self, payload: &[u8]) {
+    fn draw_payload(&mut self, payload: BitStream) {
         let mut coords = EncRegionIter::new(self.version);
-        match self.palette {
-            Palette::Mono => self.draw_codewords(payload, &mut coords),
-            Palette::Poly => self.draw_color_codewords(payload, &mut coords),
+        for bit in payload {
+            let module = Module::Data(if bit { Color::Dark } else { Color::Light });
+            for (r, c) in coords.by_ref() {
+                if matches!(self.get(r, c), Module::Empty) {
+                    self.set(r, c, module);
+                    break;
+                }
+            }
         }
         self.fill_remainder_bits(&mut coords);
     }
 
-    fn draw_codewords(&mut self, codewords: &[u8], coords: &mut EncRegionIter) {
-        for &codeword in codewords.iter() {
-            for i in (0..8).rev() {
-                let bit = (codeword >> i) & 1;
-                let module = Module::Data(if bit & 1 == 0 { Color::Light } else { Color::Dark });
-                for (r, c) in coords.by_ref() {
-                    if matches!(self.get(r, c), Module::Empty) {
-                        self.set(r, c, module);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    fn draw_color_codewords(&mut self, codewords: &[u8], coords: &mut EncRegionIter) {
-        let channel_capacity = self.version.channel_codewords();
+    fn draw_color_payload(&mut self, mut payload: BitStream) {
+        let ch_cap = self.version.channel_codewords();
+        let ch_bit_cap = ch_cap << 3;
         debug_assert_eq!(
-            channel_capacity * 3,
-            codewords.len(),
-            "Channel capacity {channel_capacity} is not equal to 1/3rd of codewords size {}",
-            codewords.len()
+            ch_cap * 3,
+            payload.len() >> 3,
+            "Channel capacity {ch_cap} is not equal to 1/3rd of codewords size {}",
+            payload.len() >> 3
         );
-        let (red_data, green_data, blue_data) = (
-            &codewords[..channel_capacity],
-            &codewords[channel_capacity..2 * channel_capacity],
-            &codewords[2 * channel_capacity..],
-        );
-        for (rc, gc, bc) in izip!(red_data.iter(), green_data.iter(), blue_data.iter()) {
-            for i in (0..8).rev() {
-                let rb = (1 - ((rc >> i) & 1)) * 255;
-                let gb = (1 - ((gc >> i) & 1)) * 255;
-                let bb = (1 - ((bc >> i) & 1)) * 255;
-                let module = Module::Data(Color::Hue(rb, gb, bb));
+        let mut coords = EncRegionIter::new(self.version).cycle();
+        for ch in 0..3 {
+            for bit in Iterator::take(&mut payload, ch_bit_cap) {
+                let chval = (1 - bit as u8) * 255;
                 for (r, c) in coords.by_ref() {
-                    if matches!(self.get(r, c), Module::Empty) {
-                        self.set(r, c, module);
-                        break;
+                    match self.get_mut(r, c) {
+                        Module::Empty => {
+                            let module = Module::Data(Color::Hue(chval, 0, 0));
+                            self.set(r, c, module);
+                            break;
+                        }
+                        Module::Data(rgb) => {
+                            if let Color::Hue(r, g, b) = rgb {
+                                match ch {
+                                    0 => unreachable!(
+                                        "Color module found before parsing red channel"
+                                    ),
+                                    1 => *g = chval,
+                                    2 => *b = chval,
+                                    _ => unreachable!("Invalid channel"),
+                                }
+                            }
+                            break;
+                        }
+                        _ => (),
                     }
                 }
             }
+            self.fill_remainder_bits(&mut coords);
         }
     }
 
-    fn fill_remainder_bits(&mut self, coords: &mut EncRegionIter) {
-        let empty_modules =
-            coords.filter(|(r, c)| self.get(*r, *c) == Module::Empty).collect::<Vec<_>>();
-        debug_assert!(
-            self.version.remainder_bits() == empty_modules.len(),
-            "Incorrect number of empty modules for remainder bits: Version {:?}, Empty bits {}",
-            self.version,
-            empty_modules.len()
-        );
-        empty_modules.iter().for_each(|(r, c)| self.set(*r, *c, Module::Data(Color::Light)));
+    fn fill_remainder_bits(&mut self, coords: impl Iterator<Item = (i16, i16)>) {
+        let n = self.version.remainder_bits();
+        for (r, c) in coords.take(n).by_ref() {
+            if matches!(self.get(r, c), Module::Empty) {
+                self.set(r, c, Module::Data(Color::Light));
+            }
+        }
     }
 
     pub fn mask(&mut self, pattern: MaskPattern) {

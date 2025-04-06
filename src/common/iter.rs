@@ -3,6 +3,7 @@ use super::Version;
 // Iterator for placing data in encoding region of QR
 //------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct EncRegionIter {
     r: i16,
     c: i16,

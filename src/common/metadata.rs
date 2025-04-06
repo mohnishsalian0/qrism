@@ -3,8 +3,6 @@ use std::cmp::PartialOrd;
 use std::fmt::{Debug, Display};
 use std::ops::{Deref, Not};
 
-use image::Rgb;
-
 use super::{MaskPattern, Mode};
 
 // Metadata
@@ -14,7 +12,6 @@ use super::{MaskPattern, Mode};
 pub struct Metadata {
     version: Option<Version>,
     ec_level: Option<ECLevel>,
-    palette: Option<Palette>,
     mask_pattern: Option<MaskPattern>,
 }
 
@@ -22,10 +19,9 @@ impl Metadata {
     pub fn new(
         version: Option<Version>,
         ec_level: Option<ECLevel>,
-        palette: Option<Palette>,
         mask_pattern: Option<MaskPattern>,
     ) -> Self {
-        Self { version, ec_level, palette, mask_pattern }
+        Self { version, ec_level, mask_pattern }
     }
 }
 
@@ -39,19 +35,11 @@ impl Display for Metadata {
             Some(e) => format!("{:?}", e),
             None => "None".to_string(),
         };
-        let plt = match &self.palette {
-            Some(p) => format!("{:?}", p),
-            None => "None".to_string(),
-        };
         let mask = match &self.mask_pattern {
             Some(m) => format!("{:?}", m),
             None => "None".to_string(),
         };
-        write!(
-            f,
-            "Metadata: Version: {}, EC Level: {}, Palette: {}, Masking Pattern: {} ",
-            ver, ec, plt, mask
-        )
+        write!(f, "Metadata: Version: {}, EC Level: {}, Masking Pattern: {} ", ver, ec, mask)
     }
 }
 
@@ -319,15 +307,6 @@ impl From<u8> for ECLevel {
 pub enum Palette {
     Mono,
     Poly,
-}
-
-impl Palette {
-    pub fn color(self, bits: u8) -> Rgb<u8> {
-        debug_assert!(matches!(self, Palette::Poly), "Palette is not poly");
-        debug_assert!(bits < 8, "Bits should be between 0 and 7");
-
-        PALETTE[bits as usize]
-    }
 }
 
 // Color
@@ -696,47 +675,4 @@ pub static VERSION_INFO_COORDS_TR: [(i16, i16); 18] = [
     (0, -9),
     (0, -10),
     (0, -11),
-];
-
-pub static PALETTE_INFO_BIT_LEN: usize = 12;
-
-pub static PALETTE: [Rgb<u8>; 8] = [
-    Rgb([0, 0, 0]),
-    Rgb([255, 255, 0]),
-    Rgb([255, 0, 255]),
-    Rgb([255, 0, 0]),
-    Rgb([0, 255, 255]),
-    Rgb([0, 255, 0]),
-    Rgb([0, 0, 255]),
-    Rgb([255, 255, 255]),
-];
-
-pub static PALETTE_INFO_COORDS_BL: [(i16, i16); 12] = [
-    (-1, 10),
-    (-1, 9),
-    (-2, 10),
-    (-2, 9),
-    (-3, 10),
-    (-3, 9),
-    (-4, 10),
-    (-4, 9),
-    (-5, 10),
-    (-5, 9),
-    (-6, 10),
-    (-6, 9),
-];
-
-pub static PALETTE_INFO_COORDS_TR: [(i16, i16); 12] = [
-    (10, -1),
-    (9, -1),
-    (10, -2),
-    (9, -2),
-    (10, -3),
-    (9, -3),
-    (10, -4),
-    (9, -4),
-    (10, -5),
-    (9, -5),
-    (10, -6),
-    (9, -6),
 ];

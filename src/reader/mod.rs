@@ -62,7 +62,7 @@ impl QRReader {
         let channel_capacity = version.channel_codewords();
 
         println!("Separating channels, deinterleaving & rectifying payload...");
-        payload.chunks_exact(channel_capacity).for_each(|c| {
+        payload.data().chunks_exact(channel_capacity).for_each(|c| {
             let data_blocks: Vec<Vec<u8>> = Self::deinterleave(&c[..data_len], block_info);
             let ecc_blocks: Vec<Vec<u8>> =
                 Self::deinterleave(&c[data_len..], (ecc_per_block, total_blocks, 0, 0));

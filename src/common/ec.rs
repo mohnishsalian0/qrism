@@ -1,5 +1,38 @@
 use super::{QRError, QRResult};
 
+pub struct Block {
+    data: [u8; 256],
+    // Block length
+    len: usize,
+    // Ecc count
+    ec_len: usize,
+}
+
+impl Block {
+    pub fn new(inp: &[u8], ec_len: usize) -> Self {
+        let len = inp.len();
+        let mut data = [0; 256];
+        data[..len].copy_from_slice(inp);
+        Self { data, len, ec_len }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn ec_len(&self) -> usize {
+        self.ec_len
+    }
+
+    pub fn data_len(&self) -> usize {
+        self.len - self.ec_len
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data[..self.len]
+    }
+}
+
 // Calculates ecc per block
 // Performs polynomial long division with data polynomial(num)
 // and generator polynomial(den) to compute remainder polynomial,

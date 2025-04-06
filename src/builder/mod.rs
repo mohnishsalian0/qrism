@@ -10,6 +10,7 @@ use crate::common::{
     error::{QRError, QRResult},
     mask::{apply_best_mask, MaskPattern},
     metadata::{ECLevel, Palette, Version},
+    BitStream,
 };
 
 pub struct QRBuilder<'a> {
@@ -109,10 +110,10 @@ impl QRBuilder<'_> {
 
         let total_codewords = version.total_codewords(self.palette);
         let data_len = version.data_bit_capacity(self.ec_level, self.palette) >> 3;
-        let ec_capacity = Self::error_correction_capacity(version, self.ec_level);
+        let ec_capacity = Self::ec_capacity(version, self.ec_level);
 
         println!("Constructing payload with ecc & interleaving...");
-        let mut payload: Vec<u8> = Vec::with_capacity(total_codewords);
+        let mut payload = BitStream::new(total_codewords << 3);
         let channel_data_capacity = version.channel_data_capacity(self.ec_level);
         debug_assert!(
             encoded_data.len() % channel_data_capacity == 0,
@@ -124,8 +125,8 @@ impl QRBuilder<'_> {
             let (data_blocks, ecc_blocks) = Self::compute_ecc(c, version, self.ec_level);
 
             // Interleave data & error correction codewords, and store in payload
-            payload.extend(Self::interleave(&data_blocks));
-            payload.extend(Self::interleave(&ecc_blocks));
+            payload.extend(&Self::interleave(&data_blocks));
+            payload.extend(&Self::interleave(&ecc_blocks));
         });
 
         // Construct QR
@@ -136,7 +137,7 @@ impl QRBuilder<'_> {
         qr.draw_all_function_patterns();
 
         println!("Drawing encoding region...");
-        qr.draw_encoding_region(&payload);
+        qr.draw_encoding_region(payload);
 
         let mask = match self.mask {
             Some(m) => {
@@ -208,7 +209,7 @@ impl QRBuilder<'_> {
         data_blocks
     }
 
-    pub fn error_correction_capacity(version: Version, ec_level: ECLevel) -> usize {
+    pub fn ec_capacity(version: Version, ec_level: ECLevel) -> usize {
         let p = match (version, ec_level) {
             (Version::Micro(2) | Version::Normal(1), ECLevel::L) => 3,
             (Version::Micro(_) | Version::Normal(2), ECLevel::L)
