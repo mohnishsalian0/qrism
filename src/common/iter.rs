@@ -12,9 +12,9 @@ pub struct EncRegionIter {
 }
 
 impl EncRegionIter {
-    pub const fn new(version: Version) -> Self {
-        let w = version.width() as i16;
-        let vert_timing_col = match version {
+    pub const fn new(ver: Version) -> Self {
+        let w = ver.width() as i16;
+        let vert_timing_col = match ver {
             Version::Micro(_) => 0,
             Version::Normal(_) => 6,
         };
@@ -61,16 +61,16 @@ mod iter_tests {
     fn test_enc_region_iter() {
         for v in 1..40 {
             let data = "Hello, world!".as_bytes();
-            let version = Version::Normal(v);
-            let ec_level = ECLevel::L;
-            let qr = QRBuilder::new(data).version(version).ec_level(ec_level).build().unwrap();
-            let coords = EncRegionIter::new(version);
+            let ver = Version::Normal(v);
+            let ecl = ECLevel::L;
+            let qr = QRBuilder::new(data).version(ver).ec_level(ecl).build().unwrap();
+            let coords = EncRegionIter::new(ver);
             let total_codewords = coords
                 .into_iter()
                 .filter(|(r, c)| matches!(qr.get(*r, *c), Module::Data(_)))
                 .count()
                 / 8;
-            let exp_codewords = version.channel_codewords();
+            let exp_codewords = ver.channel_codewords();
             assert_eq!(total_codewords, exp_codewords);
         }
     }

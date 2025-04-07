@@ -10,32 +10,28 @@ use super::{MaskPattern, Mode};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Metadata {
-    version: Option<Version>,
-    ec_level: Option<ECLevel>,
-    mask_pattern: Option<MaskPattern>,
+    ver: Option<Version>,
+    ecl: Option<ECLevel>,
+    mask: Option<MaskPattern>,
 }
 
 impl Metadata {
-    pub fn new(
-        version: Option<Version>,
-        ec_level: Option<ECLevel>,
-        mask_pattern: Option<MaskPattern>,
-    ) -> Self {
-        Self { version, ec_level, mask_pattern }
+    pub fn new(ver: Option<Version>, ecl: Option<ECLevel>, mask: Option<MaskPattern>) -> Self {
+        Self { ver, ecl, mask }
     }
 }
 
 impl Display for Metadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let ver = match &self.version {
+        let ver = match &self.ver {
             Some(v) => format!("{:?}", v),
             None => "None".to_string(),
         };
-        let ec = match &self.ec_level {
+        let ec = match &self.ecl {
             Some(e) => format!("{:?}", e),
             None => "None".to_string(),
         };
-        let mask = match &self.mask_pattern {
+        let mask = match &self.mask {
             Some(m) => format!("{:?}", m),
             None => "None".to_string(),
         };
@@ -86,7 +82,7 @@ impl Version {
         }
     }
 
-    pub fn char_count_bits(&self, mode: Mode) -> usize {
+    pub fn char_cnt_bits(&self, mode: Mode) -> usize {
         debug_assert!(
             matches!(self, Version::Micro(1..=4) | Version::Normal(1..=40)),
             "Invalid version"
@@ -116,10 +112,10 @@ impl Version {
         }
     }
 
-    pub fn data_bit_capacity(self, ec_level: ECLevel, palette: Palette) -> usize {
+    pub fn data_bit_capacity(self, ecl: ECLevel, palette: Palette) -> usize {
         let mut bc = match self {
-            Version::Micro(v) => VERSION_DATA_BIT_CAPACITY[39 + v][ec_level as usize],
-            Version::Normal(v) => VERSION_DATA_BIT_CAPACITY[v - 1][ec_level as usize],
+            Version::Micro(v) => VERSION_DATA_BIT_CAPACITY[39 + v][ecl as usize],
+            Version::Normal(v) => VERSION_DATA_BIT_CAPACITY[v - 1][ecl as usize],
         };
         if matches!(palette, Palette::Poly) {
             bc *= 3;
@@ -138,10 +134,10 @@ impl Version {
         tc
     }
 
-    pub fn channel_data_capacity(self, ec_level: ECLevel) -> usize {
+    pub fn channel_data_capacity(self, ecl: ECLevel) -> usize {
         let bc = match self {
-            Version::Micro(v) => VERSION_DATA_BIT_CAPACITY[39 + v][ec_level as usize],
-            Version::Normal(v) => VERSION_DATA_BIT_CAPACITY[v - 1][ec_level as usize],
+            Version::Micro(v) => VERSION_DATA_BIT_CAPACITY[39 + v][ecl as usize],
+            Version::Normal(v) => VERSION_DATA_BIT_CAPACITY[v - 1][ecl as usize],
         };
         bc >> 3
     }
@@ -153,17 +149,17 @@ impl Version {
         }
     }
 
-    pub fn data_codewords_per_block(self, ec_level: ECLevel) -> (usize, usize, usize, usize) {
+    pub fn data_codewords_per_block(self, ecl: ECLevel) -> (usize, usize, usize, usize) {
         match self {
-            Version::Micro(v) => DATA_CODEWORDS_PER_BLOCK[39 + v][ec_level as usize],
-            Version::Normal(v) => DATA_CODEWORDS_PER_BLOCK[v - 1][ec_level as usize],
+            Version::Micro(v) => DATA_CODEWORDS_PER_BLOCK[39 + v][ecl as usize],
+            Version::Normal(v) => DATA_CODEWORDS_PER_BLOCK[v - 1][ecl as usize],
         }
     }
 
-    pub fn ecc_per_block(self, ec_level: ECLevel) -> usize {
+    pub fn ecc_per_block(self, ecl: ECLevel) -> usize {
         match self {
-            Version::Micro(v) => ECC_PER_BLOCK[39 + v][ec_level as usize],
-            Version::Normal(v) => ECC_PER_BLOCK[v - 1][ec_level as usize],
+            Version::Micro(v) => ECC_PER_BLOCK[39 + v][ecl as usize],
+            Version::Normal(v) => ECC_PER_BLOCK[v - 1][ecl as usize],
         }
     }
 
@@ -197,83 +193,83 @@ mod version_tests {
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_width_invalid_micro_version_low() {
-        let invalid_version = Micro(0);
-        invalid_version.alignment_pattern();
+        let bad_ver = Micro(0);
+        bad_ver.alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_width_invalid_micro_version_high() {
-        let invalid_version = Micro(5);
-        invalid_version.alignment_pattern();
+        let bad_ver = Micro(5);
+        bad_ver.alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_width_invalid_normal_version_low() {
-        let invalid_version = Normal(0);
-        invalid_version.alignment_pattern();
+        let bad_ver = Normal(0);
+        bad_ver.alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_width_invalid_normal_version_high() {
-        let invalid_version = Normal(41);
-        invalid_version.alignment_pattern();
+        let bad_ver = Normal(41);
+        bad_ver.alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_version_info_invalid_version_low() {
-        let invalid_version = Normal(0);
-        invalid_version.alignment_pattern();
+        let bad_ver = Normal(0);
+        bad_ver.alignment_pattern();
     }
 
     #[test]
     #[should_panic(expected = "Invalid version")]
     fn test_version_info_invalid_version_high() {
-        let invalid_version = Normal(41);
-        invalid_version.alignment_pattern();
+        let bad_ver = Normal(41);
+        bad_ver.alignment_pattern();
     }
 
     #[test]
-    fn test_char_count_bits() {
-        assert_eq!(Normal(1).char_count_bits(Mode::Numeric), 10);
-        assert_eq!(Normal(9).char_count_bits(Mode::Numeric), 10);
-        assert_eq!(Normal(10).char_count_bits(Mode::Numeric), 12);
-        assert_eq!(Normal(26).char_count_bits(Mode::Numeric), 12);
-        assert_eq!(Normal(27).char_count_bits(Mode::Numeric), 14);
-        assert_eq!(Normal(40).char_count_bits(Mode::Numeric), 14);
-        assert_eq!(Normal(1).char_count_bits(Mode::Alphanumeric), 9);
-        assert_eq!(Normal(9).char_count_bits(Mode::Alphanumeric), 9);
-        assert_eq!(Normal(10).char_count_bits(Mode::Alphanumeric), 11);
-        assert_eq!(Normal(26).char_count_bits(Mode::Alphanumeric), 11);
-        assert_eq!(Normal(27).char_count_bits(Mode::Alphanumeric), 13);
-        assert_eq!(Normal(40).char_count_bits(Mode::Alphanumeric), 13);
-        assert_eq!(Normal(1).char_count_bits(Mode::Byte), 8);
-        assert_eq!(Normal(9).char_count_bits(Mode::Byte), 8);
-        assert_eq!(Normal(10).char_count_bits(Mode::Byte), 16);
-        assert_eq!(Normal(26).char_count_bits(Mode::Byte), 16);
-        assert_eq!(Normal(27).char_count_bits(Mode::Byte), 16);
-        assert_eq!(Normal(40).char_count_bits(Mode::Byte), 16);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_char_count_bits_invalid_version_low() {
-        Normal(0).char_count_bits(Mode::Numeric);
+    fn test_char_cnt_bits() {
+        assert_eq!(Normal(1).char_cnt_bits(Mode::Numeric), 10);
+        assert_eq!(Normal(9).char_cnt_bits(Mode::Numeric), 10);
+        assert_eq!(Normal(10).char_cnt_bits(Mode::Numeric), 12);
+        assert_eq!(Normal(26).char_cnt_bits(Mode::Numeric), 12);
+        assert_eq!(Normal(27).char_cnt_bits(Mode::Numeric), 14);
+        assert_eq!(Normal(40).char_cnt_bits(Mode::Numeric), 14);
+        assert_eq!(Normal(1).char_cnt_bits(Mode::Alphanumeric), 9);
+        assert_eq!(Normal(9).char_cnt_bits(Mode::Alphanumeric), 9);
+        assert_eq!(Normal(10).char_cnt_bits(Mode::Alphanumeric), 11);
+        assert_eq!(Normal(26).char_cnt_bits(Mode::Alphanumeric), 11);
+        assert_eq!(Normal(27).char_cnt_bits(Mode::Alphanumeric), 13);
+        assert_eq!(Normal(40).char_cnt_bits(Mode::Alphanumeric), 13);
+        assert_eq!(Normal(1).char_cnt_bits(Mode::Byte), 8);
+        assert_eq!(Normal(9).char_cnt_bits(Mode::Byte), 8);
+        assert_eq!(Normal(10).char_cnt_bits(Mode::Byte), 16);
+        assert_eq!(Normal(26).char_cnt_bits(Mode::Byte), 16);
+        assert_eq!(Normal(27).char_cnt_bits(Mode::Byte), 16);
+        assert_eq!(Normal(40).char_cnt_bits(Mode::Byte), 16);
     }
 
     #[test]
     #[should_panic]
-    fn test_char_count_bits_invalid_version_high() {
-        Normal(41).char_count_bits(Mode::Alphanumeric);
+    fn test_char_cnt_bits_invalid_version_low() {
+        Normal(0).char_cnt_bits(Mode::Numeric);
     }
 
     #[test]
     #[should_panic]
-    fn test_char_count_bits_invalid_version_max() {
-        Normal(usize::MAX).char_count_bits(Mode::Alphanumeric);
+    fn test_char_cnt_bits_invalid_version_high() {
+        Normal(41).char_cnt_bits(Mode::Alphanumeric);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_char_cnt_bits_invalid_version_max() {
+        Normal(usize::MAX).char_cnt_bits(Mode::Alphanumeric);
     }
 }
 
@@ -365,15 +361,15 @@ impl Color {
 // Format information
 //------------------------------------------------------------------------------
 
-pub fn generate_format_info_qr(ec_level: ECLevel, mask_pattern: MaskPattern) -> u32 {
-    let format_data = ((ec_level as usize) ^ 1) << 3 | (*mask_pattern as usize);
+pub fn generate_format_info_qr(ecl: ECLevel, mask: MaskPattern) -> u32 {
+    let format_data = ((ecl as usize) ^ 1) << 3 | (*mask as usize);
     FORMAT_INFOS_QR[format_data]
 }
 
 pub fn parse_format_info_qr(info: u32) -> (ECLevel, MaskPattern) {
-    let ec_level = ECLevel::from(((info >> 13) ^ 1) as u8);
-    let mask_pattern = MaskPattern::new(((info >> 10) & 7) as u8);
-    (ec_level, mask_pattern)
+    let ecl = ECLevel::from(((info >> 13) ^ 1) as u8);
+    let mask = MaskPattern::new(((info >> 10) & 7) as u8);
+    (ecl, mask)
 }
 
 // Global constants

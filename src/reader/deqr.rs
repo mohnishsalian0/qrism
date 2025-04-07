@@ -47,117 +47,109 @@ impl Not for DeModule {
 
 #[derive(Debug, Clone)]
 pub struct DeQR {
-    width: usize,
+    w: usize,
     grid: Vec<DeModule>,
-    version: Version,
-    ec_level: Option<ECLevel>,
-    mask_pattern: Option<MaskPattern>,
+    ver: Version,
+    ecl: Option<ECLevel>,
+    mask: Option<MaskPattern>,
 }
 
 impl DeQR {
-    pub fn from_clr_img(qr: &RgbImage, version: Version) -> Self {
-        let qr_width = version.width();
+    pub fn from_clr_img(qr: &RgbImage, ver: Version) -> Self {
+        let qr_w = ver.width();
         let (w, h) = qr.dimensions();
         let (w, h) = (w as i16, h as i16);
-        let qz_size = if let Version::Normal(_) = version { 4 } else { 2 };
-        let mod_width = w / (qr_width + 2 * qz_size) as i16;
-        let qz_width = qz_size as i16 * mod_width;
+        let qz_sz = if let Version::Normal(_) = ver { 4 } else { 2 };
+        let mod_w = w / (qr_w + 2 * qz_sz) as i16;
+        let qz_w = qz_sz as i16 * mod_w;
 
         debug_assert!(w == h, "Image is not perfect square");
-        let img_width = w - 2 * qz_width;
+        let img_w = w - 2 * qz_w;
         debug_assert!(
-            img_width % qr_width as i16 == 0,
-            "Image width {img_width} is not a multiple of qr size {qr_width}"
+            img_w % qr_w as i16 == 0,
+            "Image w {img_w} is not a multiple of qr size {qr_w}"
         );
 
-        let threshold = (mod_width * mod_width * 255 / 2) as u32;
+        let thresh = (mod_w * mod_w * 255 / 2) as u32;
 
-        let mut grid = vec![(0u32, 0u32, 0u32); qr_width * qr_width];
+        let mut grid = vec![(0u32, 0u32, 0u32); qr_w * qr_w];
         for (c, r, pixel) in qr.enumerate_pixels() {
             let (r, c) = (r as i16, c as i16);
-            if r < qz_width || r >= w - qz_width || c < qz_width || c >= w - qz_width {
+            if r < qz_w || r >= w - qz_w || c < qz_w || c >= w - qz_w {
                 continue;
             }
-            let index = Self::coord_to_index(
-                (r - qz_width) / mod_width,
-                (c - qz_width) / mod_width,
-                qr_width,
-            );
+            let idx = Self::coord_to_index((r - qz_w) / mod_w, (c - qz_w) / mod_w, qr_w);
             let Rgb([r, g, b]) = *pixel;
-            grid[index].0 += r as u32;
-            grid[index].1 += g as u32;
-            grid[index].2 += b as u32;
+            grid[idx].0 += r as u32;
+            grid[idx].1 += g as u32;
+            grid[idx].2 += b as u32;
         }
 
         let grid = grid
             .iter()
             .map(|&m| {
-                let r = if m.0 < threshold { 0 } else { 255 };
-                let g = if m.1 < threshold { 0 } else { 255 };
-                let b = if m.2 < threshold { 0 } else { 255 };
+                let r = if m.0 < thresh { 0 } else { 255 };
+                let g = if m.1 < thresh { 0 } else { 255 };
+                let b = if m.2 < thresh { 0 } else { 255 };
                 DeModule::Unmarked(Color::Hue(r, g, b))
             })
             .collect();
 
-        Self { width: qr_width, grid, version, ec_level: None, mask_pattern: None }
+        Self { w: qr_w, grid, ver, ecl: None, mask: None }
     }
 
-    pub fn from_image(qr: &GrayImage, version: Version) -> Self {
-        let qr_width = version.width();
+    pub fn from_image(qr: &GrayImage, ver: Version) -> Self {
+        let qr_w = ver.width();
         let (w, h) = qr.dimensions();
         let (w, h) = (w as i16, h as i16);
-        let mod_size = w / qr_width as i16;
-        let qz_size = if let Version::Normal(_) = version { 4 } else { 2 } * mod_size;
+        let mod_sz = w / qr_w as i16;
+        let qz_sz = if let Version::Normal(_) = ver { 4 } else { 2 } * mod_sz;
 
         debug_assert!(w == h, "Image is not perfect square");
-        debug_assert!(
-            (w - 2 * qz_size) % qr_width as i16 == 0,
-            "Image width is not a multiple of qr size"
-        );
+        debug_assert!((w - 2 * qz_sz) % qr_w as i16 == 0, "Image w is not a multiple of qr size");
 
-        let half_area = mod_size * mod_size / 2;
+        let half_area = mod_sz * mod_sz / 2;
 
-        let mut black_count = vec![0; qr_width * qr_width];
+        let mut black_cnt = vec![0; qr_w * qr_w];
         for (c, r, pixel) in qr.enumerate_pixels() {
             let (r, c) = (r as i16, c as i16);
-            if r < qz_size || r >= w - qz_size || c < qz_size || c >= w - qz_size {
+            if r < qz_sz || r >= w - qz_sz || c < qz_sz || c >= w - qz_sz {
                 continue;
             }
-            let index =
-                Self::coord_to_index((r - qz_size) / mod_size, (c - qz_size) / mod_size, qr_width);
+            let index = Self::coord_to_index((r - qz_sz) / mod_sz, (c - qz_sz) / mod_sz, qr_w);
             let Luma([luma]) = *pixel;
-            black_count[index] += if luma < 128 { 1 } else { 0 };
+            black_cnt[index] += if luma < 128 { 1 } else { 0 };
         }
 
-        let grid = black_count
+        let grid = black_cnt
             .iter()
             .map(|&bc| DeModule::Unmarked(if bc > half_area { Color::Dark } else { Color::Light }))
             .collect();
 
-        Self { width: qr_width, grid, version, ec_level: None, mask_pattern: None }
+        Self { w: qr_w, grid, ver, ecl: None, mask: None }
     }
 
-    pub fn from_str(qr: &str, version: Version) -> Self {
-        let qr_width = version.width();
-        let qz_size = if let Version::Normal(_) = version { 4 } else { 2 };
-        let full_width = qz_size + qr_width + qz_size;
+    pub fn from_str(qr: &str, ver: Version) -> Self {
+        let qr_w = ver.width();
+        let qz_sz = if let Version::Normal(_) = ver { 4 } else { 2 };
+        let full_w = qz_sz + qr_w + qz_sz;
 
         let grid = qr
             .chars()
             .filter(|clr| *clr != '\n')
             .enumerate()
             .filter(|(i, clr)| {
-                let (r, c) = (i / full_width, i % full_width);
-                r >= qz_size && r < qz_size + qr_width && c >= qz_size && c < qz_size + qr_width
+                let (r, c) = (i / full_w, i % full_w);
+                r >= qz_sz && r < qz_sz + qr_w && c >= qz_sz && c < qz_sz + qr_w
             })
             .map(|(i, clr)| DeModule::Unmarked(if clr == ' ' { Color::Dark } else { Color::Light }))
             .collect();
 
-        Self { width: qr_width, grid, version, ec_level: None, mask_pattern: None }
+        Self { w: qr_w, grid, ver, ecl: None, mask: None }
     }
 
     pub fn metadata(&self) -> Metadata {
-        Metadata::new(Some(self.version), self.ec_level, self.mask_pattern)
+        Metadata::new(Some(self.ver), self.ecl, self.mask)
     }
 
     pub fn count_dark_modules(&self) -> usize {
@@ -166,7 +158,7 @@ impl DeQR {
 
     #[cfg(test)]
     pub fn to_debug_str(&self) -> String {
-        let w = self.width as i16;
+        let w = self.w as i16;
         let mut res = String::with_capacity((w * (w + 1)) as usize);
         res.push('\n');
         for i in 0..w {
@@ -183,10 +175,10 @@ impl DeQR {
         res
     }
 
-    fn coord_to_index(r: i16, c: i16, width: usize) -> usize {
-        let w = width as i16;
-        debug_assert!(-w <= r && r < w, "row should be greater than or equal to width");
-        debug_assert!(-w <= c && c < w, "column should be greater than or equal to width");
+    fn coord_to_index(r: i16, c: i16, w: usize) -> usize {
+        let w = w as i16;
+        debug_assert!(-w <= r && r < w, "row should be greater than or equal to w");
+        debug_assert!(-w <= c && c < w, "column should be greater than or equal to w");
 
         let r = if r < 0 { r + w } else { r };
         let c = if c < 0 { c + w } else { c };
@@ -194,12 +186,12 @@ impl DeQR {
     }
 
     pub fn get(&self, r: i16, c: i16) -> DeModule {
-        self.grid[Self::coord_to_index(r, c, self.width)]
+        self.grid[Self::coord_to_index(r, c, self.w)]
     }
 
     pub fn get_mut(&mut self, r: i16, c: i16) -> &mut DeModule {
-        let index = Self::coord_to_index(r, c, self.width);
-        &mut self.grid[index]
+        let idx = Self::coord_to_index(r, c, self.w);
+        &mut self.grid[idx]
     }
 
     pub fn set(&mut self, r: i16, c: i16, module: DeModule) {
@@ -216,18 +208,17 @@ mod deqr_util_tests {
     #[test]
     fn test_from_str() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(2);
-        let size = version.width() as i16;
-        let ec_level = ECLevel::L;
+        let ver = Version::Normal(2);
+        let sz = ver.width() as i16;
+        let ecl = ECLevel::L;
 
-        let qr =
-            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let deqr = DeQR::from_str(&qr_str, version);
+        let deqr = DeQR::from_str(&qr_str, ver);
 
-        for r in 0..size {
-            for c in 0..size {
+        for r in 0..sz {
+            for c in 0..sz {
                 assert_eq!(*qr.get(r, c), *deqr.get(r, c), "{r} {c}");
             }
         }
@@ -236,18 +227,17 @@ mod deqr_util_tests {
     #[test]
     fn test_from_image() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(2);
-        let size = version.width() as i16;
-        let ec_level = ECLevel::L;
+        let ver = Version::Normal(2);
+        let sz = ver.width() as i16;
+        let ecl = ECLevel::L;
 
-        let qr =
-            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let qr_str = qr.render(1);
 
-        let deqr = DeQR::from_image(&qr_str, version);
+        let deqr = DeQR::from_image(&qr_str, ver);
 
-        for r in 0..size {
-            for c in 0..size {
+        for r in 0..sz {
+            for c in 0..sz {
                 assert_eq!(*qr.get(r, c), *deqr.get(r, c), "{r} {c}");
             }
         }
@@ -272,15 +262,15 @@ impl DeQR {
         self.set(-8, 8, DeModule::Marked);
 
         f ^= FORMAT_MASK;
-        let (ec_level, mask_pattern) = parse_format_info_qr(f);
-        self.ec_level = Some(ec_level);
-        self.mask_pattern = Some(mask_pattern);
-        Ok((ec_level, mask_pattern))
+        let (ecl, mask) = parse_format_info_qr(f);
+        self.ecl = Some(ecl);
+        self.mask = Some(mask);
+        Ok((ecl, mask))
     }
 
     pub fn read_version_info(&mut self) -> QRResult<Version> {
         debug_assert!(
-            !matches!(self.version, Version::Micro(_) | Version::Normal(1..=6)),
+            !matches!(self.ver, Version::Micro(_) | Version::Normal(1..=6)),
             "Version is too small to read version info"
         );
         let bl = self.get_number(&VERSION_INFO_COORDS_BL);
@@ -296,12 +286,12 @@ impl DeQR {
     }
 
     pub fn get_number(&mut self, coords: &[(i16, i16)]) -> u32 {
-        let mut number = 0;
+        let mut num = 0;
         for (r, c) in coords {
             let m = self.get_mut(*r, *c);
-            number = (number << 1) | u32::from(**m);
+            num = (num << 1) | u32::from(**m);
         }
-        number
+        num
     }
 
     pub fn mark_coords(&mut self, coords: &[(i16, i16)]) {
@@ -325,91 +315,75 @@ mod deqr_infos_test {
     #[test]
     fn test_read_format_info() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(2);
-        let size = version.width() as i16;
-        let ec_level = ECLevel::L;
-        let mask_pattern = MaskPattern::new(1);
+        let ver = Version::Normal(2);
+        let sz = ver.width() as i16;
+        let ecl = ECLevel::L;
+        let mask = MaskPattern::new(1);
 
-        let qr = QRBuilder::new(data.as_bytes())
-            .version(version)
-            .ec_level(ec_level)
-            .mask(mask_pattern)
-            .build()
-            .unwrap();
+        let qr =
+            QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_str(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, ver);
 
-        let format_info = deqr.read_format_info().unwrap();
-        assert_eq!(format_info, (ec_level, mask_pattern));
+        let fmt_info = deqr.read_format_info().unwrap();
+        assert_eq!(fmt_info, (ecl, mask));
     }
 
     #[test]
     fn test_read_format_info_one_corrupted() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(2);
-        let size = version.width() as i16;
-        let ec_level = ECLevel::L;
-        let mask_pattern = MaskPattern::new(1);
+        let ver = Version::Normal(2);
+        let sz = ver.width() as i16;
+        let ecl = ECLevel::L;
+        let mask = MaskPattern::new(1);
 
-        let mut qr = QRBuilder::new(data.as_bytes())
-            .version(version)
-            .ec_level(ec_level)
-            .mask(mask_pattern)
-            .build()
-            .unwrap();
+        let mut qr =
+            QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
         qr.set(8, 1, Module::Format(Color::Light));
         qr.set(8, 2, Module::Format(Color::Light));
         qr.set(8, 4, Module::Format(Color::Dark));
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_str(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, ver);
 
-        let format_info = deqr.read_format_info().unwrap();
-        assert_eq!(format_info, (ec_level, mask_pattern));
+        let fmt_info = deqr.read_format_info().unwrap();
+        assert_eq!(fmt_info, (ecl, mask));
     }
 
     #[test]
     fn test_read_format_info_one_fully_corrupted() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(2);
-        let size = version.width() as i16;
-        let ec_level = ECLevel::L;
-        let mask_pattern = MaskPattern::new(1);
+        let ver = Version::Normal(2);
+        let sz = ver.width() as i16;
+        let ecl = ECLevel::L;
+        let mask = MaskPattern::new(1);
 
-        let mut qr = QRBuilder::new(data.as_bytes())
-            .version(version)
-            .ec_level(ec_level)
-            .mask(mask_pattern)
-            .build()
-            .unwrap();
+        let mut qr =
+            QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
         qr.set(8, 1, Module::Format(Color::Light));
         qr.set(8, 2, Module::Format(Color::Light));
         qr.set(8, 3, Module::Format(Color::Dark));
         qr.set(8, 4, Module::Format(Color::Dark));
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_str(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, ver);
 
-        let format_info = deqr.read_format_info().unwrap();
-        assert_eq!(format_info, (ec_level, mask_pattern));
+        let fmt_info = deqr.read_format_info().unwrap();
+        assert_eq!(fmt_info, (ecl, mask));
     }
 
     #[test]
     #[should_panic]
     fn test_read_format_info_both_fully_corrupted() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(2);
-        let size = version.width() as i16;
-        let ec_level = ECLevel::L;
-        let mask_pattern = MaskPattern::new(1);
+        let ver = Version::Normal(2);
+        let sz = ver.width() as i16;
+        let ecl = ECLevel::L;
+        let mask = MaskPattern::new(1);
 
-        let mut qr = QRBuilder::new(data.as_bytes())
-            .version(version)
-            .ec_level(ec_level)
-            .mask(mask_pattern)
-            .build()
-            .unwrap();
+        let mut qr =
+            QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
         qr.set(8, 1, Module::Format(Color::Light));
         qr.set(8, 2, Module::Format(Color::Light));
         qr.set(8, 3, Module::Format(Color::Dark));
@@ -420,23 +394,22 @@ mod deqr_infos_test {
         qr.set(-5, 8, Module::Format(Color::Dark));
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_str(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, ver);
 
-        let format_info = deqr.read_format_info().unwrap();
-        assert_eq!(format_info, (ec_level, mask_pattern));
+        let fmt_info = deqr.read_format_info().unwrap();
+        assert_eq!(fmt_info, (ecl, mask));
     }
 
     #[test]
     fn test_mark_format_info() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(2);
-        let ec_level = ECLevel::L;
+        let ver = Version::Normal(2);
+        let ecl = ECLevel::L;
 
-        let qr =
-            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_str(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, ver);
         let _ = deqr.read_format_info();
 
         assert_eq!(
@@ -473,67 +446,63 @@ mod deqr_infos_test {
     #[test]
     fn test_read_version_info() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(7);
-        let ec_level = ECLevel::L;
+        let ver = Version::Normal(7);
+        let ecl = ECLevel::L;
 
-        let qr =
-            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_str(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, ver);
 
-        let version_info = deqr.read_version_info().unwrap();
-        assert_eq!(version_info, version);
+        let ver_info = deqr.read_version_info().unwrap();
+        assert_eq!(ver_info, ver);
     }
 
     #[test]
     fn test_read_version_info_one_corrupted() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(7);
-        let ec_level = ECLevel::L;
+        let ver = Version::Normal(7);
+        let ecl = ECLevel::L;
 
-        let mut qr =
-            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let mut qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         qr.set(-9, 5, Module::Format(Color::Dark));
         qr.set(-10, 5, Module::Format(Color::Dark));
         qr.set(-11, 5, Module::Format(Color::Dark));
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_str(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, ver);
 
-        let version_info = deqr.read_version_info().unwrap();
-        assert_eq!(version_info, version);
+        let ver_info = deqr.read_version_info().unwrap();
+        assert_eq!(ver_info, ver);
     }
 
     #[test]
     fn test_read_version_info_one_fully_corrupted() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(7);
-        let ec_level = ECLevel::L;
+        let ver = Version::Normal(7);
+        let ecl = ECLevel::L;
 
-        let mut qr =
-            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let mut qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         qr.set(-9, 5, Module::Format(Color::Dark));
         qr.set(-10, 5, Module::Format(Color::Dark));
         qr.set(-11, 5, Module::Format(Color::Dark));
         qr.set(-9, 4, Module::Format(Color::Light));
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_str(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, ver);
 
-        let version_info = deqr.read_version_info().unwrap();
-        assert_eq!(version_info, version);
+        let ver_info = deqr.read_version_info().unwrap();
+        assert_eq!(ver_info, ver);
     }
 
     #[test]
     #[should_panic]
     fn test_read_version_info_both_fully_corrupted() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(7);
-        let ec_level = ECLevel::L;
+        let ver = Version::Normal(7);
+        let ecl = ECLevel::L;
 
-        let mut qr =
-            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let mut qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         qr.set(-9, 5, Module::Format(Color::Dark));
         qr.set(-10, 5, Module::Format(Color::Dark));
         qr.set(-11, 5, Module::Format(Color::Dark));
@@ -544,22 +513,21 @@ mod deqr_infos_test {
         qr.set(4, -9, Module::Format(Color::Light));
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_str(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, ver);
 
-        let version_info = deqr.read_version_info().unwrap();
+        let ver_info = deqr.read_version_info().unwrap();
     }
 
     #[test]
     fn test_mark_version_info() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(7);
-        let ec_level = ECLevel::L;
+        let ver = Version::Normal(7);
+        let ecl = ECLevel::L;
 
-        let qr =
-            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_str(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, ver);
         let _ = deqr.read_version_info();
 
         assert_eq!(
@@ -637,14 +605,13 @@ mod deqr_all_function_tests {
     #[test]
     fn test_mark_all_function_pattern() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(7);
-        let ec_level = ECLevel::L;
+        let ver = Version::Normal(7);
+        let ecl = ECLevel::L;
 
-        let qr =
-            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_str(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, ver);
         deqr.mark_all_function_patterns();
 
         println!("{}", deqr.to_debug_str());
@@ -707,7 +674,7 @@ mod deqr_all_function_tests {
 impl DeQR {
     pub fn mark_finder_patterns(&mut self) {
         self.mark_finder_pattern_at(3, 3);
-        match self.version {
+        match self.ver {
             Version::Micro(_) => {}
             Version::Normal(_) => {
                 self.mark_finder_pattern_at(3, -4);
@@ -717,10 +684,10 @@ impl DeQR {
     }
 
     fn mark_finder_pattern_at(&mut self, r: i16, c: i16) {
-        let (dr_left, dr_right) = if r > 0 { (-3, 4) } else { (-4, 3) };
-        let (dc_top, dc_bottom) = if c > 0 { (-3, 4) } else { (-4, 3) };
-        for i in dr_left..=dr_right {
-            for j in dc_top..=dc_bottom {
+        let (dr_l, dr_r) = if r > 0 { (-3, 4) } else { (-4, 3) };
+        let (dc_t, dc_b) = if c > 0 { (-3, 4) } else { (-4, 3) };
+        for i in dr_l..=dr_r {
+            for j in dc_t..=dc_b {
                 self.set(r + i, c + j, DeModule::Marked);
             }
         }
@@ -738,14 +705,13 @@ mod deqr_finder_tests {
     #[test]
     fn test_mark_finder_pattern() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(2);
-        let ec_level = ECLevel::L;
+        let ver = Version::Normal(2);
+        let ecl = ECLevel::L;
 
-        let qr =
-            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_str(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, ver);
         deqr.mark_finder_patterns();
 
         assert_eq!(
@@ -785,13 +751,13 @@ mod deqr_finder_tests {
 
 impl DeQR {
     pub fn mark_timing_patterns(&mut self) {
-        let w = self.width as i16;
-        let (offset, last) = match self.version {
+        let w = self.w as i16;
+        let (off, last) = match self.ver {
             Version::Micro(_) => (0, w - 1),
             Version::Normal(_) => (6, w - 9),
         };
-        self.mark_line(offset, 8, offset, last);
-        self.mark_line(8, offset, last, offset);
+        self.mark_line(off, 8, off, last);
+        self.mark_line(8, off, last, off);
     }
 
     fn mark_line(&mut self, r1: i16, c1: i16, r2: i16, c2: i16) {
@@ -820,14 +786,13 @@ mod deqr_timing_tests {
     #[test]
     fn test_mark_timing_pattern() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(2);
-        let ec_level = ECLevel::L;
+        let ver = Version::Normal(2);
+        let ecl = ECLevel::L;
 
-        let qr =
-            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_str(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, ver);
         deqr.mark_timing_patterns();
 
         assert_eq!(
@@ -867,16 +832,16 @@ mod deqr_timing_tests {
 
 impl DeQR {
     pub fn mark_alignment_patterns(&mut self) {
-        let positions = self.version.alignment_pattern();
-        for &r in positions {
-            for &c in positions {
+        let poses = self.ver.alignment_pattern();
+        for &r in poses {
+            for &c in poses {
                 self.mark_alignment_pattern_at(r, c);
             }
         }
     }
 
     fn mark_alignment_pattern_at(&mut self, r: i16, c: i16) {
-        let w = self.width as i16;
+        let w = self.w as i16;
         if (r == 6 && (c == 6 || c - w == -7)) || (r - w == -7 && c == 6) {
             return;
         }
@@ -899,14 +864,13 @@ mod deqr_alignement_tests {
     #[test]
     fn test_mark_alignment_pattern() {
         let data = "Hello, world! 🌎";
-        let version = Version::Normal(2);
-        let ec_level = ECLevel::L;
+        let ver = Version::Normal(2);
+        let ecl = ECLevel::L;
 
-        let qr =
-            QRBuilder::new(data.as_bytes()).version(version).ec_level(ec_level).build().unwrap();
+        let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let qr_str = qr.to_str(1);
 
-        let mut deqr = DeQR::from_str(&qr_str, version);
+        let mut deqr = DeQR::from_str(&qr_str, ver);
         deqr.mark_alignment_patterns();
 
         assert_eq!(
@@ -946,11 +910,11 @@ mod deqr_alignement_tests {
 
 impl DeQR {
     pub fn unmask(&mut self, pattern: MaskPattern) {
-        let mask_function = pattern.mask_functions();
-        let w = self.width as i16;
+        let mask_fn = pattern.mask_functions();
+        let w = self.w as i16;
         for r in 0..w {
             for c in 0..w {
-                if mask_function(r, c) {
+                if mask_fn(r, c) {
                     self.set(r, c, !self.get(r, c))
                 }
             }
@@ -963,27 +927,27 @@ impl DeQR {
 
 impl DeQR {
     // TODO: Write testcases
-    pub fn extract_payload(&mut self, version: Version) -> BitArray {
-        let ch_bits = version.channel_codewords() << 3;
-        let (r_off, g_off, b_off) = (0, ch_bits, 2 * ch_bits);
-        let mut payload = BitArray::new(ch_bits * 3);
-        let mut region_iter = EncRegionIter::new(version);
+    pub fn extract_payload(&mut self, ver: Version) -> BitArray {
+        let chan_bits = ver.channel_codewords() << 3;
+        let (r_off, g_off, b_off) = (0, chan_bits, 2 * chan_bits);
+        let mut pld = BitArray::new(chan_bits * 3);
+        let mut rgn_iter = EncRegionIter::new(ver);
 
-        for i in 0..ch_bits {
-            for (r, c) in region_iter.by_ref() {
-                if let DeModule::Unmarked(color) = self.get(r, c) {
-                    let (r, g, b) = match color {
+        for i in 0..chan_bits {
+            for (r, c) in rgn_iter.by_ref() {
+                if let DeModule::Unmarked(clr) = self.get(r, c) {
+                    let (r, g, b) = match clr {
                         Color::Light => (false, false, false),
                         Color::Dark => (true, true, true),
                         Color::Hue(r, g, b) => (r != 255, g != 255, b != 255),
                     };
-                    payload.put(i, r);
-                    payload.put(i + g_off, g);
-                    payload.put(i + b_off, b);
+                    pld.put(i, r);
+                    pld.put(i + g_off, g);
+                    pld.put(i + b_off, b);
                     break;
                 }
             }
         }
-        payload
+        pld
     }
 }

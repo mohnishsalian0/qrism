@@ -39,11 +39,11 @@ impl Deref for Module {
 
 #[derive(Debug, Clone)]
 pub struct QR {
-    version: Version,
-    width: usize,
-    ec_level: ECLevel,
-    palette: Palette,
-    mask_pattern: Option<MaskPattern>,
+    ver: Version,
+    w: usize,
+    ecl: ECLevel,
+    pal: Palette,
+    mask: Option<MaskPattern>,
     grid: Vec<Module>,
 }
 
@@ -51,41 +51,34 @@ pub struct QR {
 //------------------------------------------------------------------------------
 
 impl QR {
-    pub fn new(version: Version, ec_level: ECLevel, palette: Palette) -> Self {
+    pub fn new(ver: Version, ecl: ECLevel, pal: Palette) -> Self {
         debug_assert!(
-            matches!(version, Version::Micro(1..=4) | Version::Normal(1..=40)),
+            matches!(ver, Version::Micro(1..=4) | Version::Normal(1..=40)),
             "Invalid version"
         );
 
-        let width = version.width();
-        Self {
-            version,
-            width,
-            ec_level,
-            palette,
-            mask_pattern: None,
-            grid: vec![Module::Empty; width * width],
-        }
+        let w = ver.width();
+        Self { ver, w, ecl, pal, mask: None, grid: vec![Module::Empty; w * w] }
     }
 
     pub fn version(&self) -> Version {
-        self.version
+        self.ver
     }
 
-    pub fn width(&self) -> usize {
-        self.width
+    pub fn w(&self) -> usize {
+        self.w
     }
 
     pub fn ec_level(&self) -> ECLevel {
-        self.ec_level
+        self.ecl
     }
 
     pub fn palette(&self) -> Palette {
-        self.palette
+        self.pal
     }
 
     pub fn metadata(&self) -> Metadata {
-        Metadata::new(Some(self.version), Some(self.ec_level), self.mask_pattern)
+        Metadata::new(Some(self.ver), Some(self.ecl), self.mask)
     }
 
     pub fn count_dark_modules(&self) -> usize {
@@ -94,7 +87,7 @@ impl QR {
 
     #[cfg(test)]
     pub fn to_debug_str(&self) -> String {
-        let w = self.width as i16;
+        let w = self.w as i16;
         let mut res = String::with_capacity((w * (w + 1)) as usize);
         res.push('\n');
         for i in 0..w {
@@ -120,9 +113,9 @@ impl QR {
     }
 
     fn coord_to_index(&self, r: i16, c: i16) -> usize {
-        let w = self.width as i16;
-        debug_assert!(-w <= r && r < w, "row should be greater than or equal to width");
-        debug_assert!(-w <= c && c < w, "column should be greater than or equal to width");
+        let w = self.w as i16;
+        debug_assert!(-w <= r && r < w, "row should be greater than or equal to w");
+        debug_assert!(-w <= c && c < w, "column should be greater than or equal to w");
 
         let r = if r < 0 { r + w } else { r };
         let c = if c < 0 { c + w } else { c };
@@ -151,7 +144,7 @@ mod qr_util_tests {
     #[test]
     fn test_index_wrap() {
         let mut qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
-        let w = qr.width as i16;
+        let w = qr.w as i16;
         qr.set(-1, -1, Module::Func(Color::Dark));
         assert_eq!(qr.get(w - 1, w - 1), Module::Func(Color::Dark));
         qr.set(0, 0, Module::Func(Color::Dark));
@@ -162,7 +155,7 @@ mod qr_util_tests {
     #[should_panic]
     fn test_row_out_of_bound() {
         let qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
-        let w = qr.width as i16;
+        let w = qr.w as i16;
         qr.get(w, 0);
     }
 
@@ -170,7 +163,7 @@ mod qr_util_tests {
     #[should_panic]
     fn test_col_out_of_bound() {
         let qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
-        let w = qr.width as i16;
+        let w = qr.w as i16;
         qr.get(0, w);
     }
 
@@ -178,7 +171,7 @@ mod qr_util_tests {
     #[should_panic]
     fn test_row_index_overwrap() {
         let qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
-        let w = qr.width as i16;
+        let w = qr.w as i16;
         qr.get(-(w + 1), 0);
     }
 
@@ -186,7 +179,7 @@ mod qr_util_tests {
     #[should_panic]
     fn test_col_index_overwrap() {
         let qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
-        let w = qr.width as i16;
+        let w = qr.w as i16;
         qr.get(0, -(w + 1));
     }
 }
@@ -197,7 +190,7 @@ mod qr_util_tests {
 impl QR {
     fn draw_finder_patterns(&mut self) {
         self.draw_finder_pattern_at(3, 3);
-        match self.version {
+        match self.ver {
             Version::Micro(_) => {}
             Version::Normal(_) => {
                 self.draw_finder_pattern_at(3, -4);
@@ -268,13 +261,13 @@ mod finder_pattern_tests {
 
 impl QR {
     fn draw_timing_pattern(&mut self) {
-        let w = self.width as i16;
-        let (offset, last) = match self.version {
+        let w = self.w as i16;
+        let (off, last) = match self.ver {
             Version::Micro(_) => (0, w - 1),
             Version::Normal(_) => (6, w - 9),
         };
-        self.draw_line(offset, 8, offset, last);
-        self.draw_line(8, offset, last, offset);
+        self.draw_line(off, 8, off, last);
+        self.draw_line(8, off, last, off);
     }
 
     fn draw_line(&mut self, r1: i16, c1: i16, r2: i16, c2: i16) {
@@ -338,16 +331,16 @@ mod timing_pattern_tests {
 
 impl QR {
     fn draw_alignment_patterns(&mut self) {
-        let positions = self.version.alignment_pattern();
-        for &r in positions {
-            for &c in positions {
+        let poses = self.ver.alignment_pattern();
+        for &r in poses {
+            for &c in poses {
                 self.draw_alignment_pattern_at(r, c)
             }
         }
     }
 
     fn draw_alignment_pattern_at(&mut self, r: i16, c: i16) {
-        let w = self.width as i16;
+        let w = self.w as i16;
         if (r == 6 && (c == 6 || c - w == -7)) || (r - w == -7 && c == 6) {
             return;
         }
@@ -565,7 +558,7 @@ impl QR {
     }
 
     fn draw_format_info(&mut self, format_info: u32) {
-        match self.version {
+        match self.ver {
             Version::Micro(_) => todo!(),
             Version::Normal(_) => {
                 self.draw_number(
@@ -588,19 +581,19 @@ impl QR {
     }
 
     fn draw_version_info(&mut self) {
-        match self.version {
+        match self.ver {
             Version::Micro(_) | Version::Normal(1..=6) => {}
             Version::Normal(7..=40) => {
-                let version_info = self.version.info();
+                let ver_info = self.ver.info();
                 self.draw_number(
-                    version_info,
+                    ver_info,
                     VERSION_INFO_BIT_LEN,
                     Module::Version(Color::Light),
                     Module::Version(Color::Dark),
                     &VERSION_INFO_COORDS_BL,
                 );
                 self.draw_number(
-                    version_info,
+                    ver_info,
                     VERSION_INFO_BIT_LEN,
                     Module::Version(Color::Light),
                     Module::Version(Color::Dark),
@@ -615,16 +608,16 @@ impl QR {
         &mut self,
         number: u32,
         bit_len: usize,
-        off_color: Module,
-        on_color: Module,
+        off_clr: Module,
+        on_clr: Module,
         coords: &[(i16, i16)],
     ) {
         let mut mask = 1 << (bit_len - 1);
         for (r, c) in coords {
             if number & mask == 0 {
-                self.set(*r, *c, off_color);
+                self.set(*r, *c, off_clr);
             } else {
-                self.set(*r, *c, on_color);
+                self.set(*r, *c, on_clr);
             }
             mask >>= 1;
         }
@@ -818,7 +811,7 @@ impl QR {
     pub fn draw_encoding_region(&mut self, payload: BitStream) {
         self.reserve_format_area();
         self.draw_version_info();
-        match self.palette {
+        match self.pal {
             Palette::Mono => self.draw_payload(payload),
             Palette::Poly => self.draw_color_payload(payload),
         }
@@ -827,7 +820,7 @@ impl QR {
     }
 
     fn draw_payload(&mut self, payload: BitStream) {
-        let mut coords = EncRegionIter::new(self.version);
+        let mut coords = EncRegionIter::new(self.ver);
         for bit in payload {
             let module = Module::Data(if bit { Color::Dark } else { Color::Light });
             for (r, c) in coords.by_ref() {
@@ -841,33 +834,33 @@ impl QR {
     }
 
     fn draw_color_payload(&mut self, mut payload: BitStream) {
-        let ch_cap = self.version.channel_codewords();
-        let ch_bit_cap = ch_cap << 3;
+        let chan_cap = self.ver.channel_codewords();
+        let chan_bit_cap = chan_cap << 3;
         debug_assert_eq!(
-            ch_cap * 3,
+            chan_cap * 3,
             payload.len() >> 3,
-            "Channel capacity {ch_cap} is not equal to 1/3rd of codewords size {}",
+            "Channel capacity {chan_cap} is not equal to 1/3rd of codewords sz {}",
             payload.len() >> 3
         );
-        let mut coords = EncRegionIter::new(self.version).cycle();
-        for ch in 0..3 {
-            for bit in Iterator::take(&mut payload, ch_bit_cap) {
-                let chval = (1 - bit as u8) * 255;
+        let mut coords = EncRegionIter::new(self.ver).cycle();
+        for chan in 0..3 {
+            for bit in Iterator::take(&mut payload, chan_bit_cap) {
+                let chan_byte = (1 - bit as u8) * 255;
                 for (r, c) in coords.by_ref() {
                     match self.get_mut(r, c) {
                         Module::Empty => {
-                            let module = Module::Data(Color::Hue(chval, 0, 0));
+                            let module = Module::Data(Color::Hue(chan_byte, 0, 0));
                             self.set(r, c, module);
                             break;
                         }
                         Module::Data(rgb) => {
                             if let Color::Hue(r, g, b) = rgb {
-                                match ch {
+                                match chan {
                                     0 => unreachable!(
                                         "Color module found before parsing red channel"
                                     ),
-                                    1 => *g = chval,
-                                    2 => *b = chval,
+                                    1 => *g = chan_byte,
+                                    2 => *b = chan_byte,
                                     _ => unreachable!("Invalid channel"),
                                 }
                             }
@@ -882,7 +875,7 @@ impl QR {
     }
 
     fn fill_remainder_bits(&mut self, coords: impl Iterator<Item = (i16, i16)>) {
-        let n = self.version.remainder_bits();
+        let n = self.ver.remainder_bits();
         for (r, c) in coords.take(n).by_ref() {
             if matches!(self.get(r, c), Module::Empty) {
                 self.set(r, c, Module::Data(Color::Light));
@@ -891,19 +884,19 @@ impl QR {
     }
 
     pub fn mask(&mut self, pattern: MaskPattern) {
-        self.mask_pattern = Some(pattern);
-        let mask_function = pattern.mask_functions();
-        let w = self.width as i16;
+        self.mask = Some(pattern);
+        let mask_fn = pattern.mask_functions();
+        let w = self.w as i16;
         for r in 0..w {
             for c in 0..w {
-                if mask_function(r, c) {
+                if mask_fn(r, c) {
                     if let Module::Data(clr) = self.get(r, c) {
                         self.set(r, c, Module::Data(!clr))
                     }
                 }
             }
         }
-        let format_info = generate_format_info_qr(self.ec_level, pattern);
+        let format_info = generate_format_info_qr(self.ecl, pattern);
         self.draw_format_info(format_info);
     }
 }
@@ -914,22 +907,22 @@ impl QR {
 // TODO: Write testcases
 impl QR {
     // TODO: Merge render gray and poly if possible and improve the functions
-    pub fn render(&self, module_size: u32) -> GrayImage {
-        let qz_size = if let Version::Normal(_) = self.version { 4 } else { 2 } * module_size;
-        let qr_size = self.width as u32 * module_size;
-        let total_size = qz_size + qr_size + qz_size;
+    pub fn render(&self, module_sz: u32) -> GrayImage {
+        let qz_sz = if let Version::Normal(_) = self.ver { 4 } else { 2 } * module_sz;
+        let qr_sz = self.w as u32 * module_sz;
+        let total_sz = qz_sz + qr_sz + qz_sz;
 
-        let mut canvas = GrayImage::new(total_size, total_size);
-        for i in 0..total_size {
-            for j in 0..total_size {
-                if i < qz_size || i >= qz_size + qr_size || j < qz_size || j >= qz_size + qr_size {
+        let mut canvas = GrayImage::new(total_sz, total_sz);
+        for i in 0..total_sz {
+            for j in 0..total_sz {
+                if i < qz_sz || i >= qz_sz + qr_sz || j < qz_sz || j >= qz_sz + qr_sz {
                     canvas.put_pixel(j, i, Luma([255]));
                     continue;
                 }
-                let r = (i - qz_size) / module_size;
-                let c = (j - qz_size) / module_size;
+                let r = (i - qz_sz) / module_sz;
+                let c = (j - qz_sz) / module_sz;
 
-                let color = match self.get(r as i16, c as i16) {
+                let clr = match self.get(r as i16, c as i16) {
                     Module::Func(c)
                     | Module::Format(c)
                     | Module::Version(c)
@@ -938,7 +931,7 @@ impl QR {
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
                 };
 
-                let pixel = match color {
+                let pixel = match clr {
                     Color::Dark => Luma([0]),
                     Color::Light => Luma([255]),
                     Color::Hue(..) => todo!(),
@@ -951,22 +944,22 @@ impl QR {
         canvas
     }
 
-    pub fn render_color(&self, module_size: u32) -> RgbImage {
-        let qz_size = if let Version::Normal(_) = self.version { 4 } else { 2 } * module_size;
-        let qr_size = self.width as u32 * module_size;
-        let total_size = qz_size + qr_size + qz_size;
+    pub fn render_color(&self, module_sz: u32) -> RgbImage {
+        let qz_sz = if let Version::Normal(_) = self.ver { 4 } else { 2 } * module_sz;
+        let qr_sz = self.w as u32 * module_sz;
+        let total_sz = qz_sz + qr_sz + qz_sz;
 
-        let mut canvas = RgbImage::new(total_size, total_size);
-        for i in 0..total_size {
-            for j in 0..total_size {
-                if i < qz_size || i >= qz_size + qr_size || j < qz_size || j >= qz_size + qr_size {
+        let mut canvas = RgbImage::new(total_sz, total_sz);
+        for i in 0..total_sz {
+            for j in 0..total_sz {
+                if i < qz_sz || i >= qz_sz + qr_sz || j < qz_sz || j >= qz_sz + qr_sz {
                     canvas.put_pixel(j, i, Rgb([255, 255, 255]));
                     continue;
                 }
-                let r = (i - qz_size) / module_size;
-                let c = (j - qz_size) / module_size;
+                let r = (i - qz_sz) / module_sz;
+                let c = (j - qz_sz) / module_sz;
 
-                let color = match self.get(r as i16, c as i16) {
+                let clr = match self.get(r as i16, c as i16) {
                     Module::Func(c)
                     | Module::Format(c)
                     | Module::Version(c)
@@ -975,7 +968,7 @@ impl QR {
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
                 };
 
-                let pixel = match color {
+                let pixel = match clr {
                     Color::Dark => Rgb([0, 0, 0]),
                     Color::Light => Rgb([255, 255, 255]),
                     Color::Hue(r, g, b) => Rgb([r, g, b]),
@@ -988,22 +981,22 @@ impl QR {
         canvas
     }
 
-    pub fn to_str(&self, module_size: usize) -> String {
-        let qz_size = if let Version::Normal(_) = self.version { 4 } else { 2 } * module_size;
-        let qr_size = self.width * module_size;
-        let total_size = qz_size + qr_size + qz_size;
+    pub fn to_str(&self, module_sz: usize) -> String {
+        let qz_sz = if let Version::Normal(_) = self.ver { 4 } else { 2 } * module_sz;
+        let qr_sz = self.w * module_sz;
+        let total_sz = qz_sz + qr_sz + qz_sz;
 
         let mut canvas = String::new();
-        for i in 0..total_size {
-            for j in 0..total_size {
-                if i < qz_size || i >= qz_size + qr_size || j < qz_size || j >= qz_size + qr_size {
+        for i in 0..total_sz {
+            for j in 0..total_sz {
+                if i < qz_sz || i >= qz_sz + qr_sz || j < qz_sz || j >= qz_sz + qr_sz {
                     canvas.push('█');
                     continue;
                 }
-                let r = ((i - qz_size) / module_size) as i16;
-                let c = ((j - qz_size) / module_size) as i16;
+                let r = ((i - qz_sz) / module_sz) as i16;
+                let c = ((j - qz_sz) / module_sz) as i16;
 
-                let color = match self.get(r, c) {
+                let clr = match self.get(r, c) {
                     Module::Func(c)
                     | Module::Format(c)
                     | Module::Version(c)
@@ -1011,7 +1004,7 @@ impl QR {
                     | Module::Data(c) => c,
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
                 };
-                canvas.push(color.select('█', ' '));
+                canvas.push(clr.select('█', ' '));
             }
             canvas.push('\n');
         }

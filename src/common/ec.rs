@@ -1,19 +1,29 @@
 use super::{QRError, QRResult};
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct Block {
-    data: [u8; 256],
+    data: [u8; MAX_BLOCK_SIZE],
     // Block length
     len: usize,
-    // Ecc count
-    ec_len: usize,
+    // Data length
+    dlen: usize,
 }
 
 impl Block {
-    pub fn new(inp: &[u8], ec_len: usize) -> Self {
-        let len = inp.len();
+    pub fn new(inp: &[u8], len: usize) -> Self {
+        let dlen = inp.len();
         let mut data = [0; 256];
-        data[..len].copy_from_slice(inp);
-        Self { data, len, ec_len }
+        data[..dlen].copy_from_slice(inp);
+        let mut block = Self { data, len, dlen };
+        block.compute_ecc();
+        block
+    }
+
+    pub fn with_encoded(encoded: &[u8], dlen: usize) -> Self {
+        let len = encoded.len();
+        let mut data = [0; 256];
+        data[..len].copy_from_slice(encoded);
+        Self { data, len, dlen }
     }
 
     pub fn len(&self) -> usize {
@@ -21,107 +31,117 @@ impl Block {
     }
 
     pub fn ec_len(&self) -> usize {
-        self.ec_len
+        self.len - self.dlen
     }
 
     pub fn data_len(&self) -> usize {
-        self.len - self.ec_len
+        self.dlen
+    }
+
+    pub fn full(&self) -> &[u8] {
+        &self.data[..self.len]
     }
 
     pub fn data(&self) -> &[u8] {
-        &self.data[..self.len]
+        &self.data[..self.dlen]
+    }
+
+    pub fn ecc(&self) -> &[u8] {
+        &self.data[self.dlen..self.len]
     }
 }
 
-// Calculates ecc per block
-// Performs polynomial long division with data polynomial(num)
-// and generator polynomial(den) to compute remainder polynomial,
-// the coefficients of which are the ecc
-pub fn ecc(block: &[u8], ecc_count: usize) -> Vec<u8> {
-    let len = block.len();
-    let gen_poly = GENERATOR_POLYNOMIALS[ecc_count];
+// Compute ecc
+//------------------------------------------------------------------------------
 
-    let mut res = block.to_vec();
-    res.resize(len + ecc_count, 0);
+impl Block {
+    // Performs polynomial long division with data polynomial(num)
+    // and generator polynomial(den) to compute remainder polynomial,
+    // the coefficients of which are the ecc
+    pub fn compute_ecc(&mut self) -> &[u8] {
+        let eclen = self.len - self.dlen;
+        let gen_poly = GENERATOR_POLYNOMIALS[eclen];
+        let mut remainder = self.data;
 
-    for i in 0..len {
-        let lead_coeff = res[i] as usize;
-        if lead_coeff == 0 {
-            continue;
-        }
-
-        let log_lead_coeff = LOG_TABLE[lead_coeff] as usize;
-        for (u, v) in res[i + 1..].iter_mut().zip(gen_poly.iter()) {
-            let mut log_sum = *v as usize + log_lead_coeff;
-            debug_assert!(log_sum < 510, "Log sum has crossed 510: {log_sum}");
-            if log_sum >= 255 {
-                log_sum -= 255;
+        for i in 0..self.dlen {
+            let lead_coeff = remainder[i] as usize;
+            if lead_coeff == 0 {
+                continue;
             }
-            *u ^= EXP_TABLE[log_sum];
-        }
-    }
 
-    res.split_off(len)
+            let log_lead_coeff = LOG_TABLE[lead_coeff] as usize;
+            for (u, v) in remainder[i + 1..].iter_mut().zip(gen_poly.iter()) {
+                let mut log_sum = *v as usize + log_lead_coeff;
+                debug_assert!(log_sum < 510, "Log sum has crossed 510: {log_sum}");
+                if log_sum >= 255 {
+                    log_sum -= 255;
+                }
+                *u ^= EXP_TABLE[log_sum];
+            }
+        }
+
+        self.data[self.dlen..self.len].copy_from_slice(&remainder[self.dlen..self.len]);
+
+        &self.data
+    }
 }
 
 #[cfg(test)]
 mod ec_tests {
-
-    use super::ecc;
+    use super::Block;
 
     #[test]
     fn test_poly_mod_1() {
-        let res = ecc(b" [\x0bx\xd1r\xdcMC@\xec\x11\xec\x11\xec\x11", 10);
-        assert_eq!(&*res, b"\xc4#'w\xeb\xd7\xe7\xe2]\x17");
+        let res = Block::new(b" [\x0bx\xd1r\xdcMC@\xec\x11\xec\x11\xec\x11", 26);
+        assert_eq!(res.ecc(), b"\xc4#'w\xeb\xd7\xe7\xe2]\x17");
     }
 
     #[test]
     fn test_poly_mod_2() {
-        let res = ecc(b" [\x0bx\xd1r\xdcMC@\xec\x11\xec", 13);
-        assert_eq!(&*res, b"\xa8H\x16R\xd96\x9c\x00.\x0f\xb4z\x10");
+        let res = Block::new(b" [\x0bx\xd1r\xdcMC@\xec\x11\xec", 26);
+        assert_eq!(res.ecc(), b"\xa8H\x16R\xd96\x9c\x00.\x0f\xb4z\x10");
     }
 
     #[test]
     fn test_poly_mod_3() {
-        let res = ecc(b"CUF\x86W&U\xc2w2\x06\x12\x06g&", 18);
-        assert_eq!(&*res, b"\xd5\xc7\x0b-s\xf7\xf1\xdf\xe5\xf8\x9au\x9aoV\xa1o'");
+        let res = Block::new(b"CUF\x86W&U\xc2w2\x06\x12\x06g&", 33);
+        assert_eq!(res.ecc(), b"\xd5\xc7\x0b-s\xf7\xf1\xdf\xe5\xf8\x9au\x9aoV\xa1o'");
     }
 }
 
 // Rectifier
 //------------------------------------------------------------------------------
 
-pub fn rectify_block(data: Vec<u8>, ecc: Vec<u8>) -> Vec<u8> {
-    let combined = ecc.iter().rev().chain(data.iter().rev());
-    syndromes(combined, ecc.len()).map(|_| data).unwrap()
-}
+impl Block {
+    pub fn rectify(&mut self) -> &[u8] {
+        self.syndromes().map(|_| &self.data).unwrap()
+    }
 
-// Computes syndromes for a block
-fn syndromes<'a, I>(block: I, ecc_count: usize) -> QRResult<()>
-where
-    I: Iterator<Item = &'a u8> + Clone,
-{
-    let mut res = [0_u8; 64];
-    for (i, e) in res.iter_mut().take(ecc_count).enumerate() {
-        for (j, c) in block.clone().enumerate() {
-            if *c == 0 {
-                continue;
+    // Computes syndromes for a block
+    fn syndromes(&self) -> QRResult<()> {
+        let ec_len = self.len - self.dlen;
+        let mut res = [0_u8; 64];
+        for (i, e) in res.iter_mut().take(ec_len).rev().enumerate() {
+            for (j, c) in self.data.iter().take(self.len).rev().enumerate() {
+                if *c == 0 {
+                    continue;
+                }
+                let log_c = LOG_TABLE[*c as usize];
+                let log_sum = (i * j + log_c as usize) % 255;
+                *e ^= EXP_TABLE[log_sum];
             }
-            let log_c = LOG_TABLE[*c as usize];
-            let log_sum = (i * j + log_c as usize) % 255;
-            *e ^= EXP_TABLE[log_sum];
+        }
+
+        if res.iter().all(|&s| s == 0) {
+            Ok(())
+        } else {
+            Err(QRError::ErrorDetected(res))
         }
     }
 
-    if res.iter().all(|&s| s == 0) {
-        Ok(())
-    } else {
-        Err(QRError::ErrorDetected(res))
+    fn berlkamp_massey() {
+        todo!()
     }
-}
-
-fn berlkamp_massey() {
-    todo!()
 }
 
 // Rectifier for format and version infos
@@ -246,3 +266,5 @@ static GENERATOR_POLYNOMIALS: [&[u8]; 70] = [
     b"\xf7\x9f\xdf\x21\xe0\x5d\x4d\x46\x5a\xa0\x20\xfe\x2b\x96\x54\x65\xbe\xcd\x85\x34\x3c\xca\xa5\xdc\xcb\x97\x5d\x54\x0f\x54\xfd\xad\xa0\x59\xe3\x34\xc7\x61\x5f\xe7\x34\xb1\x29\x7d\x89\xf1\xa6\xe1\x76\x02\x36\x20\x52\xd7\xaf\xc6\x2b\xee\xeb\x1b\x65\xb8\x7f\x03\x05\x08\xa3\xee",
     b"\x69\x49\x44\x01\x1d\xa8\x75\x0e\x58\xd0\x37\x2e\x2a\xd9\x06\x54\xb3\x61\x06\xf0\xc0\xe7\x9e\x40\x76\xa0\xcb\x39\x3d\x6c\xc7\x7c\x41\xbb\xdd\xa7\x27\xb6\x9f\xb4\xf4\xcb\xe4\xfe\x0d\xaf\x3d\x5a\xce\x28\xc7\x5e\x43\x39\x51\xe5\x2e\x7b\x59\x25\x1f\xca\x42\xfa\x23\xaa\xf3\x58\x33",
 ];
+
+pub static MAX_BLOCK_SIZE: usize = 256;

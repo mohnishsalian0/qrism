@@ -2,28 +2,25 @@ mod qr;
 
 pub(crate) use qr::{Module, QR};
 
-use std::ops::Deref;
-
 use crate::common::{
     codec::{encode, encode_with_version},
-    ec::ecc,
     error::{QRError, QRResult},
     mask::{apply_best_mask, MaskPattern},
     metadata::{ECLevel, Palette, Version},
-    BitStream,
+    BitStream, Block,
 };
 
 pub struct QRBuilder<'a> {
     data: &'a [u8],
-    version: Option<Version>,
-    ec_level: ECLevel,
-    palette: Palette,
+    ver: Option<Version>,
+    ecl: ECLevel,
+    pal: Palette,
     mask: Option<MaskPattern>,
 }
 
 impl<'a> QRBuilder<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Self { data, version: None, ec_level: ECLevel::M, palette: Palette::Mono, mask: None }
+        Self { data, ver: None, ecl: ECLevel::M, pal: Palette::Mono, mask: None }
     }
 
     pub fn data(&mut self, data: &'a [u8]) -> &mut Self {
@@ -31,23 +28,23 @@ impl<'a> QRBuilder<'a> {
         self
     }
 
-    pub fn version(&mut self, version: Version) -> &mut Self {
-        self.version = Some(version);
+    pub fn version(&mut self, ver: Version) -> &mut Self {
+        self.ver = Some(ver);
         self
     }
 
     pub fn unset_version(&mut self) -> &mut Self {
-        self.version = None;
+        self.ver = None;
         self
     }
 
-    pub fn ec_level(&mut self, ec_level: ECLevel) -> &mut Self {
-        self.ec_level = ec_level;
+    pub fn ec_level(&mut self, ecl: ECLevel) -> &mut Self {
+        self.ecl = ecl;
         self
     }
 
-    pub fn palette(&mut self, palette: Palette) -> &mut Self {
-        self.palette = palette;
+    pub fn palette(&mut self, pal: Palette) -> &mut Self {
+        self.pal = pal;
         self
     }
 
@@ -57,15 +54,14 @@ impl<'a> QRBuilder<'a> {
     }
 
     pub fn metadata(&self) -> String {
-        match self.version {
+        match self.ver {
             Some(v) => format!(
                 "{{ Version: {:?}, Ec level: {:?}, Palette: {:?} }}",
-                *v, self.ec_level, self.palette
+                *v, self.ecl, self.pal
             ),
-            None => format!(
-                "{{ Version: None, Ec level: {:?}, Palette: {:?} }}",
-                self.ec_level, self.palette
-            ),
+            None => {
+                format!("{{ Version: None, Ec level: {:?}, Palette: {:?} }}", self.ecl, self.pal)
+            }
         }
     }
 }
@@ -78,14 +74,14 @@ mod qrbuilder_util_tests {
     #[test]
     fn test_metadata() {
         let data = "Hello, world!".as_bytes();
-        let version = Version::Normal(1);
-        let ec_level = ECLevel::L;
-        let palette = Palette::Mono;
-        let mut qr_builder = QRBuilder::new(data);
-        qr_builder.version(version).ec_level(ec_level).palette(palette);
-        assert_eq!(qr_builder.metadata(), "{ Version: 1, Ec level: L, Palette: Mono }");
-        qr_builder.unset_version();
-        assert_eq!(qr_builder.metadata(), "{ Version: None, Ec level: L, Palette: Mono }");
+        let ver = Version::Normal(1);
+        let ecl = ECLevel::L;
+        let pal = Palette::Mono;
+        let mut qr_bldr = QRBuilder::new(data);
+        qr_bldr.version(ver).ec_level(ecl).palette(pal);
+        assert_eq!(qr_bldr.metadata(), "{ Version: 1, Ec level: L, Palette: Mono }");
+        qr_bldr.unset_version();
+        assert_eq!(qr_bldr.metadata(), "{ Version: None, Ec level: L, Palette: Mono }");
     }
 }
 
@@ -93,51 +89,50 @@ impl QRBuilder<'_> {
     pub fn build(&self) -> QRResult<QR> {
         let data_len = self.data.len();
 
-        println!("\nGenerating QR {}...", self.metadata());
+        println!("\nConstructing QR {}...", self.metadata());
         if self.data.is_empty() {
             return Err(QRError::EmptyData);
         }
 
         // Encode data optimally
         println!("Encoding data...");
-        let (encoded_data, version) = match self.version {
-            Some(v) => (encode_with_version(self.data, self.ec_level, v, self.palette)?, v),
+        let (enc, ver) = match self.ver {
+            Some(v) => (encode_with_version(self.data, self.ecl, v, self.pal)?, v),
             None => {
                 println!("Finding best version...");
-                encode(self.data, self.ec_level, self.palette)?
+                encode(self.data, self.ecl, self.pal)?
             }
         };
 
-        let total_codewords = version.total_codewords(self.palette);
-        let data_len = version.data_bit_capacity(self.ec_level, self.palette) >> 3;
-        let ec_capacity = Self::ec_capacity(version, self.ec_level);
+        let tot_cwds = ver.total_codewords(self.pal);
+        let data_len = ver.data_bit_capacity(self.ecl, self.pal) >> 3;
+        let ec_cap = Self::ec_capacity(ver, self.ecl);
 
         println!("Constructing payload with ecc & interleaving...");
-        let mut payload = BitStream::new(total_codewords << 3);
-        let channel_data_capacity = version.channel_data_capacity(self.ec_level);
+        let mut pld = BitStream::new(tot_cwds << 3);
+        let chan_data_cap = ver.channel_data_capacity(self.ecl);
         debug_assert!(
-            encoded_data.len() % channel_data_capacity == 0,
-            "Encoded data length {} is not divisible by channel_codewords {channel_data_capacity}",
-            encoded_data.len()
+            enc.len() % chan_data_cap == 0,
+            "Encoded data length {} is not divisible by channel codewords {chan_data_cap}",
+            enc.len()
         );
-        encoded_data.data().chunks_exact(channel_data_capacity).for_each(|c| {
-            // Compute error correction codewords
-            let (data_blocks, ecc_blocks) = Self::compute_ecc(c, version, self.ec_level);
+        enc.data().chunks_exact(chan_data_cap).for_each(|c| {
+            // Splits the data into EC block. The blocks will auto compute ecc
+            let blks = Self::blockify(c, ver, self.ecl);
 
-            // Interleave data & error correction codewords, and store in payload
-            payload.extend(&Self::interleave(&data_blocks));
-            payload.extend(&Self::interleave(&ecc_blocks));
+            // Interleave data & error correction codewords, and write into payload
+            Self::interleave_into(&blks, &mut pld);
         });
 
         // Construct QR
         println!("Constructing QR...");
-        let mut qr = QR::new(version, self.ec_level, self.palette);
+        let mut qr = QR::new(ver, self.ecl, self.pal);
 
         println!("Drawing functional patterns...");
         qr.draw_all_function_patterns();
 
         println!("Drawing encoding region...");
-        qr.draw_encoding_region(payload);
+        qr.draw_encoding_region(pld);
 
         let mask = match self.mask {
             Some(m) => {
@@ -153,64 +148,59 @@ impl QRBuilder<'_> {
 
         println!("\x1b[1;32mQR generated successfully!\n \x1b[0m");
 
-        let total_modules = version.width() * version.width();
-        let dark_modules = qr.count_dark_modules();
-        let light_modules = total_modules - dark_modules;
+        let tot_mods = ver.width() * ver.width();
+        let dark_mods = qr.count_dark_modules();
+        let lt_mods = tot_mods - dark_mods;
 
         println!("Report:");
         println!("{}", qr.metadata());
-        println!("Data capacity: {}, Error Capacity: {}", data_len, ec_capacity);
+        println!("Data capacity: {}, Error Capacity: {}", data_len, ec_cap);
         println!(
             "Data size: {}, Encoded size: {}, Compression: {}%",
             data_len,
-            encoded_data.len() >> 3,
-            (encoded_data.len() >> 3) * 100 / data_len
+            enc.len() >> 3,
+            (enc.len() >> 3) * 100 / data_len
         );
         println!(
             "Dark Cells: {}, Light Cells: {}, Balance: {}\n",
-            dark_modules,
-            light_modules,
-            dark_modules * 100 / total_modules
+            dark_mods,
+            lt_mods,
+            dark_mods * 100 / tot_mods
         );
 
         Ok(qr)
     }
 
-    // ECC: Error Correction Codeword generator
-    fn compute_ecc(data: &[u8], version: Version, ec_level: ECLevel) -> (Vec<&[u8]>, Vec<Vec<u8>>) {
-        let data_blocks = Self::blockify(data, version, ec_level);
+    pub(crate) fn blockify(data: &[u8], ver: Version, ecl: ECLevel) -> Vec<Block> {
+        let ec_len = ver.ecc_per_block(ecl);
+        // b1s = block1_size, b1c = block1_count
+        let (b1s, b1c, b2s, b2c) = ver.data_codewords_per_block(ecl);
 
-        let ecc_size_per_block = version.ecc_per_block(ec_level);
-        let ecc_blocks = data_blocks.iter().map(|b| ecc(b, ecc_size_per_block)).collect::<Vec<_>>();
+        let tot_blks = b1c + b2c;
+        let b1_tot_sz = b1s * b1c;
+        let tot_sz = b1_tot_sz + b2s * b2c;
 
-        (data_blocks, ecc_blocks)
-    }
-
-    pub(crate) fn blockify(data: &[u8], version: Version, ec_level: ECLevel) -> Vec<&[u8]> {
-        let (block1_size, block1_count, block2_size, block2_count) =
-            version.data_codewords_per_block(ec_level);
-
-        let total_blocks = block1_count + block2_count;
-        let total_block1_size = block1_size * block1_count;
-        let total_size = total_block1_size + block2_size * block2_count;
+        println!("Total size {tot_sz}, Data len {}", data.len());
 
         debug_assert!(
-            total_size == data.len(),
+            tot_sz == data.len(),
             "Data len doesn't match total size of blocks: Data len {}, Total block size {}",
             data.len(),
-            total_size
+            tot_sz
         );
 
-        let mut data_blocks = Vec::with_capacity(total_blocks);
-        data_blocks.extend(data[..total_block1_size].chunks(block1_size));
-        if block2_size > 0 {
-            data_blocks.extend(data[total_block1_size..].chunks(block2_size));
+        let mut blks: Vec<Block> = Vec::with_capacity(tot_sz);
+        data[..b1_tot_sz].chunks(b1s).for_each(|d| blks.push(Block::new(d, b1s + ec_len)));
+
+        if b2s > 0 {
+            data[b1_tot_sz..].chunks(b2s).for_each(|d| blks.push(Block::new(d, b2s + ec_len)));
         }
-        data_blocks
+
+        blks
     }
 
-    pub fn ec_capacity(version: Version, ec_level: ECLevel) -> usize {
-        let p = match (version, ec_level) {
+    pub fn ec_capacity(ver: Version, ecl: ECLevel) -> usize {
+        let p = match (ver, ecl) {
             (Version::Micro(2) | Version::Normal(1), ECLevel::L) => 3,
             (Version::Micro(_) | Version::Normal(2), ECLevel::L)
             | (Version::Micro(2) | Version::Normal(1), ECLevel::M) => 2,
@@ -218,25 +208,33 @@ impl QRBuilder<'_> {
             _ => 0,
         };
 
-        let ec_bytes_per_block = version.ecc_per_block(ec_level);
-        let (_, count1, _, count2) = version.data_codewords_per_block(ec_level);
-        let ec_bytes = (count1 + count2) * ec_bytes_per_block;
+        let ec_bpb = ver.ecc_per_block(ecl);
+        let (_, cnt1, _, cnt2) = ver.data_codewords_per_block(ecl);
+        let ec_bytes = (cnt1 + cnt2) * ec_bpb;
 
         (ec_bytes - p) / 2
     }
 
-    pub fn interleave<T: Copy, V: Deref<Target = [T]>>(blocks: &[V]) -> Vec<T> {
-        let max_block_size = blocks.iter().map(|b| b.len()).max().expect("Blocks is empty");
-        let total_size = blocks.iter().map(|b| b.len()).sum::<usize>();
-        let mut res = Vec::with_capacity(total_size);
-        for i in 0..max_block_size {
-            for b in blocks {
-                if i < b.len() {
-                    res.push(b[i]);
+    pub fn interleave_into(blks: &[Block], out: &mut BitStream) {
+        // Interleaving data codewords
+        let max_len = blks.iter().map(Block::data_len).max().expect("Blocks is empty");
+        for i in 0..max_len {
+            for bl in blks {
+                if let Some(b) = bl.data().get(i) {
+                    out.push_byte(*b)
                 }
             }
         }
-        res
+
+        // Interleaving ec codewords
+        let ec_len = blks[0].ec_len();
+        for i in 0..ec_len {
+            for bl in blks {
+                if let Some(b) = bl.ecc().get(i) {
+                    out.push_byte(*b)
+                }
+            }
+        }
     }
 }
 
@@ -245,15 +243,18 @@ mod builder_tests {
     use test_case::test_case;
 
     use super::QRBuilder;
-    use crate::common::{ECLevel, Version};
+    use crate::common::{BitStream, Block, ECLevel, Version};
 
     // TODO: assert data blocks as well
     #[test]
     fn test_add_ec_simple() {
         let msg = b" [\x0bx\xd1r\xdcMC@\xec\x11\xec\x11\xec\x11";
-        let expected_ecc = [b"\xc4\x23\x27\x77\xeb\xd7\xe7\xe2\x5d\x17"];
-        let (_, ecc) = QRBuilder::compute_ecc(msg, Version::Normal(1), ECLevel::M);
-        assert_eq!(&*ecc, expected_ecc);
+        let exp_ecc = [b"\xc4\x23\x27\x77\xeb\xd7\xe7\xe2\x5d\x17"];
+        let blks = QRBuilder::blockify(msg, Version::Normal(1), ECLevel::M);
+        assert_eq!(blks.len(), exp_ecc.len());
+        for (b, exp_ecc) in blks.iter().zip(exp_ecc.iter()) {
+            assert_eq!(b.ecc(), *exp_ecc);
+        }
     }
 
     #[test]
@@ -261,22 +262,29 @@ mod builder_tests {
         let msg = b"CUF\x86W&U\xc2w2\x06\x12\x06g&\xf6\xf6B\x07v\x86\xf2\x07&V\x16\xc6\xc7\x92\x06\
                     \xb6\xe6\xf7w2\x07v\x86W&R\x06\x86\x972\x07F\xf7vV\xc2\x06\x972\x10\xec\x11\xec\
                     \x11\xec\x11\xec";
-        let expected_ec = [
+        let exp_ecc = [
             b"\xd5\xc7\x0b\x2d\x73\xf7\xf1\xdf\xe5\xf8\x9a\x75\x9a\x6f\x56\xa1\x6f\x27",
             b"\x57\xcc\x60\x3c\xca\xb6\x7c\x9d\xc8\x86\x1b\x81\xd1\x11\xa3\xa3\x78\x85",
             b"\x94\x74\xb1\xd4\x4c\x85\x4b\xf2\xee\x4c\xc3\xe6\xbd\x0a\x6c\xf0\xc0\x8d",
             b"\xeb\x9f\x05\xad\x18\x93\x3b\x21\x6a\x28\xff\xac\x52\x02\x83\x20\xb2\xec",
         ];
-        let (_, ecc) = QRBuilder::compute_ecc(msg, Version::Normal(5), ECLevel::Q);
-        assert_eq!(&*ecc, &expected_ec[..]);
+        let blks = QRBuilder::blockify(msg, Version::Normal(5), ECLevel::Q);
+        assert_eq!(blks.len(), exp_ecc.len());
+        for (b, exp_ecc) in blks.iter().zip(exp_ecc.iter()) {
+            assert_eq!(b.ecc(), *exp_ecc);
+        }
     }
 
     #[test]
     fn test_interleave() {
-        let blocks = vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9, 0]];
-        let interleaved = QRBuilder::interleave(&blocks);
-        let exp_interleaved = vec![1, 4, 7, 2, 5, 8, 3, 6, 9, 0];
-        assert_eq!(interleaved, exp_interleaved);
+        let blks = [vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9, 0]];
+        let blks: Vec<Block> = blks.iter().map(|b| Block::new(b, 6)).collect();
+        blks.iter().for_each(|b| println!("{:?}", b.full()));
+        let mut ilvd = BitStream::new(256);
+        QRBuilder::interleave_into(&blks, &mut ilvd);
+        println!("{:?}", ilvd.data());
+        let exp_ilvd = vec![1, 4, 7, 2, 5, 8, 3, 6, 9, 0];
+        assert_eq!(ilvd.data()[..10], exp_ilvd);
     }
 
     #[test_case("Hello, world!🌎".to_string(), Version::Normal(1), ECLevel::L)]
@@ -299,21 +307,17 @@ mod builder_tests {
     #[test_case("A111111111111111".repeat(97).to_string(), Version::Normal(40), ECLevel::M)]
     #[test_case( "aAAAAAAAAA111111111111111111AAAAAAAAAAa".repeat(42).to_string(), Version::Normal(40), ECLevel::Q)]
     #[test_case("1234567890".repeat(305).to_string(), Version::Normal(40), ECLevel::H)]
-    fn test_builder(data: String, version: Version, ec_level: ECLevel) {
-        let qr = QRBuilder::new(data.as_bytes())
-            .version(version)
-            .ec_level(ec_level)
-            .build()
-            .unwrap()
-            .render(10);
+    fn test_builder(data: String, ver: Version, ecl: ECLevel) {
+        let qr =
+            QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap().render(10);
 
         let mut img = rqrr::PreparedImage::prepare(qr);
         let grids = img.detect_grids();
         assert_eq!(grids.len(), 1);
-        let (meta, content) = grids[0].decode().unwrap();
+        let (meta, msg) = grids[0].decode().unwrap();
 
-        assert_eq!(*version, meta.version.0);
-        assert_eq!(data, content);
+        assert_eq!(*ver, meta.version.0);
+        assert_eq!(data, msg);
     }
 
     #[test]

@@ -47,6 +47,25 @@ impl BitStream {
 //------------------------------------------------------------------------------
 
 impl BitStream {
+    pub fn push_byte(&mut self, byte: u8) {
+        debug_assert!(
+            self.len + 8 <= self.capacity,
+            "Insufficient capacity: Capacity {}, Size {}",
+            self.capacity,
+            self.len + 8
+        );
+
+        let off = self.len & 7;
+        let pos = self.len >> 3;
+
+        if off == 0 {
+            self.data[pos] = byte;
+            self.len += 8;
+        } else {
+            self.push_bits(byte, 8);
+        }
+    }
+
     pub fn push_bits<T>(&mut self, bits: T, size: usize)
     where
         T: PrimInt + Display,
@@ -67,14 +86,14 @@ impl BitStream {
             0 => (),
             1..=8 => {
                 let bits = bits.to_u8().unwrap();
-                let offset = self.len & 7;
+                let off = self.len & 7;
                 let pos = self.len >> 3;
 
-                if offset + size <= 8 {
-                    self.data[pos] |= bits << (8 - size - offset);
+                if off + size <= 8 {
+                    self.data[pos] |= bits << (8 - size - off);
                 } else {
-                    self.data[pos] |= bits >> (size + offset - 8);
-                    self.data[pos + 1] = bits << (16 - size - offset);
+                    self.data[pos] |= bits >> (size + off - 8);
+                    self.data[pos + 1] = bits << (16 - size - off);
                 }
 
                 self.len += size;
@@ -96,9 +115,9 @@ impl BitStream {
         );
 
         if bit {
-            let offset = self.len & 7;
+            let off = self.len & 7;
             let pos = self.len >> 3;
-            self.data[pos] |= 0b10000000 >> offset;
+            self.data[pos] |= 0b10000000 >> off;
         }
 
         self.len += 1;
@@ -208,17 +227,17 @@ impl BitStream {
             return None;
         }
 
-        let offset = self.cursor & 7;
+        let off = self.cursor & 7;
         let pos = self.cursor >> 3;
 
         let mut res = (self.data[pos] as u32) << 16;
-        if offset + n > 8 {
+        if off + n > 8 {
             res |= (self.data[pos + 1] as u32) << 8;
         }
-        if offset + n > 16 {
+        if off + n > 16 {
             res |= self.data[pos + 2] as u32;
         }
-        res >>= 24 - offset - n;
+        res >>= 24 - off - n;
         res &= (1 << n) - 1;
 
         self.cursor += n;
@@ -230,9 +249,9 @@ impl BitStream {
             return None;
         }
 
-        let offset = self.cursor & 7;
+        let off = self.cursor & 7;
         let pos = self.cursor >> 3;
-        let bit = (self.data[pos] << offset) >> 7;
+        let bit = (self.data[pos] << off) >> 7;
 
         self.cursor += 1;
 
@@ -330,12 +349,12 @@ impl BitArray {
     pub fn put(&mut self, pos: usize, bit: bool) {
         debug_assert!(pos < self.len, "Out of bitarray bounds: Len {}, Pos {}", self.len, pos);
 
-        let offset = pos & 7;
+        let off = pos & 7;
         let index = pos >> 3;
 
-        self.data[index] &= !(0b10000000 >> offset);
+        self.data[index] &= !(0b10000000 >> off);
         if bit {
-            self.data[index] |= (0b10000000) >> offset;
+            self.data[index] |= (0b10000000) >> off;
         }
     }
 }
