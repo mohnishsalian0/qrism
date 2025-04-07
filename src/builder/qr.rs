@@ -65,7 +65,7 @@ impl QR {
         self.ver
     }
 
-    pub fn w(&self) -> usize {
+    pub fn width(&self) -> usize {
         self.w
     }
 

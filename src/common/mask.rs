@@ -94,69 +94,63 @@ pub fn compute_total_penalty(qr: &QR) -> u32 {
     match qr.version() {
         Version::Micro(_) => todo!(),
         Version::Normal(_) => {
-            let adjacent_penalty = compute_adjacent_penalty(qr);
-            let block_penalty = compute_block_penalty(qr);
-            let finder_penalty_hor = compute_finder_pattern_penalty(qr, true);
-            let finder_penalty_ver = compute_finder_pattern_penalty(qr, false);
-            let balance_penalty = compute_balance_penalty(qr);
-            adjacent_penalty
-                + block_penalty
-                + finder_penalty_hor
-                + finder_penalty_ver
-                + balance_penalty
+            let adj_pen = compute_adjacent_penalty(qr);
+            let blk_pen = compute_block_penalty(qr);
+            let fp_pen_h = compute_finder_pattern_penalty(qr, true);
+            let fp_pen_v = compute_finder_pattern_penalty(qr, false);
+            let bal_pen = compute_balance_penalty(qr);
+            adj_pen + blk_pen + fp_pen_h + fp_pen_v + bal_pen
         }
     }
 }
 
 fn compute_adjacent_penalty(qr: &QR) -> u32 {
-    let mut penalty = 0;
+    let mut pen = 0;
     let w = qr.width();
     let mut cols = vec![(Color::Dark, 0); w];
     for r in 0..w {
-        let mut last_row_color = Color::Dark;
-        let mut consecutive_row_len = 0;
+        let mut last = Color::Dark;
+        let mut consec_row_len = 0;
         for (c, col) in cols.iter_mut().enumerate() {
-            let color = *qr.get(r as i16, c as i16);
-            if last_row_color != color {
-                last_row_color = color;
-                consecutive_row_len = 0;
+            let clr = *qr.get(r as i16, c as i16);
+            if last != clr {
+                last = clr;
+                consec_row_len = 0;
             }
-            consecutive_row_len += 1;
-            if consecutive_row_len >= 5 {
-                penalty += consecutive_row_len as u32 - 2;
+            consec_row_len += 1;
+            if consec_row_len >= 5 {
+                pen += consec_row_len as u32 - 2;
             }
-            if col.0 != color {
-                col.0 = color;
+            if col.0 != clr {
+                col.0 = clr;
                 col.1 = 0;
             }
             col.1 += 1;
             if col.1 >= 5 {
-                penalty += col.1 as u32 - 2;
+                pen += col.1 as u32 - 2;
             }
         }
     }
-    penalty
+    pen
 }
 
 fn compute_block_penalty(qr: &QR) -> u32 {
-    let mut penalty = 0;
+    let mut pen = 0;
     let w = qr.width() as i16;
     for r in 0..w - 1 {
         for c in 0..w - 1 {
-            let color = *qr.get(r, c);
-            if color == *qr.get(r + 1, c)
-                && color == *qr.get(r, c + 1)
-                && color == *qr.get(r + 1, c + 1)
+            let clr = *qr.get(r, c);
+            if clr == *qr.get(r + 1, c) && clr == *qr.get(r, c + 1) && clr == *qr.get(r + 1, c + 1)
             {
-                penalty += 3;
+                pen += 3;
             }
         }
     }
-    penalty
+    pen
 }
 
-fn compute_finder_pattern_penalty(qr: &QR, is_horizontal: bool) -> u32 {
-    let mut penalty = 0;
+fn compute_finder_pattern_penalty(qr: &QR, is_hor: bool) -> u32 {
+    let mut pen = 0;
     let w = qr.width() as i16;
     static PATTERN: [Color; 7] = [
         Color::Dark,
@@ -169,27 +163,24 @@ fn compute_finder_pattern_penalty(qr: &QR, is_horizontal: bool) -> u32 {
     ];
     for i in 0..w {
         for j in 0..w - 6 {
-            let get: Box<dyn Fn(i16) -> Color> = if is_horizontal {
-                Box::new(|c| *qr.get(i, c))
-            } else {
-                Box::new(|r| *qr.get(r, i))
-            };
+            let get: Box<dyn Fn(i16) -> Color> =
+                if is_hor { Box::new(|c| *qr.get(i, c)) } else { Box::new(|r| *qr.get(r, i)) };
             if !(j..j + 7).map(&*get).ne(PATTERN.iter().copied()) {
-                let match_quietzone = |x| x >= 0 && x < w && get(x) == Color::Dark;
-                if (j - 4..j).any(&match_quietzone) || (j + 7..j + 11).any(&match_quietzone) {
-                    penalty += 40;
+                let match_qz = |x| x >= 0 && x < w && get(x) == Color::Dark;
+                if (j - 4..j).any(&match_qz) || (j + 7..j + 11).any(&match_qz) {
+                    pen += 40;
                 }
             }
         }
     }
-    penalty
+    pen
 }
 
 fn compute_balance_penalty(qr: &QR) -> u32 {
-    let dark_count = qr.count_dark_modules();
+    let dark_cnt = qr.count_dark_modules();
     let w = qr.width();
-    let total_count = w * w;
-    let ratio = dark_count * 200 / total_count;
+    let tot = w * w;
+    let ratio = dark_cnt * 200 / tot;
     if ratio < 100 {
         (100 - ratio) as _
     } else {
