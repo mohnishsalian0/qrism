@@ -63,8 +63,8 @@ impl QRReader {
         println!("Separating channels, deinterleaving & rectifying payload...");
         pld.data().chunks_exact(chan_cap).for_each(|c| {
             let mut blocks = Self::deinterleave(c, blk_info, ec_len);
-            let _ = blocks.iter_mut().map(Block::rectify);
-            blocks.iter().for_each(|b| enc.extend(b.data()));
+            let _ = blocks.iter_mut().filter_map(Option::as_mut).map(Block::rectify);
+            blocks.iter().filter_map(Option::as_ref).for_each(|b| enc.extend(b.data()));
         });
 
         println!("Decoding data blocks...");
@@ -79,7 +79,7 @@ impl QRReader {
         data: &[u8],
         blk_info: (usize, usize, usize, usize),
         ec_len: usize,
-    ) -> Vec<Block> {
+    ) -> [Option<Block>; 256] {
         let len = data.len();
         // b1s = block1_size, b1c = block1_count
         let (b1s, b1c, b2s, b2c) = blk_info;
@@ -88,24 +88,29 @@ impl QRReader {
         let spl = b1s * total_blks;
         let data_sz = b1s * b1c + b2s * b2c;
 
-        let mut blks = vec![Vec::with_capacity(b2s); total_blks];
+        let mut dilvd = vec![Vec::with_capacity(b2s); total_blks];
 
         // Deinterleaving data
         data[..spl]
             .chunks(total_blks)
-            .for_each(|ch| ch.iter().enumerate().for_each(|(i, v)| blks[i].push(*v)));
+            .for_each(|ch| ch.iter().enumerate().for_each(|(i, v)| dilvd[i].push(*v)));
         if b2c > 0 {
             data[spl..data_sz]
                 .chunks(b2c)
-                .for_each(|ch| ch.iter().enumerate().for_each(|(i, v)| blks[b1c + i].push(*v)));
+                .for_each(|ch| ch.iter().enumerate().for_each(|(i, v)| dilvd[b1c + i].push(*v)));
         }
 
         // Deinterleaving ecc
         data[data_sz..]
             .chunks(total_blks)
-            .for_each(|ch| ch.iter().enumerate().for_each(|(i, v)| blks[i].push(*v)));
+            .for_each(|ch| ch.iter().enumerate().for_each(|(i, v)| dilvd[i].push(*v)));
 
-        blks.iter().map(|b| Block::with_encoded(b, b.len() - ec_len)).collect()
+        let mut blks: [Option<Block>; 256] = [None; 256];
+        dilvd
+            .iter()
+            .enumerate()
+            .for_each(|(i, b)| blks[i] = Some(Block::with_encoded(b, b.len() - ec_len)));
+        blks
     }
 }
 

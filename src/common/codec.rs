@@ -804,7 +804,7 @@ mod encode {
         let mut prev_cost: [usize; 3] = [0; 3];
         MODES.iter().enumerate().for_each(|(i, &m)| prev_cost[i] = (4 + ver.char_cnt_bits(m)) * 6);
         let mut cur_cost: [usize; 3] = [usize::MAX; 3];
-        let mut min_path: Vec<Vec<usize>> = vec![vec![usize::MAX; 3]; len];
+        let mut min_path: Vec<[usize; 3]> = vec![[usize::MAX; 3]; len];
         for (i, b) in data.iter().enumerate() {
             for (j, to_mode) in MODES.iter().enumerate() {
                 if !to_mode.contains(*b) {
@@ -843,7 +843,7 @@ mod encode {
 
     // Backtrack min_path and identify optimal char mode
     // TODO: Write testcases
-    fn trace_optimal_modes(min_path: Vec<Vec<usize>>, prev_cost: [usize; 3]) -> Vec<Mode> {
+    fn trace_optimal_modes(min_path: Vec<[usize; 3]>, prev_cost: [usize; 3]) -> Vec<Mode> {
         let len = min_path.len();
         let mut mode_index = 0;
         for i in 1..3 {

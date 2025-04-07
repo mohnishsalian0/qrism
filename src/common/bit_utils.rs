@@ -8,7 +8,7 @@ use num_traits::PrimInt;
 
 #[derive(Debug, Clone)]
 pub struct BitStream {
-    data: [u8; MAX_PAYLOAD_SIZE],
+    data: Box<[u8; MAX_PAYLOAD_SIZE]>,
     // Bit length
     len: usize,
     // Max bit capacity
@@ -19,13 +19,13 @@ pub struct BitStream {
 
 impl BitStream {
     pub fn new(capacity: usize) -> Self {
-        Self { data: [0; MAX_PAYLOAD_SIZE], len: 0, capacity, cursor: 0 }
+        Self { data: Box::new([0; MAX_PAYLOAD_SIZE]), len: 0, capacity, cursor: 0 }
     }
 
     pub fn from(inp: &[u8]) -> Self {
         let len = inp.len();
         let bit_len = len << 3;
-        let mut data = [0; MAX_PAYLOAD_SIZE];
+        let mut data = Box::new([0; MAX_PAYLOAD_SIZE]);
         data[..len].copy_from_slice(inp);
         Self { data, len: bit_len, capacity: bit_len, cursor: 0 }
     }

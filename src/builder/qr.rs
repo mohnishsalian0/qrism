@@ -10,7 +10,7 @@ use crate::common::{
         FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, VERSION_INFO_BIT_LEN,
         VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
     },
-    BitStream,
+    BitStream, MAX_QR_SIZE,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -27,7 +27,7 @@ impl Deref for Module {
     type Target = Color;
     fn deref(&self) -> &Self::Target {
         match self {
-            Module::Empty => &Color::Dark,
+            Module::Empty => &Color::Light,
             Module::Func(c) => c,
             Module::Version(c) => c,
             Module::Format(c) => c,
@@ -44,7 +44,7 @@ pub struct QR {
     ecl: ECLevel,
     pal: Palette,
     mask: Option<MaskPattern>,
-    grid: Vec<Module>,
+    grid: Box<[Module; MAX_QR_SIZE]>,
 }
 
 // QR type for builder
@@ -58,7 +58,7 @@ impl QR {
         );
 
         let w = ver.width();
-        Self { ver, w, ecl, pal, mask: None, grid: vec![Module::Empty; w * w] }
+        Self { ver, w, ecl, pal, mask: None, grid: Box::new([Module::Empty; MAX_QR_SIZE]) }
     }
 
     pub fn version(&self) -> Version {
@@ -816,7 +816,9 @@ impl QR {
             Palette::Poly => self.draw_color_payload(payload),
         }
 
-        debug_assert!(!self.grid.contains(&Module::Empty), "Empty module found in debug");
+        let w = self.ver.width();
+        let ver_sz = w * w;
+        debug_assert!(!self.grid[..ver_sz].contains(&Module::Empty), "Empty module found in debug");
     }
 
     fn draw_payload(&mut self, payload: BitStream) {

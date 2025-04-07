@@ -1,6 +1,6 @@
 use super::{QRError, QRResult};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Block {
     data: [u8; MAX_BLOCK_SIZE],
     // Block length
@@ -117,7 +117,6 @@ impl Block {
         self.syndromes().map(|_| &self.data).unwrap()
     }
 
-    // Computes syndromes for a block
     fn syndromes(&self) -> QRResult<()> {
         let ec_len = self.len - self.dlen;
         let mut res = [0_u8; 64];

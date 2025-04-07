@@ -13,7 +13,7 @@ use crate::common::{
         VERSION_ERROR_BIT_LEN, VERSION_ERROR_CAPACITY, VERSION_INFOS, VERSION_INFO_COORDS_BL,
         VERSION_INFO_COORDS_TR,
     },
-    BitArray,
+    BitArray, MAX_QR_SIZE,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -48,7 +48,7 @@ impl Not for DeModule {
 #[derive(Debug, Clone)]
 pub struct DeQR {
     w: usize,
-    grid: Vec<DeModule>,
+    grid: Box<[DeModule; MAX_QR_SIZE]>,
     ver: Version,
     ecl: Option<ECLevel>,
     mask: Option<MaskPattern>,
@@ -72,7 +72,7 @@ impl DeQR {
 
         let thresh = (mod_w * mod_w * 255 / 2) as u32;
 
-        let mut grid = vec![(0u32, 0u32, 0u32); qr_w * qr_w];
+        let mut clr_grid = vec![(0u32, 0u32, 0u32); qr_w * qr_w];
         for (c, r, pixel) in qr.enumerate_pixels() {
             let (r, c) = (r as i16, c as i16);
             if r < qz_w || r >= w - qz_w || c < qz_w || c >= w - qz_w {
@@ -80,20 +80,18 @@ impl DeQR {
             }
             let idx = Self::coord_to_index((r - qz_w) / mod_w, (c - qz_w) / mod_w, qr_w);
             let Rgb([r, g, b]) = *pixel;
-            grid[idx].0 += r as u32;
-            grid[idx].1 += g as u32;
-            grid[idx].2 += b as u32;
+            clr_grid[idx].0 += r as u32;
+            clr_grid[idx].1 += g as u32;
+            clr_grid[idx].2 += b as u32;
         }
 
-        let grid = grid
-            .iter()
-            .map(|&m| {
-                let r = if m.0 < thresh { 0 } else { 255 };
-                let g = if m.1 < thresh { 0 } else { 255 };
-                let b = if m.2 < thresh { 0 } else { 255 };
-                DeModule::Unmarked(Color::Hue(r, g, b))
-            })
-            .collect();
+        let mut grid = Box::new([DeModule::Marked; MAX_QR_SIZE]);
+        clr_grid.iter().enumerate().for_each(|(i, &m)| {
+            let r = if m.0 < thresh { 0 } else { 255 };
+            let g = if m.1 < thresh { 0 } else { 255 };
+            let b = if m.2 < thresh { 0 } else { 255 };
+            grid[i] = DeModule::Unmarked(Color::Hue(r, g, b));
+        });
 
         Self { w: qr_w, grid, ver, ecl: None, mask: None }
     }
@@ -121,11 +119,10 @@ impl DeQR {
             black_cnt[index] += if luma < 128 { 1 } else { 0 };
         }
 
-        let grid = black_cnt
-            .iter()
-            .map(|&bc| DeModule::Unmarked(if bc > half_area { Color::Dark } else { Color::Light }))
-            .collect();
-
+        let mut grid = Box::new([DeModule::Marked; MAX_QR_SIZE]);
+        black_cnt.iter().enumerate().for_each(|(i, &bc)| {
+            grid[i] = DeModule::Unmarked(if bc > half_area { Color::Dark } else { Color::Light })
+        });
         Self { w: qr_w, grid, ver, ecl: None, mask: None }
     }
 
@@ -134,16 +131,18 @@ impl DeQR {
         let qz_sz = if let Version::Normal(_) = ver { 4 } else { 2 };
         let full_w = qz_sz + qr_w + qz_sz;
 
-        let grid = qr
-            .chars()
+        let mut grid = Box::new([DeModule::Marked; MAX_QR_SIZE]);
+        qr.chars()
             .filter(|clr| *clr != '\n')
             .enumerate()
             .filter(|(i, clr)| {
                 let (r, c) = (i / full_w, i % full_w);
                 r >= qz_sz && r < qz_sz + qr_w && c >= qz_sz && c < qz_sz + qr_w
             })
-            .map(|(i, clr)| DeModule::Unmarked(if clr == ' ' { Color::Dark } else { Color::Light }))
-            .collect();
+            .enumerate()
+            .for_each(|(i, (_, clr))| {
+                grid[i] = DeModule::Unmarked(if clr == ' ' { Color::Dark } else { Color::Light })
+            });
 
         Self { w: qr_w, grid, ver, ecl: None, mask: None }
     }
