@@ -289,10 +289,8 @@ mod builder_tests {
         let data = [vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9, 0]];
         let mut blks: [Option<Block>; 256] = [None; 256];
         data.iter().enumerate().for_each(|(i, b)| blks[i] = Some(Block::new(b, 6)));
-        blks.iter().filter_map(Option::as_ref).for_each(|b| println!("{:?}", b.full()));
         let mut ilvd = BitStream::new(256);
         QRBuilder::interleave_into(&blks, &mut ilvd);
-        println!("{:?}", ilvd.data());
         let exp_ilvd = vec![1, 4, 7, 2, 5, 8, 3, 6, 9, 0];
         assert_eq!(ilvd.data()[..10], exp_ilvd);
     }
