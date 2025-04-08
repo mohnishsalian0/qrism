@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+g2p = "1.2.2"         #FIXME: Remove later
 image = "0.25.2"
 num-traits = "0.2.19"
 rqrr = "0.8.0"

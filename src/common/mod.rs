@@ -13,3 +13,8 @@ pub use error::*;
 pub use iter::*;
 pub use mask::*;
 pub use metadata::*;
+
+// FIXME: Remove
+pub mod ec_bench;
+pub mod version_db;
+pub use version_db::*;

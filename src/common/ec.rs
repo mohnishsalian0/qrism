@@ -61,16 +61,16 @@ impl Block {
     pub fn compute_ecc(&mut self) -> &[u8] {
         let eclen = self.len - self.dlen;
         let gen_poly = GENERATOR_POLYNOMIALS[eclen];
-        let mut remainder = self.data;
+        let mut rem = self.data; // Remainder polynomial
 
         for i in 0..self.dlen {
-            let lead_coeff = remainder[i] as usize;
+            let lead_coeff = rem[i] as usize;
             if lead_coeff == 0 {
                 continue;
             }
 
             let log_lead_coeff = LOG_TABLE[lead_coeff] as usize;
-            for (u, v) in remainder[i + 1..].iter_mut().zip(gen_poly.iter()) {
+            for (u, v) in rem[i + 1..].iter_mut().zip(gen_poly.iter()) {
                 let mut log_sum = *v as usize + log_lead_coeff;
                 debug_assert!(log_sum < 510, "Log sum has crossed 510: {log_sum}");
                 if log_sum >= 255 {
@@ -80,7 +80,7 @@ impl Block {
             }
         }
 
-        self.data[self.dlen..self.len].copy_from_slice(&remainder[self.dlen..self.len]);
+        self.data[self.dlen..self.len].copy_from_slice(&rem[self.dlen..self.len]);
 
         &self.data
     }
@@ -113,33 +113,224 @@ mod ec_tests {
 //------------------------------------------------------------------------------
 
 impl Block {
-    pub fn rectify(&mut self) -> &[u8] {
-        self.syndromes().map(|_| &self.data).unwrap()
+    pub fn rectify(&mut self) -> QRResult<&[u8]> {
+        // Compute syndromes
+        let synd = match self.syndromes() {
+            Ok(()) => return Ok(&self.data),
+            Err(s) => s,
+        };
+
+        // Error locator polynomial
+        let sig = self.berlkamp_massey(&synd);
+        let err_loc = self.chien_search(&sig);
+
+        // Sigma derivative
+        let mut dsig = [0u8; 64];
+        for i in (1..64).step_by(2) {
+            dsig[i - 1] = sig[i];
+        }
+
+        // Error evaluator
+        let omg = self.omega(&synd, &sig);
+
+        // Error magnitude
+        let err_mag = self.forney(&omg, &dsig, &err_loc);
+
+        // Rectify errors by XORing data with magnitude
+        self.data.iter_mut().enumerate().for_each(|(i, b)| *b ^= err_mag[i]);
+
+        match self.syndromes() {
+            Ok(()) => Ok(&self.data[..self.dlen]),
+            Err(_) => Err(QRError::TooManyError),
+        }
     }
 
-    fn syndromes(&self) -> QRResult<()> {
+    fn syndromes(&self) -> Result<(), [u8; MAX_EC_SIZE]> {
         let ec_len = self.len - self.dlen;
-        let mut res = [0_u8; 64];
-        for (i, e) in res.iter_mut().take(ec_len).rev().enumerate() {
-            for (j, c) in self.data.iter().take(self.len).rev().enumerate() {
-                if *c == 0 {
-                    continue;
-                }
-                let log_c = LOG_TABLE[*c as usize];
-                let log_sum = (i * j + log_c as usize) % 255;
-                *e ^= EXP_TABLE[log_sum];
-            }
+        let mut res = [0_u8; MAX_EC_SIZE];
+        for (i, e) in res.iter_mut().take(ec_len).enumerate() {
+            let eval = eval_poly(self.data.iter().take(self.len).rev(), i);
+            *e ^= eval;
         }
 
         if res.iter().all(|&s| s == 0) {
             Ok(())
         } else {
-            Err(QRError::ErrorDetected(res))
+            Err(res)
         }
     }
 
-    fn berlkamp_massey() {
-        todo!()
+    // Sigma polynomial
+    fn berlkamp_massey(&self, synd: &[u8; MAX_EC_SIZE]) -> [u8; MAX_EC_SIZE] {
+        let mut l = 0usize;
+        let mut m = 1usize;
+        let mut b = 1u8;
+        let mut cx = [0u8; MAX_EC_SIZE];
+        let mut bx = [0u8; MAX_EC_SIZE];
+        let mut tx = [0u8; MAX_EC_SIZE];
+        cx[0] = 1;
+        bx[0] = 1;
+        let deg = self.len - self.dlen;
+
+        for n in 0..deg {
+            // Calculate discrepancy
+            let mut d = synd[n];
+            for i in 1..=l {
+                if cx[i] != 0 && synd[n - i] != 0 {
+                    let mut log_sum = LOG_TABLE[cx[i] as usize] as usize
+                        + LOG_TABLE[synd[n - i] as usize] as usize;
+                    if log_sum >= 255 {
+                        log_sum -= 255;
+                    }
+                    d ^= EXP_TABLE[log_sum];
+                }
+            }
+
+            if d != 0 {
+                // Temporary copy
+                tx.copy_from_slice(&cx);
+
+                let log_d = LOG_TABLE[d as usize] as usize;
+                let log_b = LOG_TABLE[b as usize] as usize;
+                let scale = subtract(log_d, log_b);
+
+                for i in 0..MAX_EC_SIZE - m {
+                    if bx[i] != 0 {
+                        let mut log_sum = scale + LOG_TABLE[bx[i] as usize] as usize;
+                        if log_sum >= 255 {
+                            log_sum -= 255;
+                        }
+                        cx[i + m] ^= EXP_TABLE[log_sum];
+                    }
+                }
+
+                if 2 * l <= n {
+                    bx.copy_from_slice(&tx);
+                    l = n + 1 - l;
+                    b = d;
+                    m = 1;
+                } else {
+                    m += 1;
+                }
+            } else {
+                m += 1;
+            }
+        }
+        cx
+    }
+
+    // Error location polynomial
+    fn chien_search(&self, sig: &[u8; MAX_EC_SIZE]) -> [bool; MAX_BLOCK_SIZE] {
+        let deg = self.len - self.dlen;
+        let mut err_loc = [false; MAX_BLOCK_SIZE];
+        for (i, e) in err_loc[..self.len].iter_mut().rev().enumerate() {
+            *e = eval_poly(sig.iter().take(deg), 255 - i) == 0;
+        }
+        err_loc
+    }
+
+    // Error evaluator polynomial
+    fn omega(&self, synd: &[u8; MAX_EC_SIZE], sig: &[u8; MAX_EC_SIZE]) -> [u8; MAX_EC_SIZE] {
+        let t = self.len - self.dlen - 1;
+        let mut omg = [0u8; MAX_EC_SIZE];
+        for i in 0..t {
+            let sy = synd[i + 1];
+            if sy == 0 {
+                continue;
+            }
+            let log_sy = LOG_TABLE[sy as usize] as usize;
+            for j in 0..t - i {
+                let si = sig[j];
+                if si == 0 {
+                    continue;
+                }
+                let log_si = LOG_TABLE[si as usize] as usize;
+                let mut log_sum = log_sy + log_si;
+                if log_sum >= 255 {
+                    log_sum -= 255;
+                }
+                omg[i + j] ^= EXP_TABLE[log_sum];
+            }
+        }
+        omg
+    }
+
+    fn forney(
+        &self,
+        omg: &[u8; MAX_EC_SIZE],
+        dsig: &[u8; MAX_EC_SIZE],
+        err_loc: &[bool; MAX_BLOCK_SIZE],
+    ) -> [u8; MAX_BLOCK_SIZE] {
+        let mut mag = [0u8; MAX_BLOCK_SIZE];
+        for (i, &is_err) in err_loc.iter().take(self.len).rev().enumerate() {
+            if !is_err {
+                continue;
+            }
+            let xinv_pow = 255 - i;
+            let omg_x = eval_poly(omg.iter(), xinv_pow);
+            let sig_x = eval_poly(dsig.iter(), xinv_pow);
+            if sig_x == 0 {
+                continue;
+            }
+            let log_diff =
+                subtract(LOG_TABLE[omg_x as usize] as usize, LOG_TABLE[sig_x as usize] as usize);
+            mag[self.len - 1 - i] ^= EXP_TABLE[log_diff];
+        }
+        mag
+    }
+}
+
+fn add(a: usize, b: usize) -> usize {
+    let mut res = a + b;
+    if res >= 255 {
+        res -= 255;
+    }
+    res
+}
+
+fn subtract(a: usize, b: usize) -> usize {
+    if a >= b {
+        a - b
+    } else {
+        255 + a - b
+    }
+}
+
+fn eval_poly<'a>(poly: impl Iterator<Item = &'a u8>, xpow: usize) -> u8 {
+    let mut res = 0u8;
+    for (j, coeff) in poly.enumerate() {
+        let coeff = *coeff as usize;
+        if coeff == 0 {
+            continue;
+        }
+        let log_c = LOG_TABLE[coeff] as usize;
+        let pow = (xpow * j) % 255;
+        let log_sum = add(log_c, pow);
+        res ^= EXP_TABLE[log_sum];
+    }
+    res
+}
+
+#[cfg(test)]
+mod ec_rectifier_tests {
+    use super::Block;
+    use test_case::test_case;
+
+    #[test_case(&[32, 91, 11, 45, 89, 123, 77, 44, 56, 99, 202], &[32, 91, 11, 45, 89, 46, 77, 44, 56, 99, 202, 0, 0, 0, 0])]
+    #[test_case(&[32, 91, 11, 45, 89, 123, 77, 44, 56, 99, 202], &[32, 91, 11, 45, 89, 46, 77, 44, 56, 99, 249, 0, 0, 0, 0])]
+    fn test_rectifier(data: &[u8], bad: &[u8]) {
+        let mut blk = Block::new(data, 15);
+        blk.data[..11].copy_from_slice(&bad[..11]);
+        let rect = blk.rectify().unwrap();
+        assert_eq!(rect, data, "Rectified data and original data don't match: Rectified {rect:?}, Original data {data:?}");
+    }
+
+    #[test_case(&[32, 91, 11, 45, 89, 123, 77, 44, 56, 99, 202], &[138, 91, 161, 45, 243, 46, 231, 44, 146, 99, 202, 0, 0, 0, 0])]
+    #[should_panic]
+    fn test_rectifier_fail(data: &[u8], bad: &[u8]) {
+        let mut blk = Block::new(data, 15);
+        blk.data[..11].copy_from_slice(&bad[..11]);
+        let rect = blk.rectify().unwrap();
     }
 }
 
@@ -267,3 +458,5 @@ static GENERATOR_POLYNOMIALS: [&[u8]; 70] = [
 ];
 
 pub static MAX_BLOCK_SIZE: usize = 256;
+
+pub static MAX_EC_SIZE: usize = 64;
