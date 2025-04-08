@@ -52,7 +52,6 @@ impl QRReader {
         println!("Extracting payload...");
         let pld = deqr.extract_payload(ver);
 
-        let data_len = ver.data_bit_capacity(ecl, Palette::Mono) >> 3;
         let blk_info = ver.data_codewords_per_block(ecl);
         let ec_len = ver.ecc_per_block(ecl);
 
@@ -80,7 +79,6 @@ impl QRReader {
         blk_info: (usize, usize, usize, usize),
         ec_len: usize,
     ) -> [Option<Block>; 256] {
-        let len = data.len();
         // b1s = block1_size, b1c = block1_count
         let (b1s, b1c, b2s, b2c) = blk_info;
 

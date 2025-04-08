@@ -87,8 +87,6 @@ mod qrbuilder_util_tests {
 
 impl QRBuilder<'_> {
     pub fn build(&self) -> QRResult<QR> {
-        let data_len = self.data.len();
-
         println!("\nConstructing QR {}...", self.metadata());
         if self.data.is_empty() {
             return Err(QRError::EmptyData);
@@ -145,6 +143,7 @@ impl QRBuilder<'_> {
                 apply_best_mask(&mut qr)
             }
         };
+        qr.mask(mask);
 
         println!("\x1b[1;32mQR generated successfully!\n \x1b[0m");
 
@@ -176,7 +175,6 @@ impl QRBuilder<'_> {
         let (b1s, b1c, b2s, b2c) = ver.data_codewords_per_block(ecl);
         let ec_len = ver.ecc_per_block(ecl);
 
-        let tot_blks = b1c + b2c;
         let b1_tot_sz = b1s * b1c;
         let tot_sz = b1_tot_sz + b2s * b2c;
 

@@ -285,7 +285,6 @@ pub mod encode {
         for seg in segments {
             push_segment(seg, &mut bs);
         }
-        let encoded_len = (bs.len() + 7) >> 3;
 
         push_terminator(&mut bs);
         pad_remaining_capacity(&mut bs);
@@ -310,7 +309,6 @@ pub mod encode {
         for seg in segments {
             push_segment(seg, &mut bs);
         }
-        let encoded_len = (bs.len() + 7) >> 3;
         push_terminator(&mut bs);
         pad_remaining_capacity(&mut bs);
         Ok(bs)

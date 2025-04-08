@@ -7,12 +7,7 @@ use crate::common::{
     error::{QRError, QRResult},
     iter::EncRegionIter,
     mask::MaskPattern,
-    metadata::{
-        parse_format_info_qr, Color, ECLevel, Metadata, Version, FORMAT_ERROR_CAPACITY,
-        FORMAT_INFOS_QR, FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK,
-        VERSION_ERROR_BIT_LEN, VERSION_ERROR_CAPACITY, VERSION_INFOS, VERSION_INFO_COORDS_BL,
-        VERSION_INFO_COORDS_TR,
-    },
+    metadata::*,
     BitArray, MAX_QR_SIZE,
 };
 
@@ -135,7 +130,7 @@ impl DeQR {
         qr.chars()
             .filter(|clr| *clr != '\n')
             .enumerate()
-            .filter(|(i, clr)| {
+            .filter(|(i, _)| {
                 let (r, c) = (i / full_w, i % full_w);
                 r >= qz_sz && r < qz_sz + qr_w && c >= qz_sz && c < qz_sz + qr_w
             })
@@ -315,7 +310,6 @@ mod deqr_infos_test {
     fn test_read_format_info() {
         let data = "Hello, world! 🌎";
         let ver = Version::Normal(2);
-        let sz = ver.width() as i16;
         let ecl = ECLevel::L;
         let mask = MaskPattern::new(1);
 
@@ -333,7 +327,6 @@ mod deqr_infos_test {
     fn test_read_format_info_one_corrupted() {
         let data = "Hello, world! 🌎";
         let ver = Version::Normal(2);
-        let sz = ver.width() as i16;
         let ecl = ECLevel::L;
         let mask = MaskPattern::new(1);
 
@@ -354,7 +347,6 @@ mod deqr_infos_test {
     fn test_read_format_info_one_fully_corrupted() {
         let data = "Hello, world! 🌎";
         let ver = Version::Normal(2);
-        let sz = ver.width() as i16;
         let ecl = ECLevel::L;
         let mask = MaskPattern::new(1);
 
@@ -377,7 +369,6 @@ mod deqr_infos_test {
     fn test_read_format_info_both_fully_corrupted() {
         let data = "Hello, world! 🌎";
         let ver = Version::Normal(2);
-        let sz = ver.width() as i16;
         let ecl = ECLevel::L;
         let mask = MaskPattern::new(1);
 
@@ -514,7 +505,7 @@ mod deqr_infos_test {
 
         let mut deqr = DeQR::from_str(&qr_str, ver);
 
-        let ver_info = deqr.read_version_info().unwrap();
+        let _ = deqr.read_version_info().unwrap();
     }
 
     #[test]
@@ -928,7 +919,7 @@ impl DeQR {
     // TODO: Write testcases
     pub fn extract_payload(&mut self, ver: Version) -> BitArray {
         let chan_bits = ver.channel_codewords() << 3;
-        let (r_off, g_off, b_off) = (0, chan_bits, 2 * chan_bits);
+        let (g_off, b_off) = (chan_bits, 2 * chan_bits);
         let mut pld = BitArray::new(chan_bits * 3);
         let mut rgn_iter = EncRegionIter::new(ver);
 

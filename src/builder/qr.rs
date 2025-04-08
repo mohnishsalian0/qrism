@@ -2,16 +2,7 @@ use core::panic;
 use image::{GrayImage, Luma, Rgb, RgbImage};
 use std::ops::Deref;
 
-use crate::common::{
-    iter::EncRegionIter,
-    mask::MaskPattern,
-    metadata::{
-        generate_format_info_qr, Color, ECLevel, Metadata, Palette, Version, FORMAT_INFO_BIT_LEN,
-        FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, VERSION_INFO_BIT_LEN,
-        VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
-    },
-    BitStream, MAX_QR_SIZE,
-};
+use crate::common::{iter::EncRegionIter, mask::MaskPattern, metadata::*, BitStream, MAX_QR_SIZE};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Module {
@@ -856,7 +847,7 @@ impl QR {
                             break;
                         }
                         Module::Data(rgb) => {
-                            if let Color::Hue(r, g, b) = rgb {
+                            if let Color::Hue(_r, g, b) = rgb {
                                 match chan {
                                     0 => unreachable!(
                                         "Color module found before parsing red channel"
