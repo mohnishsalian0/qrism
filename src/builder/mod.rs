@@ -1,6 +1,9 @@
 mod qr;
 
-pub(crate) use qr::{Module, QR};
+pub(crate) use qr::QR;
+
+#[cfg(test)]
+pub(crate) use qr::Module;
 
 use crate::common::{
     codec::{encode, encode_with_version},
@@ -217,7 +220,7 @@ impl QRBuilder<'_> {
         (ec_bytes - p) / 2
     }
 
-    pub fn interleave_into(blks: &[Option<Block>], out: &mut BitStream) {
+    pub(crate) fn interleave_into(blks: &[Option<Block>], out: &mut BitStream) {
         // Interleaving data codewords
         let max_len = blks
             .iter()
