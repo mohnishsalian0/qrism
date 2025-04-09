@@ -548,9 +548,3 @@ pub mod encode {
         }
     }
 }
-
-// #[cfg(test)]
-// pub(crate) mod test_exports {
-//     pub use super::writer:: as encode_for_tests;
-//     pub use super::calculate_checksum as checksum_for_tests;
-// }

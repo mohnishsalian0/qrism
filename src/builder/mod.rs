@@ -86,7 +86,7 @@ mod qrbuilder_util_tests {
 }
 
 impl QRBuilder<'_> {
-    pub fn build(&self) -> QRResult<QR> {
+    pub fn build(&mut self) -> QRResult<QR> {
         println!("\nConstructing QR {}...", self.metadata());
         if self.data.is_empty() {
             return Err(QRError::EmptyData);
@@ -143,7 +143,7 @@ impl QRBuilder<'_> {
                 apply_best_mask(&mut qr)
             }
         };
-        qr.mask(mask);
+        self.mask(mask);
 
         println!("\x1b[1;32mQR generated successfully!\n \x1b[0m");
 

@@ -108,7 +108,7 @@ impl Div<Self> for G {
 
 impl G {
     pub fn gen_pow(p: usize) -> G {
-        debug_assert!(p < 256, "Generator power must be less than 255: Power {p}");
+        debug_assert!(p < 256, "Generator power must be less than 256: Power {p}");
         Self(EXP_TABLE[p])
     }
 }
