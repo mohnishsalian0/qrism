@@ -76,7 +76,7 @@ mod reader {
             take_alphanumeric_data, take_byte_data, take_header, take_numeric_data, take_segment,
             BitStream, Mode,
         };
-        use crate::common::codec::encode::encode_with_version;
+        use crate::common::codec::encoder::encode_with_version;
         use crate::{ECLevel, Palette, Version};
 
         #[test]
@@ -222,7 +222,7 @@ pub mod decode {
     #[cfg(test)]
     mod decode_tests {
         use super::decode;
-        use crate::common::encode::encode_with_version;
+        use crate::common::encoder::encode_with_version;
         use crate::{ECLevel, Palette, Version};
 
         #[test]

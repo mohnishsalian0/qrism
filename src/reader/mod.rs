@@ -5,7 +5,7 @@ use image::RgbImage;
 use crate::common::{
     codec::decode,
     error::{QRError, QRResult},
-    metadata::{Palette, Version},
+    metadata::Version,
     BitStream, Block,
 };
 use deqr::DeQR;
