@@ -1,4 +1,4 @@
-use crate::common::Version;
+use crate::metadata::Version;
 
 // Iterator for placing data in encoding region of QR
 //------------------------------------------------------------------------------

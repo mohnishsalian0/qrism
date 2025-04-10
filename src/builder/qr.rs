@@ -2,7 +2,9 @@ use core::panic;
 use image::{GrayImage, Luma, Rgb, RgbImage};
 use std::ops::Deref;
 
-use crate::common::{iter::EncRegionIter, mask::MaskPattern, metadata::*, BitStream, MAX_QR_SIZE};
+use crate::metadata::*;
+use crate::utils::{BitStream, EncRegionIter};
+use crate::MaskPattern;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Module {

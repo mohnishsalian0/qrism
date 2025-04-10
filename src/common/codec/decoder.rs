@@ -6,10 +6,9 @@ pub use decode::*;
 mod reader {
     use std::cmp::min;
 
-    use crate::{
-        common::{codec::Mode, BitStream},
-        Version,
-    };
+    use crate::codec::Mode;
+    use crate::metadata::Version;
+    use crate::utils::BitStream;
 
     pub fn take_segment(inp: &mut BitStream, ver: Version) -> Option<Vec<u8>> {
         let (mode, char_cnt) = take_header(inp, ver)?;
@@ -137,14 +136,14 @@ mod reader {
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
             let pal = Palette::Mono;
-            let mut bs = encode_with_version(data, ecl, ver, pal).unwrap();
+            let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
             take_header(&mut bs, ver).unwrap();
             let numeric_data = take_numeric_data(&mut bs, 3);
             assert_eq!(numeric_data, "123".as_bytes().to_vec());
             let numeric_data = take_numeric_data(&mut bs, 2);
             assert_eq!(numeric_data, "45".as_bytes().to_vec());
             let data = "6".as_bytes();
-            let mut bs = encode_with_version(data, ECLevel::L, ver, pal).unwrap();
+            let mut bs = encode_with_version(data, ver, ECLevel::L, pal).unwrap();
             take_header(&mut bs, ver).unwrap();
             let numeric_data = take_numeric_data(&mut bs, 1);
             assert_eq!(numeric_data, "6".as_bytes().to_vec());
@@ -156,14 +155,14 @@ mod reader {
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
             let pal = Palette::Mono;
-            let mut bs = encode_with_version(data, ecl, ver, pal).unwrap();
+            let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
             take_header(&mut bs, ver).unwrap();
             let alphanumeric_data = take_alphanumeric_data(&mut bs, 2);
             assert_eq!(alphanumeric_data, "AC".as_bytes().to_vec());
             let alphanumeric_data = take_alphanumeric_data(&mut bs, 1);
             assert_eq!(alphanumeric_data, "-".as_bytes().to_vec());
             let data = "%".as_bytes();
-            let mut bs = encode_with_version(data, ECLevel::L, ver, pal).unwrap();
+            let mut bs = encode_with_version(data, ver, ECLevel::L, pal).unwrap();
             take_header(&mut bs, ver).unwrap();
             let alphanumeric_data = take_alphanumeric_data(&mut bs, 1);
             assert_eq!(alphanumeric_data, "%".as_bytes().to_vec());
@@ -175,7 +174,7 @@ mod reader {
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
             let pal = Palette::Mono;
-            let mut bs = encode_with_version(data, ecl, ver, pal).unwrap();
+            let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
             take_header(&mut bs, ver).unwrap();
             let byte_data = take_byte_data(&mut bs, 2);
             assert_eq!(byte_data, "ab".as_bytes().to_vec());
@@ -189,7 +188,7 @@ mod reader {
             let ver = Version::Normal(2);
             let ecl = ECLevel::L;
             let pal = Palette::Mono;
-            let mut bs = encode_with_version(data, ecl, ver, pal).unwrap();
+            let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
             let seg_data = take_segment(&mut bs, ver).unwrap();
             assert_eq!(seg_data, "abc".as_bytes().to_vec());
             let seg_data = take_segment(&mut bs, ver).unwrap();
@@ -209,7 +208,8 @@ mod reader {
 
 pub mod decode {
     use super::reader::take_segment;
-    use crate::{common::BitStream, Version};
+    use crate::utils::BitStream;
+    use crate::Version;
 
     pub fn decode(encoded: &mut BitStream, ver: Version) -> Vec<u8> {
         let mut res = Vec::with_capacity(encoded.len());
@@ -222,7 +222,7 @@ pub mod decode {
     #[cfg(test)]
     mod decode_tests {
         use super::decode;
-        use crate::common::encoder::encode_with_version;
+        use crate::codec::encode_with_version;
         use crate::{ECLevel, Palette, Version};
 
         #[test]
@@ -231,7 +231,7 @@ pub mod decode {
             let ver = Version::Normal(2);
             let ecl = ECLevel::L;
             let pal = Palette::Mono;
-            let mut bs = encode_with_version(data, ecl, ver, pal).unwrap();
+            let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
             let decoded_data = decode(&mut bs, ver);
             assert_eq!(decoded_data, data);
         }

@@ -7,10 +7,10 @@ pub(crate) use qr::Module;
 
 use crate::common::{
     codec::{encode, encode_with_version},
-    error::{QRError, QRResult},
+    ec::Block,
     mask::{apply_best_mask, MaskPattern},
     metadata::{ECLevel, Palette, Version},
-    BitStream, Block,
+    utils::{BitStream, QRError, QRResult},
 };
 
 pub struct QRBuilder<'a> {
@@ -72,7 +72,7 @@ impl<'a> QRBuilder<'a> {
 #[cfg(test)]
 mod qrbuilder_util_tests {
     use super::QRBuilder;
-    use crate::common::{ECLevel, Palette, Version};
+    use crate::metadata::{ECLevel, Palette, Version};
 
     #[test]
     fn test_metadata() {
@@ -98,7 +98,7 @@ impl QRBuilder<'_> {
         // Encode data optimally
         println!("Encoding data...");
         let (enc, ver) = match self.ver {
-            Some(v) => (encode_with_version(self.data, self.ecl, v, self.pal)?, v),
+            Some(v) => (encode_with_version(self.data, v, self.ecl, self.pal)?, v),
             None => {
                 println!("Finding best version...");
                 encode(self.data, self.ecl, self.pal)?
@@ -106,7 +106,7 @@ impl QRBuilder<'_> {
         };
 
         let tot_cwds = ver.total_codewords(self.pal);
-        let data_len = ver.data_bit_capacity(self.ecl, self.pal) >> 3;
+        let data_len = ver.data_capacity(self.ecl, self.pal);
         let ec_cap = Self::ec_capacity(ver, self.ecl);
 
         println!("Constructing payload with ecc & interleaving...");
@@ -253,7 +253,9 @@ mod builder_tests {
     use test_case::test_case;
 
     use super::QRBuilder;
-    use crate::common::{BitStream, Block, ECLevel, Version};
+    use crate::ec::Block;
+    use crate::metadata::{ECLevel, Version};
+    use crate::utils::BitStream;
 
     // TODO: assert data blocks as well
     #[test]

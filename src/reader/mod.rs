@@ -2,12 +2,10 @@ mod deqr;
 
 use image::RgbImage;
 
-use crate::common::{
-    codec::decode,
-    error::{QRError, QRResult},
-    metadata::Version,
-    BitStream, Block,
-};
+use crate::codec::decode;
+use crate::ec::Block;
+use crate::metadata::Version;
+use crate::utils::{BitStream, QRError, QRResult};
 use deqr::DeQR;
 
 pub trait QRReadable {
@@ -118,9 +116,8 @@ mod reader_tests {
 
     use super::QRReader;
     use crate::builder::QRBuilder;
-    use crate::common::metadata::{ECLevel, Version};
-    use crate::common::BitStream;
-    use crate::Palette;
+    use crate::metadata::{ECLevel, Palette, Version};
+    use crate::utils::BitStream;
 
     #[test]
     fn test_deinterleave() {

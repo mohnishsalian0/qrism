@@ -3,7 +3,8 @@ use std::cmp::PartialOrd;
 use std::fmt::{Debug, Display};
 use std::ops::{Deref, Not};
 
-use super::{MaskPattern, Mode};
+use super::codec::Mode;
+use super::mask::MaskPattern;
 
 // Metadata
 //------------------------------------------------------------------------------
@@ -121,6 +122,17 @@ impl Version {
             bc *= 3;
         }
         bc
+    }
+
+    pub fn data_capacity(self, ecl: ECLevel, palette: Palette) -> usize {
+        let mut bc = match self {
+            Version::Micro(v) => VERSION_DATA_BIT_CAPACITY[39 + v][ecl as usize],
+            Version::Normal(v) => VERSION_DATA_BIT_CAPACITY[v - 1][ecl as usize],
+        };
+        if matches!(palette, Palette::Poly) {
+            bc *= 3;
+        }
+        bc >> 3
     }
 
     pub fn total_codewords(self, palette: Palette) -> usize {

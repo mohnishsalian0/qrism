@@ -4,3 +4,4 @@ pub mod iter;
 
 pub use bit_types::*;
 pub use error::*;
+pub use iter::*;

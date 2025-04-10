@@ -1,15 +1,10 @@
+use image::{GrayImage, Luma, Rgb, RgbImage};
 use std::ops::{Deref, Not};
 
-use image::{GrayImage, Luma, Rgb, RgbImage};
-
-use crate::common::{
-    ec::rectify_info,
-    error::{QRError, QRResult},
-    iter::EncRegionIter,
-    mask::MaskPattern,
-    metadata::*,
-    BitArray, MAX_QR_SIZE,
-};
+use crate::ec::rectify_info;
+use crate::metadata::*;
+use crate::utils::{BitArray, EncRegionIter, QRError, QRResult};
+use crate::MaskPattern;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DeModule {
@@ -301,10 +296,8 @@ mod deqr_infos_test {
     use super::DeQR;
     use crate::builder::Module;
     use crate::builder::QRBuilder;
-    use crate::common::{
-        mask::MaskPattern,
-        metadata::{Color, ECLevel, Version},
-    };
+    use crate::metadata::{Color, ECLevel, Version};
+    use crate::MaskPattern;
 
     #[test]
     fn test_read_format_info() {

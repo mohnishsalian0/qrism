@@ -327,10 +327,10 @@ mod mode_tests {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Segment<'a> {
-    pub(crate) mode: Mode,
-    pub(crate) mode_bits: usize, // Bit len of mode
-    pub(crate) len_bits: usize,  // Bit len of char count
-    pub(crate) data: &'a [u8],   // Reference to raw data
+    pub mode: Mode,
+    pub mode_bits: usize, // Bit len of mode
+    pub len_bits: usize,  // Bit len of char count
+    pub data: &'a [u8],   // Reference to raw data
 }
 
 impl<'a> Segment<'a> {

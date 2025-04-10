@@ -1,5 +1,5 @@
 use super::{galois::*, Block, MAX_BLOCK_SIZE, MAX_EC_SIZE};
-use crate::common::{QRError, QRResult};
+use crate::utils::{QRError, QRResult};
 
 // Rectifier
 //------------------------------------------------------------------------------

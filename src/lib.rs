@@ -9,11 +9,11 @@
 )]
 
 pub mod builder;
-mod common;
+pub(crate) mod common;
 pub mod reader;
 
 pub use builder::QRBuilder;
-pub use common::error::*;
-pub use common::mask::*;
+pub use common::mask::MaskPattern;
 pub use common::metadata::{ECLevel, Palette, Version};
+pub(crate) use common::*;
 pub use reader::QRReader;
