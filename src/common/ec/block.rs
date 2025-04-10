@@ -42,6 +42,11 @@ impl Block {
         &self.data[..self.len]
     }
 
+    #[cfg(test)]
+    pub fn full_mut(&mut self) -> &mut [u8] {
+        &mut self.data[..self.len]
+    }
+
     pub fn data(&self) -> &[u8] {
         &self.data[..self.dlen]
     }

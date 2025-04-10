@@ -43,7 +43,7 @@ impl Block {
         let ec_len = self.len - self.dlen;
         let mut synd = [G(0); MAX_EC_SIZE];
 
-        let mut gdata = [G(0); MAX_EC_SIZE];
+        let mut gdata = [G(0); MAX_BLOCK_SIZE];
         for (i, &b) in self.data.iter().take(self.len).enumerate() {
             gdata[i] = G(b);
         }

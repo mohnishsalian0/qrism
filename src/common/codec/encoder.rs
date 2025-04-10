@@ -76,35 +76,60 @@ pub mod encode {
 
         let len = data.len();
         let mut prev_cost = [0usize; 3];
-        MODES.iter().enumerate().for_each(|(i, &m)| prev_cost[i] = (4 + ver.char_cnt_bits(m)) * 6);
         let mut cur_cost = [usize::MAX; 3];
+        let mut streaks = [0usize; 3];
+        let mut max_chars = [0usize; 3];
+        let mut meta_bits = [0usize; 3];
         let mut min_path = vec![[usize::MAX; 3]; len];
+
+        MODES.iter().enumerate().for_each(|(i, &m)| {
+            let char_bits = ver.char_cnt_bits(m);
+            meta_bits[i] = (4 + char_bits) * 6;
+            prev_cost[i] = meta_bits[i];
+            max_chars[i] = (1 << char_bits) - 1;
+        });
+
         for (i, b) in data.iter().enumerate() {
             for (j, to_mode) in MODES.iter().enumerate() {
                 if !to_mode.contains(*b) {
                     continue;
                 }
+
                 let encoded_char_size = match to_mode {
                     Mode::Numeric => 20,
                     Mode::Alphanumeric => 33,
                     Mode::Byte => 48,
                 };
+
                 for (k, from_mode) in MODES.iter().enumerate() {
                     if prev_cost[k] == usize::MAX {
                         continue;
                     }
-                    let mut cost = 0;
+
+                    let mut cost = encoded_char_size;
                     if to_mode != from_mode {
                         cost += (prev_cost[k] + 5) / 6 * 6;
-                        cost += (4 + ver.char_cnt_bits(*to_mode)) * 6;
+                        cost += meta_bits[j];
                     } else {
+                        if streaks[j] == max_chars[j] {
+                            cost += meta_bits[j];
+                        }
                         cost += prev_cost[k];
                     }
-                    cost += encoded_char_size;
+
                     if cost < cur_cost[j] {
                         cur_cost[j] = cost;
                         min_path[i][j] = k;
                     }
+                }
+
+                if min_path[i][j] == j {
+                    streaks[j] += 1;
+                    if streaks[j] > max_chars[j] {
+                        streaks[j] = 1;
+                    }
+                } else {
+                    streaks[j] = 1;
                 }
             }
             swap(&mut prev_cost, &mut cur_cost);
@@ -145,7 +170,8 @@ pub mod encode {
         let mut seg_start = 0;
         let mut seg_mode = char_modes[0];
         for (i, &m) in char_modes.iter().enumerate().skip(1) {
-            if seg_mode != m {
+            let char_bits = ver.char_cnt_bits(seg_mode);
+            if seg_mode != m || (i - seg_start) == (1 << char_bits) - 1 {
                 let mode_bits = ver.mode_bits();
                 let len_bits = ver.char_cnt_bits(seg_mode);
                 segs.push(Segment::new(seg_mode, mode_bits, len_bits, &data[seg_start..i]));
