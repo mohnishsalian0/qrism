@@ -38,8 +38,22 @@ impl BitStream {
         self.capacity
     }
 
+    pub fn bits_left(&self) -> usize {
+        self.len - self.cursor
+    }
+
     pub fn data(&self) -> &[u8] {
         &self.data[..(self.len + 7) >> 3]
+    }
+
+    pub fn truncate(&mut self, len: usize) {
+        debug_assert!(
+            len < self.len,
+            "Truncate length must be less than current length: Current length {}, Truncate length {}",
+            self.len,
+            len
+        );
+        self.len = len;
     }
 }
 
@@ -223,7 +237,7 @@ impl BitStream {
     pub fn take_bits(&mut self, n: usize) -> Option<u16> {
         debug_assert!(n <= 16, "Cannot take more than 16 bits: N {n}");
 
-        if self.cursor + n >= self.len {
+        if self.cursor + n > self.len {
             return None;
         }
 

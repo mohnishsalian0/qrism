@@ -13,6 +13,7 @@ pub(crate) mod common;
 pub mod reader;
 
 pub use builder::QRBuilder;
+pub(crate) use builder::{Module, QR};
 pub use common::mask::MaskPattern;
 pub use common::metadata::{ECLevel, Palette, Version};
 pub(crate) use common::*;

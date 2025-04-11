@@ -169,16 +169,20 @@ pub mod encode {
         let mut segs: Vec<Segment> = vec![];
         let mut seg_start = 0;
         let mut seg_mode = char_modes[0];
+
         for (i, &m) in char_modes.iter().enumerate().skip(1) {
             let char_bits = ver.char_cnt_bits(seg_mode);
-            if seg_mode != m || (i - seg_start) == (1 << char_bits) - 1 {
+
+            if (seg_mode != m) || (i - seg_start) == (1 << char_bits) - 1 {
                 let mode_bits = ver.mode_bits();
                 let len_bits = ver.char_cnt_bits(seg_mode);
                 segs.push(Segment::new(seg_mode, mode_bits, len_bits, &data[seg_start..i]));
+
                 seg_mode = m;
                 seg_start = i;
             }
         }
+
         let mode_bits = ver.mode_bits();
         let len_bits = ver.char_cnt_bits(seg_mode);
         segs.push(Segment::new(seg_mode, mode_bits, len_bits, &data[seg_start..len]));

@@ -5,6 +5,7 @@ use crate::ec::rectify_info;
 use crate::metadata::*;
 use crate::utils::{BitArray, EncRegionIter, QRError, QRResult};
 use crate::MaskPattern;
+use crate::{Module, QR};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DeModule {
@@ -31,17 +32,41 @@ impl Not for DeModule {
         }
     }
 }
+impl From<Module> for DeModule {
+    fn from(value: Module) -> Self {
+        match value {
+            Module::Empty => Self::Marked,
+            Module::Func(c) => Self::Unmarked(c),
+            Module::Data(c) => Self::Unmarked(c),
+            Module::Format(c) => Self::Unmarked(c),
+            Module::Version(c) => Self::Unmarked(c),
+        }
+    }
+}
 
 // QR type for reader
 //------------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub struct DeQR {
-    w: usize,
     grid: Box<[DeModule; MAX_QR_SIZE]>,
+    w: usize,
     ver: Version,
     ecl: Option<ECLevel>,
     mask: Option<MaskPattern>,
+}
+
+impl From<&QR> for DeQR {
+    fn from(qr: &QR) -> Self {
+        let grid = qr.grid();
+        let w = qr.width();
+        let ver = qr.version();
+        let ecl = qr.ec_level();
+        let mask = qr.mask().expect("Mask not found");
+        let mut degrid = [DeModule::Marked; MAX_QR_SIZE];
+        grid.iter().enumerate().for_each(|(i, &m)| degrid[i] = DeModule::from(m));
+        Self { grid: Box::new(degrid), w, ver, ecl: Some(ecl), mask: Some(mask) }
+    }
 }
 
 impl DeQR {

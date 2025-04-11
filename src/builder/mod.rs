@@ -1,9 +1,7 @@
 mod qr;
 
-pub(crate) use qr::QR;
-
-#[cfg(test)]
 pub(crate) use qr::Module;
+pub(crate) use qr::QR;
 
 use crate::common::{
     codec::{encode, encode_with_version},
@@ -105,18 +103,21 @@ impl QRBuilder<'_> {
             }
         };
 
+        let data_len = self.data.len();
         let tot_cwds = ver.total_codewords(self.pal);
-        let data_len = ver.data_capacity(self.ecl, self.pal);
+        let data_cap = ver.data_capacity(self.ecl, self.pal);
         let ec_cap = Self::ec_capacity(ver, self.ecl);
 
         println!("Constructing payload with ecc & interleaving...");
         let mut pld = BitStream::new(tot_cwds << 3);
         let chan_data_cap = ver.channel_data_capacity(self.ecl);
+
         debug_assert!(
             enc.len() % chan_data_cap == 0,
             "Encoded data length {} is not divisible by channel codewords {chan_data_cap}",
             enc.len()
         );
+
         enc.data().chunks_exact(chan_data_cap).for_each(|c| {
             // Splits the data into EC block. The blocks will auto compute ecc
             let blks = Self::blockify(c, ver, self.ecl);
@@ -138,7 +139,7 @@ impl QRBuilder<'_> {
         let mask = match self.mask {
             Some(m) => {
                 println!("Apply mask {m:?}...");
-                qr.mask(m);
+                qr.apply_mask(m);
                 m
             }
             None => {
@@ -156,7 +157,7 @@ impl QRBuilder<'_> {
 
         println!("Report:");
         println!("{}", qr.metadata());
-        println!("Data capacity: {}, Error Capacity: {}", data_len, ec_cap);
+        println!("Data capacity: {}, Error Capacity: {}", data_cap, ec_cap);
         println!(
             "Data size: {}, Encoded size: {}, Compression: {}%",
             data_len,

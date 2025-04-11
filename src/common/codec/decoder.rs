@@ -27,7 +27,7 @@ mod reader {
             1 => Mode::Numeric,
             2 => Mode::Alphanumeric,
             4 => Mode::Byte,
-            _ => unreachable!("Invalid Mode: {mode_bits}"),
+            _ => unreachable!("Unsupported Mode: {mode_bits}"),
         };
         let len_bits = ver.char_cnt_bits(mode);
         let char_cnt = inp.take_bits(len_bits)?;

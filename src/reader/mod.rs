@@ -2,6 +2,7 @@ mod deqr;
 
 use image::RgbImage;
 
+use crate::builder::QR;
 use crate::codec::decode;
 use crate::ec::Block;
 use crate::metadata::Version;
@@ -12,15 +13,21 @@ pub trait QRReadable {
     fn to_deqr(&self, ver: Version) -> DeQR;
 }
 
+impl QRReadable for RgbImage {
+    fn to_deqr(&self, ver: Version) -> DeQR {
+        DeQR::from_clr_img(self, ver)
+    }
+}
+
 impl QRReadable for String {
     fn to_deqr(&self, ver: Version) -> DeQR {
         DeQR::from_str(self, ver)
     }
 }
 
-impl QRReadable for RgbImage {
-    fn to_deqr(&self, ver: Version) -> DeQR {
-        DeQR::from_clr_img(self, ver)
+impl QRReadable for QR {
+    fn to_deqr(&self, _ver: Version) -> DeQR {
+        DeQR::from(self)
     }
 }
 
@@ -63,6 +70,9 @@ impl QRReader {
             let _ = blocks.iter_mut().filter_map(Option::as_mut).map(Block::rectify);
             blocks.iter().filter_map(Option::as_ref).for_each(|b| enc.extend(b.data()));
         });
+
+        // If the QR is B&W, the data from other 2 channels needs to be expelled
+        Self::reject_duplicates(&mut enc);
 
         println!("Decoding data blocks...");
         let msg = decode(&mut enc, ver);
@@ -107,6 +117,14 @@ impl QRReader {
             .enumerate()
             .for_each(|(i, b)| blks[i] = Some(Block::with_encoded(b, b.len() - ec_len)));
         blks
+    }
+
+    fn reject_duplicates(enc: &mut BitStream) {
+        let data = enc.data();
+        let split = (enc.len() >> 3) / 3;
+        if data[..split] == data[split..split * 2] && data[..split] == data[split * 2..] {
+            enc.truncate(split << 3);
+        }
     }
 }
 

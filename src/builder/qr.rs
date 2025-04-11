@@ -12,7 +12,6 @@ pub enum Module {
     Func(Color),
     Version(Color),
     Format(Color),
-    Palette(Color),
     Data(Color),
 }
 
@@ -24,7 +23,6 @@ impl Deref for Module {
             Module::Func(c) => c,
             Module::Version(c) => c,
             Module::Format(c) => c,
-            Module::Palette(c) => c,
             Module::Data(c) => c,
         }
     }
@@ -32,12 +30,12 @@ impl Deref for Module {
 
 #[derive(Debug, Clone)]
 pub struct QR {
-    ver: Version,
+    grid: Box<[Module; MAX_QR_SIZE]>,
     w: usize,
+    ver: Version,
     ecl: ECLevel,
     pal: Palette,
     mask: Option<MaskPattern>,
-    grid: Box<[Module; MAX_QR_SIZE]>,
 }
 
 // QR type for builder
@@ -51,7 +49,11 @@ impl QR {
         );
 
         let w = ver.width();
-        Self { ver, w, ecl, pal, mask: None, grid: Box::new([Module::Empty; MAX_QR_SIZE]) }
+        Self { grid: Box::new([Module::Empty; MAX_QR_SIZE]), w, ver, ecl, pal, mask: None }
+    }
+
+    pub fn grid(&self) -> &[Module] {
+        &*self.grid
     }
 
     pub fn version(&self) -> Version {
@@ -68,6 +70,10 @@ impl QR {
 
     pub fn palette(&self) -> Palette {
         self.pal
+    }
+
+    pub fn mask(&self) -> Option<MaskPattern> {
+        self.mask
     }
 
     pub fn metadata(&self) -> Metadata {
@@ -93,8 +99,6 @@ impl QR {
                     Module::Version(Color::Light | Color::Hue(..)) => 'V',
                     Module::Format(Color::Dark) => 'm',
                     Module::Format(Color::Light | Color::Hue(..)) => 'M',
-                    Module::Palette(Color::Dark) => 'p',
-                    Module::Palette(Color::Light | Color::Hue(..)) => 'P',
                     Module::Data(Color::Dark) => 'd',
                     Module::Data(Color::Light | Color::Hue(..)) => 'D',
                 };
@@ -878,7 +882,7 @@ impl QR {
         }
     }
 
-    pub fn mask(&mut self, pattern: MaskPattern) {
+    pub fn apply_mask(&mut self, pattern: MaskPattern) {
         self.mask = Some(pattern);
         let mask_fn = pattern.mask_functions();
         let w = self.w as i16;
@@ -918,11 +922,7 @@ impl QR {
                 let c = (j - qz_sz) / module_sz;
 
                 let clr = match self.get(r as i16, c as i16) {
-                    Module::Func(c)
-                    | Module::Format(c)
-                    | Module::Version(c)
-                    | Module::Palette(c)
-                    | Module::Data(c) => c,
+                    Module::Func(c) | Module::Format(c) | Module::Version(c) | Module::Data(c) => c,
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
                 };
 
@@ -955,11 +955,7 @@ impl QR {
                 let c = (j - qz_sz) / module_sz;
 
                 let clr = match self.get(r as i16, c as i16) {
-                    Module::Func(c)
-                    | Module::Format(c)
-                    | Module::Version(c)
-                    | Module::Palette(c)
-                    | Module::Data(c) => c,
+                    Module::Func(c) | Module::Format(c) | Module::Version(c) | Module::Data(c) => c,
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
                 };
 
@@ -992,11 +988,7 @@ impl QR {
                 let c = ((j - qz_sz) / module_sz) as i16;
 
                 let clr = match self.get(r, c) {
-                    Module::Func(c)
-                    | Module::Format(c)
-                    | Module::Version(c)
-                    | Module::Palette(c)
-                    | Module::Data(c) => c,
+                    Module::Func(c) | Module::Format(c) | Module::Version(c) | Module::Data(c) => c,
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
                 };
                 canvas.push(clr.select('█', ' '));
