@@ -71,8 +71,8 @@ impl QRReader {
             blocks.iter().filter_map(Option::as_ref).for_each(|b| enc.extend(b.data()));
         });
 
-        // If the QR is B&W, the data from other 2 channels needs to be expelled
-        Self::reject_duplicates(&mut enc);
+        // If the QR is B&W, the data from other 2 channels needs to be removed
+        Self::remove_duplicates(&mut enc);
 
         println!("Decoding data blocks...");
         let msg = decode(&mut enc, ver);
@@ -119,7 +119,7 @@ impl QRReader {
         blks
     }
 
-    fn reject_duplicates(enc: &mut BitStream) {
+    fn remove_duplicates(enc: &mut BitStream) {
         let data = enc.data();
         let split = (enc.len() >> 3) / 3;
         if data[..split] == data[split..split * 2] && data[..split] == data[split * 2..] {
