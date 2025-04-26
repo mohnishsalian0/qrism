@@ -704,4 +704,4 @@ pub static VERSION_INFO_COORDS_TR: [(i16, i16); 18] = [
     (0, -11),
 ];
 
-pub static MAX_QR_SIZE: usize = 40960;
+pub const MAX_QR_SIZE: usize = 40960;

@@ -7,9 +7,12 @@ mod galois;
 pub(crate) use block::*;
 pub(crate) use decoder::*;
 
-pub static MAX_BLOCK_SIZE: usize = 256;
+// Global constants
+//------------------------------------------------------------------------------
 
-pub static MAX_EC_SIZE: usize = 64;
+pub const MAX_BLOCK_SIZE: usize = 256;
+
+pub const MAX_EC_SIZE: usize = 64;
 
 // Error correction proptesting
 //------------------------------------------------------------------------------

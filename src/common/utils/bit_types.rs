@@ -376,4 +376,4 @@ impl BitArray {
 // Global constants
 //------------------------------------------------------------------------------
 
-pub static MAX_PAYLOAD_SIZE: usize = 16384;
+pub const MAX_PAYLOAD_SIZE: usize = 16384;
