@@ -102,10 +102,10 @@ impl DeQR {
 
         let mut grid = Box::new([DeModule::Marked; MAX_QR_SIZE]);
         clr_grid.iter().enumerate().for_each(|(i, &m)| {
-            let r = if m.0 < thresh { 0 } else { 255 };
-            let g = if m.1 < thresh { 0 } else { 255 };
-            let b = if m.2 < thresh { 0 } else { 255 };
-            grid[i] = DeModule::Unmarked(Color::Hue(r, g, b));
+            let r = m.0 >= thresh;
+            let g = m.1 >= thresh;
+            let b = m.2 >= thresh;
+            grid[i] = DeModule::Unmarked(Color::Rgb(r, g, b));
         });
 
         Self { w: qr_w, grid, ver, ecl: None, mask: None }
@@ -179,7 +179,7 @@ impl DeQR {
             for j in 0..w {
                 let c = match self.get(i, j) {
                     DeModule::Unmarked(Color::Dark) => 'u',
-                    DeModule::Unmarked(Color::Light | Color::Hue(..)) => 'U',
+                    DeModule::Unmarked(Color::Light | Color::Rgb(..)) => 'U',
                     DeModule::Marked => '.',
                 };
                 res.push(c);
@@ -947,7 +947,7 @@ impl DeQR {
                     let (r, g, b) = match clr {
                         Color::Light => (false, false, false),
                         Color::Dark => (true, true, true),
-                        Color::Hue(r, g, b) => (r != 255, g != 255, b != 255),
+                        Color::Rgb(r, g, b) => (!r, !g, !b),
                     };
                     pld.put(i, r);
                     pld.put(i + g_off, g);

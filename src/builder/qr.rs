@@ -94,13 +94,13 @@ impl QR {
                 let c = match self.get(i, j) {
                     Module::Empty => '.',
                     Module::Func(Color::Dark) => 'f',
-                    Module::Func(Color::Light | Color::Hue(..)) => 'F',
+                    Module::Func(Color::Light | Color::Rgb(..)) => 'F',
                     Module::Version(Color::Dark) => 'v',
-                    Module::Version(Color::Light | Color::Hue(..)) => 'V',
+                    Module::Version(Color::Light | Color::Rgb(..)) => 'V',
                     Module::Format(Color::Dark) => 'm',
-                    Module::Format(Color::Light | Color::Hue(..)) => 'M',
+                    Module::Format(Color::Light | Color::Rgb(..)) => 'M',
                     Module::Data(Color::Dark) => 'd',
-                    Module::Data(Color::Light | Color::Hue(..)) => 'D',
+                    Module::Data(Color::Light | Color::Rgb(..)) => 'D',
                 };
                 res.push(c);
             }
@@ -844,22 +844,21 @@ impl QR {
         let mut coords = EncRegionIter::new(self.ver).cycle();
         for chan in 0..3 {
             for bit in Iterator::take(&mut payload, chan_bit_cap) {
-                let chan_byte = (1 - bit as u8) * 255;
                 for (r, c) in coords.by_ref() {
                     match self.get_mut(r, c) {
                         Module::Empty => {
-                            let module = Module::Data(Color::Hue(chan_byte, 0, 0));
+                            let module = Module::Data(Color::Rgb(!bit, false, false));
                             self.set(r, c, module);
                             break;
                         }
                         Module::Data(rgb) => {
-                            if let Color::Hue(_r, g, b) = rgb {
+                            if let Color::Rgb(_r, g, b) = rgb {
                                 match chan {
                                     0 => unreachable!(
                                         "Color module found before parsing red channel"
                                     ),
-                                    1 => *g = chan_byte,
-                                    2 => *b = chan_byte,
+                                    1 => *g = !bit,
+                                    2 => *b = !bit,
                                     _ => unreachable!("Invalid channel"),
                                 }
                             }
@@ -929,7 +928,7 @@ impl QR {
                 let pixel = match clr {
                     Color::Dark => Luma([0]),
                     Color::Light => Luma([255]),
-                    Color::Hue(..) => todo!(),
+                    Color::Rgb(..) => todo!(),
                 };
 
                 canvas.put_pixel(j, i, pixel);
@@ -962,7 +961,10 @@ impl QR {
                 let pixel = match clr {
                     Color::Dark => Rgb([0, 0, 0]),
                     Color::Light => Rgb([255, 255, 255]),
-                    Color::Hue(r, g, b) => Rgb([r, g, b]),
+                    Color::Rgb(r, g, b) => {
+                        let (r, g, b) = (255 * (r as u8), 255 * (g as u8), 255 * (b as u8));
+                        Rgb([r, g, b])
+                    }
                 };
 
                 canvas.put_pixel(j, i, pixel);

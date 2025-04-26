@@ -320,11 +320,30 @@ pub enum Palette {
 // Color
 //------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, Eq, Copy, Clone)]
 pub enum Color {
     Light,
     Dark,
-    Hue(u8, u8, u8),
+    Rgb(bool, bool, bool),
+}
+
+impl PartialEq for Color {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            // Special equivalences
+            (Color::Light, Color::Rgb(true, true, true))
+            | (Color::Rgb(true, true, true), Color::Light)
+            | (Color::Dark, Color::Rgb(false, false, false))
+            | (Color::Rgb(false, false, false), Color::Dark) => true,
+
+            // Direct equivalence
+            (Color::Light, Color::Light) | (Color::Dark, Color::Dark) => true,
+            (Color::Rgb(rs, gs, bs), Color::Rgb(ro, go, bo)) => rs == ro && gs == go && bs == bo,
+
+            // Everything else
+            _ => false,
+        }
+    }
 }
 
 // TODO: Figure out how to handle hue
@@ -334,7 +353,7 @@ impl Not for Color {
         match self {
             Self::Light => Self::Dark,
             Self::Dark => Self::Light,
-            Self::Hue(r, g, b) => Self::Hue(255 - r, 255 - g, 255 - b),
+            Self::Rgb(r, g, b) => Self::Rgb(!r, !g, !b),
         }
     }
 }
@@ -344,7 +363,7 @@ impl From<Color> for u8 {
         match value {
             Color::Light => 0,
             Color::Dark => 1,
-            Color::Hue(..) => unreachable!("Trying to cast hue to u8"),
+            Color::Rgb(..) => unreachable!("Trying to cast rgb to u8"),
         }
     }
 }
@@ -354,7 +373,7 @@ impl From<Color> for u32 {
         match value {
             Color::Light => 0,
             Color::Dark => 1,
-            Color::Hue(r, ..) => (r < 128) as u32,
+            Color::Rgb(r, ..) => !r as u32,
         }
     }
 }
@@ -365,7 +384,7 @@ impl Color {
         match self {
             Self::Light => light,
             Self::Dark => dark,
-            Self::Hue(..) => todo!(),
+            Self::Rgb(..) => todo!(),
         }
     }
 }
