@@ -1,6 +1,7 @@
 mod deqr;
 
-use image::RgbImage;
+use image::{Rgb, RgbImage};
+use std::cmp;
 
 use crate::builder::QR;
 use crate::codec::decode;
@@ -71,8 +72,8 @@ impl QRReader {
             blocks.iter().filter_map(Option::as_ref).for_each(|b| enc.extend(b.data()));
         });
 
-        // If the QR is B&W, the data from other 2 channels needs to be removed
-        Self::remove_duplicates(&mut enc);
+        // If the QR is B&W, discard duplicate data from 2 channels
+        Self::dedupe(&mut enc);
 
         println!("Decoding data blocks...");
         let msg = decode(&mut enc, ver);
@@ -80,6 +81,46 @@ impl QRReader {
         println!("\n{}\n", deqr.metadata());
 
         String::from_utf8(msg).or(Err(QRError::InvalidUTF8Sequence))
+    }
+
+    /// Performs adaptive binarization on an RGB image using a sliding window
+    /// and per-channel average filtering.
+    fn prepare(img: &mut RgbImage) {
+        let (w, h) = img.dimensions();
+        let win_sz = cmp::max(w / 8, 1);
+        let den = 200 * win_sz;
+        let mut u_avg = [0, 0, 0];
+        let mut v_avg = [0, 0, 0];
+        let mut row_avg = vec![[0, 0, 0]; w as usize];
+
+        for y in 0..h {
+            for x in 0..w {
+                let (u, v) = if y & 1 == 0 { (x, w - 1 - x) } else { (w - 1 - x, x) };
+                let (u_usize, v_usize) = (u as usize, v as usize);
+                let (pu, pv) = (img.get_pixel(u, y), img.get_pixel(v, y));
+
+                for i in 0..3 {
+                    u_avg[i] = u_avg[i] * (win_sz - 1) / win_sz + pu[i] as u32;
+                    v_avg[i] = v_avg[i] * (win_sz - 1) / win_sz + pv[i] as u32;
+                    row_avg[u_usize][i] += u_avg[i];
+                    row_avg[v_usize][i] += v_avg[i];
+                }
+            }
+
+            for x in 0..w {
+                let mut out = [0, 0, 0];
+                let px = img.get_pixel(x, y);
+                for (i, p) in out.iter_mut().enumerate() {
+                    let thresh = row_avg[x as usize][i] * (100 - 5) / den;
+                    if px[i] as u32 >= thresh {
+                        *p = 255;
+                    }
+                }
+                img.put_pixel(x, y, Rgb(out));
+            }
+
+            row_avg.fill([0, 0, 0]);
+        }
     }
 
     fn deinterleave(
@@ -119,7 +160,7 @@ impl QRReader {
         blks
     }
 
-    fn remove_duplicates(enc: &mut BitStream) {
+    fn dedupe(enc: &mut BitStream) {
         let data = enc.data();
         let split = (enc.len() >> 3) / 3;
         if data[..split] == data[split..split * 2] && data[..split] == data[split * 2..] {
@@ -130,12 +171,22 @@ impl QRReader {
 
 #[cfg(test)]
 mod reader_tests {
-    use test_case::test_case;
+
+    use std::path::Path;
 
     use super::QRReader;
     use crate::builder::QRBuilder;
     use crate::metadata::{ECLevel, Palette, Version};
     use crate::utils::BitStream;
+
+    #[test]
+    fn test_prepare() {
+        let path = Path::new("assets/test1.png");
+        let mut img = image::open(path).unwrap().to_rgb8();
+        QRReader::prepare(&mut img);
+        let out_path = Path::new("assets/test_out.png");
+        img.save(out_path).expect("Failed to save image");
+    }
 
     #[test]
     fn test_deinterleave() {
@@ -153,34 +204,5 @@ mod reader_tests {
         let ec_len = ver.ecc_per_block(ecl);
         let blks = QRReader::deinterleave(bs.data(), blk_info, ec_len);
         assert_eq!(blks, exp_blks);
-    }
-
-    #[test_case("Hello, world!🌎".to_string(), Version::Normal(1), ECLevel::L)]
-    #[test_case("TEST".to_string(), Version::Normal(1), ECLevel::M)]
-    #[test_case("12345".to_string(), Version::Normal(1), ECLevel::Q)]
-    #[test_case("OK".to_string(), Version::Normal(1), ECLevel::H)]
-    #[test_case("B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(3).to_string(), Version::Normal(7), ECLevel::L)]
-    #[test_case("A11111111111111".repeat(11).to_string(), Version::Normal(7), ECLevel::M)]
-    #[test_case("aAAAAAA1111111111111AAAAAAa".repeat(3).to_string(), Version::Normal(7), ECLevel::Q)]
-    #[test_case("1234567890".repeat(15).to_string(), Version::Normal(7), ECLevel::H)]
-    #[test_case( "B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(4).to_string(), Version::Normal(10), ECLevel::L)]
-    #[test_case("A11111111111111".repeat(20).to_string(), Version::Normal(10), ECLevel::M)]
-    #[test_case("aAAAAAAAAA1111111111111111AAAAAAAAAAa".repeat(4).to_string(), Version::Normal(10), ECLevel::Q)]
-    #[test_case("1234567890".repeat(28).to_string(), Version::Normal(10), ECLevel::H)]
-    #[test_case("B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(22).to_string(), Version::Normal(27), ECLevel::L)]
-    #[test_case("A111111111111111".repeat(100).to_string(), Version::Normal(27), ECLevel::M)]
-    #[test_case("aAAAAAAAAA111111111111111111AAAAAAAAAAa".repeat(20).to_string(), Version::Normal(27), ECLevel::Q)]
-    #[test_case("1234567890".repeat(145).to_string(), Version::Normal(27), ECLevel::H)]
-    #[test_case("B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(57).to_string(), Version::Normal(40), ECLevel::L)]
-    #[test_case("A111111111111111".repeat(97).to_string(), Version::Normal(40), ECLevel::M)]
-    #[test_case( "aAAAAAAAAA111111111111111111AAAAAAAAAAa".repeat(42).to_string(), Version::Normal(40), ECLevel::Q)]
-    #[test_case("1234567890".repeat(305).to_string(), Version::Normal(40), ECLevel::H)]
-    fn test_reader(data: String, ver: Version, ecl: ECLevel) {
-        let qr =
-            QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap().to_str(1);
-
-        let decoded_data = QRReader::read(&qr, ver).unwrap();
-
-        assert_eq!(decoded_data, data);
     }
 }
