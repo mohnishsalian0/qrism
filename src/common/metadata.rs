@@ -3,8 +3,7 @@ use std::cmp::PartialOrd;
 use std::fmt::{Debug, Display};
 use std::ops::{Deref, Not};
 
-use super::codec::Mode;
-use super::mask::MaskPattern;
+use super::{codec::Mode, mask::MaskPattern};
 
 // Metadata
 //------------------------------------------------------------------------------
@@ -324,21 +323,23 @@ pub enum Palette {
 pub enum Color {
     Light,
     Dark,
-    Rgb(bool, bool, bool),
+    Rgb([bool; 3]),
 }
 
 impl PartialEq for Color {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             // Special equivalences
-            (Color::Light, Color::Rgb(true, true, true))
-            | (Color::Rgb(true, true, true), Color::Light)
-            | (Color::Dark, Color::Rgb(false, false, false))
-            | (Color::Rgb(false, false, false), Color::Dark) => true,
+            (Color::Light, Color::Rgb([true, true, true]))
+            | (Color::Rgb([true, true, true]), Color::Light)
+            | (Color::Dark, Color::Rgb([false, false, false]))
+            | (Color::Rgb([false, false, false]), Color::Dark) => true,
 
             // Direct equivalence
             (Color::Light, Color::Light) | (Color::Dark, Color::Dark) => true,
-            (Color::Rgb(rs, gs, bs), Color::Rgb(ro, go, bo)) => rs == ro && gs == go && bs == bo,
+            (Color::Rgb([rs, gs, bs]), Color::Rgb([ro, go, bo])) => {
+                rs == ro && gs == go && bs == bo
+            }
 
             // Everything else
             _ => false,
@@ -353,7 +354,7 @@ impl Not for Color {
         match self {
             Self::Light => Self::Dark,
             Self::Dark => Self::Light,
-            Self::Rgb(r, g, b) => Self::Rgb(!r, !g, !b),
+            Self::Rgb([r, g, b]) => Self::Rgb([!r, !g, !b]),
         }
     }
 }
@@ -373,7 +374,7 @@ impl From<Color> for u32 {
         match value {
             Color::Light => 0,
             Color::Dark => 1,
-            Color::Rgb(r, ..) => !r as u32,
+            Color::Rgb([r, ..]) => !r as u32,
         }
     }
 }

@@ -847,12 +847,12 @@ impl QR {
                 for (r, c) in coords.by_ref() {
                     match self.get_mut(r, c) {
                         Module::Empty => {
-                            let module = Module::Data(Color::Rgb(!bit, false, false));
+                            let module = Module::Data(Color::Rgb([!bit, false, false]));
                             self.set(r, c, module);
                             break;
                         }
                         Module::Data(rgb) => {
-                            if let Color::Rgb(_r, g, b) = rgb {
+                            if let Color::Rgb([_r, g, b]) = rgb {
                                 match chan {
                                     0 => unreachable!(
                                         "Color module found before parsing red channel"
@@ -961,7 +961,7 @@ impl QR {
                 let pixel = match clr {
                     Color::Dark => Rgb([0, 0, 0]),
                     Color::Light => Rgb([255, 255, 255]),
-                    Color::Rgb(r, g, b) => {
+                    Color::Rgb([r, g, b]) => {
                         let (r, g, b) = (255 * (r as u8), 255 * (g as u8), 255 * (b as u8));
                         Rgb([r, g, b])
                     }

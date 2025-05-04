@@ -1,11 +1,12 @@
 use image::{GrayImage, Luma, Rgb, RgbImage};
 use std::ops::{Deref, Not};
 
-use crate::ec::rectify_info;
-use crate::metadata::*;
-use crate::utils::{BitArray, EncRegionIter, QRError, QRResult};
-use crate::MaskPattern;
-use crate::{Module, QR};
+use crate::{
+    ec::rectify_info,
+    metadata::*,
+    utils::{BitArray, EncRegionIter, QRError, QRResult},
+    MaskPattern, {Module, QR},
+};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DeModule {
@@ -32,6 +33,7 @@ impl Not for DeModule {
         }
     }
 }
+
 impl From<Module> for DeModule {
     fn from(value: Module) -> Self {
         match value {
@@ -105,7 +107,7 @@ impl DeQR {
             let r = m.0 >= thresh;
             let g = m.1 >= thresh;
             let b = m.2 >= thresh;
-            grid[i] = DeModule::Unmarked(Color::Rgb(r, g, b));
+            grid[i] = DeModule::Unmarked(Color::Rgb([r, g, b]));
         });
 
         Self { w: qr_w, grid, ver, ecl: None, mask: None }
@@ -947,7 +949,7 @@ impl DeQR {
                     let (r, g, b) = match clr {
                         Color::Light => (false, false, false),
                         Color::Dark => (true, true, true),
-                        Color::Rgb(r, g, b) => (!r, !g, !b),
+                        Color::Rgb([r, g, b]) => (!r, !g, !b),
                     };
                     pld.put(i, r);
                     pld.put(i + g_off, g);

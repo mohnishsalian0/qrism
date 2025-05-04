@@ -1,13 +1,18 @@
 mod deqr;
+mod deqr_temp;
+mod finder;
+mod utils;
 
 use image::{Rgb, RgbImage};
 use std::cmp;
 
-use crate::builder::QR;
-use crate::codec::decode;
-use crate::ec::Block;
-use crate::metadata::Version;
-use crate::utils::{BitStream, QRError, QRResult};
+use crate::{
+    builder::QR,
+    codec::decode,
+    ec::Block,
+    metadata::Version,
+    utils::{BitStream, QRError, QRResult},
+};
 use deqr::DeQR;
 
 pub trait QRReadable {
