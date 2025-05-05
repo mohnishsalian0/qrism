@@ -12,10 +12,10 @@ pub struct Slope {
     pub dy: i32,
 }
 
-// Homographic projection matrix to map reference qr onto image qr
+// Homographic projection matrix to map logical qr onto image qr
 //------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Homography(pub [f64; 8]);
 
 impl Index<usize> for Homography {
@@ -101,3 +101,6 @@ impl Homography {
         (resx, resy)
     }
 }
+
+// Bresenham line scan algorithm
+//------------------------------------------------------------------------------

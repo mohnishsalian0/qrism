@@ -134,9 +134,10 @@ impl QRReader {
     }
 
     fn locate_symbols(deqr: &mut DeQRTemp) -> Vec<Symbol> {
-        let symbols = Vec::new();
         let finders = locate_finders(deqr);
-        let groups = group_finders(&finders);
+        let mut groups = group_finders(&finders);
+        let symbols: Vec<_> =
+            groups.iter_mut().filter_map(|g| Symbol::from_group(deqr, g)).collect();
         symbols
     }
 

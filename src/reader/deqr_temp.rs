@@ -11,9 +11,9 @@ use crate::metadata::Color;
 pub enum Pixel {
     Color([bool; 3]),
     Visited(usize), // Contains id of associated region
+    Temporary,
     Finder,
     Alignment,
-    Temporary,
 }
 
 impl From<Pixel> for Option<Color> {

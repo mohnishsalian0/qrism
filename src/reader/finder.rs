@@ -19,11 +19,25 @@ struct DatumLine {
 // Finder type
 //------------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Finder {
-    homography: Homography,
-    corners: [Point; 4],
-    center: Point,
+    pub homography: Homography,
+    pub corners: [Point; 4],
+    pub center: Point,
+}
+
+impl Finder {
+    pub fn rotate(&mut self, pt: &Point, m: &Slope) {
+        let (top_left, _) = self
+            .corners
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, c)| (c.y - pt.y) * m.dx - (c.x - pt.x) * m.dy)
+            .expect("Corners cannot be empty");
+        self.corners.rotate_left(top_left);
+        self.homography =
+            Homography::create(&self.corners, 7.0, 7.0).expect("rotating homography cant fail");
+    }
 }
 
 // First corner finder
@@ -294,24 +308,24 @@ pub fn group_finders(finders: &[Finder]) -> Vec<[Finder; 3]> {
         // Equidistance of the 2 finders from datum finder. Lower the better
         let mut best_score = 2.5;
 
-        for i2 in i1 + 1..len {
-            if is_grouped[i2] {
+        for i2 in 0..len {
+            if i2 == i1 || is_grouped[i2] {
                 continue;
             }
 
             let f2 = &finders[i2];
-            let (o2, d2) = get_relative_position(&f1, &f2);
+            let (o2, d2) = get_relative_position(f1, f2);
             if o2.is_none() {
                 continue;
             }
 
-            for i3 in i2 + 1..len {
-                if is_grouped[i3] {
+            for i3 in 0..len {
+                if i3 == i2 || i3 == i1 || is_grouped[i3] {
                     continue;
                 }
 
                 let f3 = &finders[i3];
-                let (o3, d3) = get_relative_position(&f1, &f3);
+                let (o3, d3) = get_relative_position(f1, f3);
 
                 match (o2, o3) {
                     (Orientation::Horizontal, Orientation::Vertical) => {
@@ -333,14 +347,11 @@ pub fn group_finders(finders: &[Finder]) -> Vec<[Finder; 3]> {
             }
         }
 
-        match (ih, iv) {
-            (Some(ih), Some(iv)) => {
-                groups.push([f1.clone(), finders[ih].clone(), finders[iv].clone()]);
-                is_grouped[i1] = true;
-                is_grouped[ih] = true;
-                is_grouped[iv] = true;
-            }
-            _ => (),
+        if let (Some(ih), Some(iv)) = (ih, iv) {
+            groups.push([finders[iv].clone(), f1.clone(), finders[ih].clone()]);
+            is_grouped[i1] = true;
+            is_grouped[ih] = true;
+            is_grouped[iv] = true;
         }
     }
 
