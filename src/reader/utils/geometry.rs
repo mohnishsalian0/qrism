@@ -15,7 +15,7 @@ pub struct Slope {
 // Homographic projection matrix to map reference qr onto image qr
 //------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Homography(pub [f64; 8]);
 
 impl Index<usize> for Homography {
@@ -81,5 +81,23 @@ impl Homography {
         assert!(resy >= i32::MIN as f64);
 
         Point { x: resx as i32, y: resy as i32 }
+    }
+
+    pub fn unmap(&self, p: &Point) -> (f64, f64) {
+        let (x, y) = (p.x as f64, p.y as f64);
+        let den = (-self[0] * self[7] + self[1] * self[6]) * y
+            + (self[3] * self[7] - self[4] * self[6]) * x
+            + self[0] * self[4]
+            - self[1] * self[3];
+        let resx = -(self[1] * (y - self[5]) - self[2] * self[7] * y
+            + (self[5] * self[7] - self[4]) * x
+            + self[2] * self[4])
+            / den;
+        let resy = (self[0] * (y - self[5]) - self[2] * self[6] * y
+            + (self[5] * self[6] - self[3]) * x
+            + self[2] * self[3])
+            / den;
+
+        (resx, resy)
     }
 }

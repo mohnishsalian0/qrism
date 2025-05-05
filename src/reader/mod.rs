@@ -1,8 +1,10 @@
 mod deqr;
 mod deqr_temp;
 mod finder;
+mod symbol;
 mod utils;
 
+use finder::{group_finders, locate_finders};
 use image::{Rgb, RgbImage};
 use std::cmp;
 
@@ -13,7 +15,10 @@ use crate::{
     metadata::Version,
     utils::{BitStream, QRError, QRResult},
 };
+// FIXME: Remove DeQR and change DEQRTemp to DeQR
 use deqr::DeQR;
+use deqr_temp::DeQR as DeQRTemp;
+use symbol::Symbol;
 
 pub trait QRReadable {
     fn to_deqr(&self, ver: Version) -> DeQR;
@@ -126,6 +131,13 @@ impl QRReader {
 
             row_avg.fill([0, 0, 0]);
         }
+    }
+
+    fn locate_symbols(deqr: &mut DeQRTemp) -> Vec<Symbol> {
+        let symbols = Vec::new();
+        let finders = locate_finders(deqr);
+        let groups = group_finders(&finders);
+        symbols
     }
 
     fn deinterleave(

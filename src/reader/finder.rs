@@ -19,7 +19,7 @@ struct DatumLine {
 // Finder type
 //------------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Finder {
     homography: Homography,
     corners: [Point; 4],
@@ -65,8 +65,9 @@ impl Accumulator for FirstCornerFinder {
 // The 2 corners adjacent to the first corner are the farthest pts from baseline
 // The corners are judged based on perpendicular distance from baseline
 //
-// Perpendicular distance formula = (Ax + By + C) / sqrt (A^2 + B^2)
+// Perpendicular distance formula = (Ax + By + C) / sqrt (A² + B²)
 // Ignoring the constants: Perpendicular distance = Ax + By
+// A is the numerator of the slope, B is negative of the denominator
 //
 // The last corner is the farthest pt from the normal to baseline
 //------------------------------------------------------------------------------
@@ -184,6 +185,9 @@ impl LineScanner {
     }
 }
 
+// Locate finders
+//------------------------------------------------------------------------------
+
 pub fn locate_finders(deqr: &mut DeQR) -> Vec<Finder> {
     let mut finders = Vec::new();
     let w = deqr.width();
@@ -214,7 +218,7 @@ pub fn locate_finders(deqr: &mut DeQR) -> Vec<Finder> {
 // Sweeps stone and ring regions from datum line and validates finder if:
 // Stone area is roughly 37.5% of ring area
 // Stone and ring areas arent connected
-// Left and right points of row are connected
+// Left and right points of row lying inside the ring are connected
 fn is_finder(deqr: &mut DeQR, datum: &DatumLine) -> bool {
     let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
     let ring = deqr.get_region((r, y));
@@ -255,4 +259,105 @@ fn construct_finder(deqr: &mut DeQR, datum: &DatumLine) -> Option<Finder> {
     let center = homography.map(3.5, 3.5);
 
     Some(Finder { homography, corners, center })
+}
+
+// Groups finders in 3, which form potential symbols
+//------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Orientation {
+    Horizontal,
+    Vertical,
+    None,
+}
+
+impl Orientation {
+    pub fn is_none(&self) -> bool {
+        matches!(self, Orientation::None)
+    }
+}
+
+pub fn group_finders(finders: &[Finder]) -> Vec<[Finder; 3]> {
+    let mut groups = Vec::new();
+    let len = finders.len();
+    let mut is_grouped = vec![false; len];
+
+    for i1 in 0..len {
+        if is_grouped[i1] {
+            continue;
+        }
+
+        let f1 = &finders[i1];
+        // Indices of horizontal and vertical neighbor
+        let mut ih: Option<usize> = None;
+        let mut iv: Option<usize> = None;
+        // Equidistance of the 2 finders from datum finder. Lower the better
+        let mut best_score = 2.5;
+
+        for i2 in i1 + 1..len {
+            if is_grouped[i2] {
+                continue;
+            }
+
+            let f2 = &finders[i2];
+            let (o2, d2) = get_relative_position(&f1, &f2);
+            if o2.is_none() {
+                continue;
+            }
+
+            for i3 in i2 + 1..len {
+                if is_grouped[i3] {
+                    continue;
+                }
+
+                let f3 = &finders[i3];
+                let (o3, d3) = get_relative_position(&f1, &f3);
+
+                match (o2, o3) {
+                    (Orientation::Horizontal, Orientation::Vertical) => {
+                        let score = (1.0f64 - d2 / d3).abs();
+                        if score < best_score {
+                            (ih, iv) = (Some(i2), Some(i3));
+                            best_score = score;
+                        }
+                    }
+                    (Orientation::Vertical, Orientation::Horizontal) => {
+                        let score = (1.0f64 - d2 / d3).abs();
+                        if score < best_score {
+                            (ih, iv) = (Some(i3), Some(i2));
+                            best_score = score;
+                        }
+                    }
+                    _ => (),
+                }
+            }
+        }
+
+        match (ih, iv) {
+            (Some(ih), Some(iv)) => {
+                groups.push([f1.clone(), finders[ih].clone(), finders[iv].clone()]);
+                is_grouped[i1] = true;
+                is_grouped[ih] = true;
+                is_grouped[iv] = true;
+            }
+            _ => (),
+        }
+    }
+
+    groups
+}
+
+// Returns orientation of 2 finders and distance between their centers
+fn get_relative_position(f1: &Finder, f2: &Finder) -> (Orientation, f64) {
+    let (mut x, mut y) = f1.homography.unmap(&f2.center);
+    x = (x - 3.5f64).abs();
+    y = (y - 3.5f64).abs();
+
+    if y < 0.2f64 * x {
+        (Orientation::Horizontal, x)
+    } else if x < 0.2f64 * y {
+        (Orientation::Vertical, y)
+    } else {
+        (Orientation::None, 0.0)
+    }
 }
