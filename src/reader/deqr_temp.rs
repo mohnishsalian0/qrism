@@ -4,6 +4,8 @@ use image::RgbImage;
 
 use crate::metadata::Color;
 
+use super::utils::geometry::Point;
+
 // Pixel
 //------------------------------------------------------------------------------
 
@@ -138,6 +140,22 @@ impl DeQR {
 
     pub fn get(&self, r: usize, c: usize) -> Pixel {
         self.grid[r * self.w + c]
+    }
+
+    fn coord_to_index(&self, r: i32, c: i32) -> usize {
+        let w = self.w as i32;
+        let h = self.h as i32;
+        debug_assert!(-w <= r && r < w, "row shouldn't be greater than or equal to w");
+        debug_assert!(-h <= c && c < h, "column shouldn't be greater than or equal to w");
+
+        let r = if r < 0 { r + w } else { r };
+        let c = if c < 0 { c + h } else { c };
+        (r * w + c) as _
+    }
+
+    pub fn get_at_point(&self, p: &Point) -> Pixel {
+        let idx = self.coord_to_index(p.y, p.x);
+        self.grid[idx]
     }
 
     pub fn get_mut(&mut self, r: usize, c: usize) -> &mut Pixel {

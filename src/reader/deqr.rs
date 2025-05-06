@@ -193,8 +193,8 @@ impl DeQR {
 
     fn coord_to_index(r: i16, c: i16, w: usize) -> usize {
         let w = w as i16;
-        debug_assert!(-w <= r && r < w, "row should be greater than or equal to w");
-        debug_assert!(-w <= c && c < w, "column should be greater than or equal to w");
+        debug_assert!(-w <= r && r < w, "row shouldn't be greater than or equal to w");
+        debug_assert!(-w <= c && c < w, "column shouldn't be greater than or equal to w");
 
         let r = if r < 0 { r + w } else { r };
         let c = if c < 0 { c + w } else { c };

@@ -1,4 +1,4 @@
-use std::ops::Index;
+use std::{marker::PhantomData, ops::Index};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
 pub struct Point {
@@ -104,3 +104,140 @@ impl Homography {
 
 // Bresenham line scan algorithm
 //------------------------------------------------------------------------------
+
+pub trait Axis {}
+
+pub struct X;
+impl Axis for X {}
+
+pub struct Y;
+impl Axis for Y {}
+
+#[derive(Debug, Clone)]
+pub struct BresenhamLine<A: Axis> {
+    cur: Point, // Current position
+    end: Point,
+    m: Slope,
+    inc: (i32, i32), // (xi, yi) unit increment
+    err: i32,
+    phantom: PhantomData<A>,
+}
+
+impl<A: Axis> BresenhamLine<A> {
+    pub fn new(from: &Point, to: &Point) -> Self {
+        let cur = *from;
+        let end = *to;
+
+        // Computing slope
+        let dx = (to.x - from.x).abs();
+        let dy = (to.y - from.y).abs();
+        let m = Slope { dx: 2 * dx, dy: 2 * dy };
+
+        // Computing increment
+        let xi = if to.x > from.x { 1 } else { -1 };
+        let yi = if to.y > from.y { 1 } else { -1 };
+        let inc = (xi, yi);
+
+        // Computing error
+        let err = if dy < dx { 2 * dy - dx } else { 2 * dx - dy };
+
+        let phantom = PhantomData;
+
+        Self { cur, end, m, inc, err, phantom }
+    }
+}
+
+impl Iterator for BresenhamLine<X> {
+    type Item = Point;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.cur.x == self.end.x {
+            return None;
+        }
+
+        let res = Some(self.cur);
+
+        if self.err > 0 {
+            self.cur.y += self.inc.1;
+            self.err -= self.m.dx;
+        }
+        self.err += self.m.dy;
+        self.cur.x += self.inc.0;
+
+        res
+    }
+}
+
+impl Iterator for BresenhamLine<Y> {
+    type Item = Point;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.cur.y == self.end.y {
+            return None;
+        }
+
+        let res = Some(self.cur);
+
+        if self.err > 0 {
+            self.cur.x += self.inc.0;
+            self.err -= self.m.dy;
+        }
+        self.err += self.m.dx;
+        self.cur.y += self.inc.1;
+
+        res
+    }
+}
+
+// Line represented as Ax + By + C = 0
+//------------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct Line {
+    a: i32,
+    b: i32,
+    c: i32,
+}
+
+impl Line {
+    pub fn new(p1: &Point, p2: &Point) -> Self {
+        let a = -(p2.y - p1.y);
+        let b = p2.x - p1.x;
+        let c = p1.x * p2.y - p1.y * p2.x;
+        Self { a, b, c }
+    }
+
+    pub fn intersection(&self, other: &Line) -> Option<Point> {
+        let den = self.a * other.b - self.b * other.a;
+        if den == 0 {
+            return None;
+        }
+        let x = (self.b * other.c - self.c * other.b) / den;
+        let y = (self.c * other.a - self.a * other.c) / den;
+
+        Some(Point { x, y })
+    }
+}
+
+#[cfg(test)]
+mod line_tests {
+    use super::*;
+
+    #[test]
+    fn test_line_intersection() {
+        let l1 = Line::new(&Point { x: 0, y: 0 }, &Point { x: 4, y: 4 });
+        let l2 = Line::new(&Point { x: 0, y: 4 }, &Point { x: 4, y: 0 });
+
+        let inter = l1.intersection(&l2).unwrap();
+        assert_eq!(inter.x, 2);
+        assert_eq!(inter.y, 2);
+    }
+
+    #[test]
+    fn test_parallel_lines() {
+        let l1 = Line::new(&Point { x: 0, y: 0 }, &Point { x: 4, y: 4 });
+        let l2 = Line::new(&Point { x: 0, y: 1 }, &Point { x: 4, y: 5 });
+
+        assert!(l1.intersection(&l2).is_none());
+    }
+}
