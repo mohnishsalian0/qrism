@@ -1,7 +1,7 @@
 use crate::metadata::Color;
 
 use super::{
-    deqr_temp::{Accumulator, DeQR, Pixel, Region, Row},
+    prepare::{Accumulator, Pixel, PreparedImage, Region, Row},
     utils::geometry::{Homography, Point, Slope},
 };
 
@@ -202,24 +202,24 @@ impl LineScanner {
 // Locate finders
 //------------------------------------------------------------------------------
 
-pub fn locate_finders(deqr: &mut DeQR) -> Vec<Finder> {
+pub fn locate_finders(img: &mut PreparedImage) -> Vec<Finder> {
     let mut finders = Vec::new();
-    let w = deqr.width();
-    let h = deqr.height();
+    let w = img.width();
+    let h = img.height();
     let mut scanner = LineScanner::new();
 
     for y in 0..h {
         for x in 0..w {
-            let datum = match scanner.advance(deqr.get(x, y).into()) {
+            let datum = match scanner.advance(img.get(x, y).into()) {
                 Some(d) => d,
                 None => continue,
             };
 
-            if !is_finder(deqr, &datum) {
+            if !is_finder(img, &datum) {
                 continue;
             }
 
-            if let Some(f) = construct_finder(deqr, &datum) {
+            if let Some(f) = construct_finder(img, &datum) {
                 finders.push(f);
             }
         }
@@ -233,12 +233,12 @@ pub fn locate_finders(deqr: &mut DeQR) -> Vec<Finder> {
 // Stone area is roughly 37.5% of ring area
 // Stone and ring areas arent connected
 // Left and right points of row lying inside the ring are connected
-fn is_finder(deqr: &mut DeQR, datum: &DatumLine) -> bool {
+fn is_finder(img: &mut PreparedImage, datum: &DatumLine) -> bool {
     let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
-    let ring = deqr.get_region((r, y));
-    let stone = deqr.get_region((s, y));
+    let ring = img.get_region((r, y));
+    let stone = img.get_region((s, y));
 
-    if deqr.get(l, y) != deqr.get(r, y) {
+    if img.get(l, y) != img.get(r, y) {
         return false;
     }
 
@@ -254,18 +254,18 @@ fn is_finder(deqr: &mut DeQR, datum: &DatumLine) -> bool {
     }
 }
 
-fn construct_finder(deqr: &mut DeQR, datum: &DatumLine) -> Option<Finder> {
+fn construct_finder(img: &mut PreparedImage, datum: &DatumLine) -> Option<Finder> {
     let (left, right, y) = (datum.left, datum.right, datum.y);
-    let px = deqr.get(right, y);
+    let px = img.get(right, y);
     let refr_pt = Point { x: right as i32, y: y as i32 };
 
     // Locating first corner
     let mut fcf = FirstCornerFinder::new(refr_pt);
-    deqr.repaint_and_accumulate((right, y), px, Pixel::Temporary, &mut fcf);
+    img.repaint_and_accumulate((right, y), px, Pixel::Temporary, &mut fcf);
 
     // Locating rest of the corners
     let mut acf = AllCornerFinder::new(refr_pt, fcf.corner);
-    deqr.repaint_and_accumulate((right, y), Pixel::Temporary, Pixel::Finder, &mut acf);
+    img.repaint_and_accumulate((right, y), Pixel::Temporary, Pixel::Finder, &mut acf);
 
     // Setting up homographic projection
     let homography = Homography::create(&acf.corners, 7.0, 7.0)?;

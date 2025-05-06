@@ -1,8 +1,8 @@
 use std::cmp::max;
 
 use super::{
-    deqr_temp::DeQR,
     finder::Finder,
+    prepare::PreparedImage,
     utils::geometry::{Axis, BresenhamLine, Homography, Point, Slope, X, Y},
 };
 use crate::Version;
@@ -12,14 +12,14 @@ use crate::Version;
 
 #[derive(Debug, Clone)]
 pub struct Symbol<'a> {
-    deqr: &'a DeQR,
+    img: &'a PreparedImage,
     homography: Homography,
     bounds: [Point; 4],
     ver: Version,
 }
 
 impl Symbol<'_> {
-    pub fn from_group(deqr: &DeQR, group: &mut [Finder; 3]) -> Option<Self> {
+    pub fn from_group(img: &PreparedImage, group: &mut [Finder; 3]) -> Option<Self> {
         let mut c0 = group[0].center;
         let c1 = group[1].center;
         let mut c2 = group[2].center;
@@ -37,7 +37,7 @@ impl Symbol<'_> {
         // Rotate finders so the top left corner is first in the list
         group.iter_mut().for_each(|f| f.rotate(&c0, &hm));
 
-        let grid_size = measure_timing_patterns(deqr, group);
+        let grid_size = measure_timing_patterns(img, group);
 
         todo!()
     }
@@ -46,7 +46,7 @@ impl Symbol<'_> {
 // Locates pt on the middle line of each finder's ring band
 // This pt is nearest to the center of symbol
 // Traces vert and hor lines along these middle pts to count modules
-pub fn measure_timing_patterns(deqr: &DeQR, group: &[Finder; 3]) -> usize {
+pub fn measure_timing_patterns(img: &PreparedImage, group: &[Finder; 3]) -> usize {
     let p0 = group[0].homography.map(6.5, 0.5);
     let p1 = group[1].homography.map(6.5, 6.5);
     let p2 = group[2].homography.map(0.5, 6.5);
@@ -55,13 +55,13 @@ pub fn measure_timing_patterns(deqr: &DeQR, group: &[Finder; 3]) -> usize {
     let dx = (p2.x - p1.x).abs();
     let dy = (p2.y - p1.y).abs();
     let hscan =
-        if dx > dy { timing_scan::<X>(deqr, &p1, &p2) } else { timing_scan::<Y>(deqr, &p1, &p2) };
+        if dx > dy { timing_scan::<X>(img, &p1, &p2) } else { timing_scan::<Y>(img, &p1, &p2) };
 
     // Measuring vertical timing pattern
     let dx = (p0.x - p1.x).abs();
     let dy = (p0.y - p1.y).abs();
     let vscan =
-        if dx > dy { timing_scan::<X>(deqr, &p1, &p0) } else { timing_scan::<Y>(deqr, &p1, &p0) };
+        if dx > dy { timing_scan::<X>(img, &p1, &p0) } else { timing_scan::<Y>(img, &p1, &p0) };
 
     let scan = max(hscan, vscan);
 
@@ -71,16 +71,16 @@ pub fn measure_timing_patterns(deqr: &DeQR, group: &[Finder; 3]) -> usize {
     ver * 4 + 17
 }
 
-fn timing_scan<A: Axis>(deqr: &DeQR, from: &Point, to: &Point) -> usize
+fn timing_scan<A: Axis>(img: &PreparedImage, from: &Point, to: &Point) -> usize
 where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
     let mut transitions = 0;
-    let mut last = deqr.get_at_point(from);
+    let mut last = img.get_at_point(from);
     let line = BresenhamLine::<A>::new(from, to);
 
     for p in line {
-        let px = deqr.get_at_point(&p);
+        let px = img.get_at_point(&p);
         if px != last {
             transitions += 1;
             last = px;

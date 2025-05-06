@@ -1,6 +1,6 @@
 mod deqr;
-mod deqr_temp;
 mod finder;
+mod prepare;
 mod symbol;
 mod utils;
 
@@ -15,9 +15,9 @@ use crate::{
     metadata::Version,
     utils::{BitStream, QRError, QRResult},
 };
-// FIXME: Remove DeQR and change DEQRTemp to DeQR
+// FIXME: Remove DeQR
 use deqr::DeQR;
-use deqr_temp::DeQR as DeQRTemp;
+use prepare::PreparedImage;
 use symbol::Symbol;
 
 pub trait QRReadable {
@@ -133,11 +133,11 @@ impl QRReader {
         }
     }
 
-    fn locate_symbols(deqr: &mut DeQRTemp) -> Vec<Symbol> {
-        let finders = locate_finders(deqr);
+    fn locate_symbols(img: &mut PreparedImage) -> Vec<Symbol> {
+        let finders = locate_finders(img);
         let mut groups = group_finders(&finders);
         let symbols: Vec<_> =
-            groups.iter_mut().filter_map(|g| Symbol::from_group(deqr, g)).collect();
+            groups.iter_mut().filter_map(|g| Symbol::from_group(img, g)).collect();
         symbols
     }
 
