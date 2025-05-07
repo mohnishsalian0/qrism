@@ -1,8 +1,11 @@
 use crate::metadata::Color;
 
 use super::{
-    prepare::{Accumulator, Pixel, PreparedImage, Region, Row},
-    utils::geometry::{Homography, Point, Slope},
+    prepare::{Pixel, PreparedImage, Region},
+    utils::{
+        accumulate::{AllCornerFinder, FirstCornerFinder},
+        geometry::{Homography, Point, Slope},
+    },
 };
 
 // Finder line
@@ -21,7 +24,7 @@ struct DatumLine {
 
 #[derive(Debug, Clone)]
 pub struct Finder {
-    pub homography: Homography,
+    pub h: Homography,
     pub corners: [Point; 4],
     pub center: Point,
 }
@@ -35,99 +38,8 @@ impl Finder {
             .min_by_key(|(_, c)| (c.y - pt.y) * m.dx - (c.x - pt.x) * m.dy)
             .expect("Corners cannot be empty");
         self.corners.rotate_left(top_left);
-        self.homography =
+        self.h =
             Homography::create(&self.corners, 7.0, 7.0).expect("rotating homography cant fail");
-    }
-}
-
-// First corner finder
-// First corner is the farthest point w.r.t the reference point
-// The points are judged based on Cartesian distance
-//------------------------------------------------------------------------------
-
-#[derive(Debug, Eq, PartialEq, Clone)]
-struct FirstCornerFinder {
-    reference: Point, // Reference point in quadrilateral to locate corner
-    corner: Point,    // Best corner point based on perpendicular distance
-    distance: i32,    // Cartesian distance of stored corner
-}
-
-impl FirstCornerFinder {
-    pub fn new(reference: Point) -> Self {
-        FirstCornerFinder { reference, corner: Default::default(), distance: -1 }
-    }
-}
-
-impl Accumulator for FirstCornerFinder {
-    fn accumulate(&mut self, row: Row) {
-        let y = row.y as i32;
-        let Point { x: rx, y: ry } = self.reference;
-        for x in [row.left as i32, row.right as i32] {
-            let dx = rx - x;
-            let dy = ry - y;
-            let dist = dx * dx + dy * dy;
-            if dist > self.distance {
-                self.corner = Point { x, y };
-                self.distance = dist;
-            }
-        }
-    }
-}
-
-// All corner finder
-// Baseline is constructed from ref pt to first corner
-// The 2 corners adjacent to the first corner are the farthest pts from baseline
-// The corners are judged based on perpendicular distance from baseline
-//
-// Perpendicular distance formula = (Ax + By + C) / sqrt (A² + B²)
-// Ignoring the constants: Perpendicular distance = Ax + By
-// A is the numerator of the slope, B is negative of the denominator
-//
-// The last corner is the farthest pt from the normal to baseline
-//------------------------------------------------------------------------------
-
-#[derive(Debug, Eq, PartialEq, Clone)]
-struct AllCornerFinder {
-    baseline: Slope,     // Slope of baseline between ref pt and first corner
-    corners: [Point; 4], // Best corner points based on perpendicular distance
-    distances: [i32; 4], // Cartesian distances of stored corners
-}
-
-impl AllCornerFinder {
-    pub fn new(reference: Point, corner: Point) -> Self {
-        let Point { x: rx, y: ry } = reference;
-        let baseline = Slope { dx: corner.x - rx, dy: corner.y - ry };
-
-        // Parallel & orthogonal scores
-        let par_scr = rx * baseline.dx + ry * baseline.dy;
-        let ort_scr = -rx * baseline.dy + ry * baseline.dx;
-
-        AllCornerFinder {
-            baseline,
-            corners: [reference; 4],
-            distances: [par_scr, ort_scr, -par_scr, -ort_scr],
-        }
-    }
-}
-
-impl Accumulator for AllCornerFinder {
-    fn accumulate(&mut self, row: Row) {
-        let y = row.y as i32;
-        let Slope { dx, dy } = self.baseline;
-        let (ndx, ndy) = (dy, -dx); // Slope of line normal to baseline
-
-        for x in [row.left as i32, row.right as i32] {
-            let base_dist = -x * dy + y * dx; // Dist of pt from baseline
-            let norm_dist = -x * ndy + y * ndx; // Dist of pt from normal
-            let distances = [norm_dist, base_dist, -norm_dist, -base_dist];
-
-            for (i, d) in distances.iter().enumerate() {
-                if *d > self.distances[i] {
-                    self.corners[i] = Point { x, y };
-                    self.distances[i] = *d;
-                }
-            }
-        }
     }
 }
 
@@ -268,11 +180,11 @@ fn construct_finder(img: &mut PreparedImage, datum: &DatumLine) -> Option<Finder
     img.repaint_and_accumulate((right, y), Pixel::Temporary, Pixel::Finder, &mut acf);
 
     // Setting up homographic projection
-    let homography = Homography::create(&acf.corners, 7.0, 7.0)?;
+    let h = Homography::create(&acf.corners, 7.0, 7.0)?;
     let corners = acf.corners;
-    let center = homography.map(3.5, 3.5);
+    let center = h.map(3.5, 3.5);
 
-    Some(Finder { homography, corners, center })
+    Some(Finder { h, corners, center })
 }
 
 // Groups finders in 3, which form potential symbols
@@ -360,7 +272,7 @@ pub fn group_finders(finders: &[Finder]) -> Vec<[Finder; 3]> {
 
 // Returns orientation of 2 finders and distance between their centers
 fn get_relative_position(f1: &Finder, f2: &Finder) -> (Orientation, f64) {
-    let (mut x, mut y) = f1.homography.unmap(&f2.center);
+    let (mut x, mut y) = f1.h.unmap(&f2.center);
     x = (x - 3.5f64).abs();
     y = (y - 3.5f64).abs();
 

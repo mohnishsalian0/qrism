@@ -59,6 +59,13 @@ impl Deref for Version {
 }
 
 impl Version {
+    pub fn from_grid_size(grid_size: usize) -> Option<Self> {
+        if !(21..=177).contains(&grid_size) {
+            return None;
+        };
+        Some(Version::Normal((grid_size - 17) / 4))
+    }
+
     pub const fn width(self) -> usize {
         debug_assert!(matches!(self, Self::Micro(1..=4) | Self::Normal(1..=40)), "Invalid version");
         match self {

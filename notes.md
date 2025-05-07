@@ -4,11 +4,13 @@ Find finder ✅
     Scan line ✅
     Validate finder with flood fill ✅
 Group finders ✅
-Compute perspective and boundaries
+Compute perspective and boundaries ✅
+Measure timing pattern ✅
+Locate alignment pattern ✅
 Test fitness
 Update reader to use perspective and get modules
 Utils
-    Bresenham's line
+    Bresenham's line ✅
     Flood fill ✅
     Homography ✅
 
