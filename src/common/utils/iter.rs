@@ -5,15 +5,15 @@ use crate::metadata::Version;
 
 #[derive(Clone)]
 pub struct EncRegionIter {
-    r: i16,
-    c: i16,
-    width: i16,
-    vert_timing_col: i16,
+    r: i32,
+    c: i32,
+    width: i32,
+    vert_timing_col: i32,
 }
 
 impl EncRegionIter {
     pub const fn new(ver: Version) -> Self {
-        let w = ver.width() as i16;
+        let w = ver.width() as i32;
         let vert_timing_col = match ver {
             Version::Micro(_) => 0,
             Version::Normal(_) => 6,
@@ -23,7 +23,7 @@ impl EncRegionIter {
 }
 
 impl Iterator for EncRegionIter {
-    type Item = (i16, i16);
+    type Item = (i32, i32);
     fn next(&mut self) -> Option<Self::Item> {
         let adjusted_col = if self.c <= self.vert_timing_col { self.c + 1 } else { self.c };
         if self.c < 0 {

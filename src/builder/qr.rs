@@ -86,7 +86,7 @@ impl QR {
 
     #[cfg(test)]
     pub fn to_debug_str(&self) -> String {
-        let w = self.w as i16;
+        let w = self.w as i32;
         let mut res = String::with_capacity((w * (w + 1)) as usize);
         res.push('\n');
         for i in 0..w {
@@ -109,8 +109,8 @@ impl QR {
         res
     }
 
-    fn coord_to_index(&self, r: i16, c: i16) -> usize {
-        let w = self.w as i16;
+    fn coord_to_index(&self, r: i32, c: i32) -> usize {
+        let w = self.w as i32;
         debug_assert!(-w <= r && r < w, "row should be greater than or equal to w");
         debug_assert!(-w <= c && c < w, "column should be greater than or equal to w");
 
@@ -119,16 +119,16 @@ impl QR {
         (r * w + c) as _
     }
 
-    pub fn get(&self, r: i16, c: i16) -> Module {
+    pub fn get(&self, r: i32, c: i32) -> Module {
         self.grid[self.coord_to_index(r, c)]
     }
 
-    pub fn get_mut(&mut self, r: i16, c: i16) -> &mut Module {
+    pub fn get_mut(&mut self, r: i32, c: i32) -> &mut Module {
         let index = self.coord_to_index(r, c);
         &mut self.grid[index]
     }
 
-    pub fn set(&mut self, r: i16, c: i16, module: Module) {
+    pub fn set(&mut self, r: i32, c: i32, module: Module) {
         *self.get_mut(r, c) = module;
     }
 }
@@ -141,7 +141,7 @@ mod qr_util_tests {
     #[test]
     fn test_index_wrap() {
         let mut qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
-        let w = qr.w as i16;
+        let w = qr.w as i32;
         qr.set(-1, -1, Module::Func(Color::Dark));
         assert_eq!(qr.get(w - 1, w - 1), Module::Func(Color::Dark));
         qr.set(0, 0, Module::Func(Color::Dark));
@@ -152,7 +152,7 @@ mod qr_util_tests {
     #[should_panic]
     fn test_row_out_of_bound() {
         let qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
-        let w = qr.w as i16;
+        let w = qr.w as i32;
         qr.get(w, 0);
     }
 
@@ -160,7 +160,7 @@ mod qr_util_tests {
     #[should_panic]
     fn test_col_out_of_bound() {
         let qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
-        let w = qr.w as i16;
+        let w = qr.w as i32;
         qr.get(0, w);
     }
 
@@ -168,7 +168,7 @@ mod qr_util_tests {
     #[should_panic]
     fn test_row_index_overwrap() {
         let qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
-        let w = qr.w as i16;
+        let w = qr.w as i32;
         qr.get(-(w + 1), 0);
     }
 
@@ -176,7 +176,7 @@ mod qr_util_tests {
     #[should_panic]
     fn test_col_index_overwrap() {
         let qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
-        let w = qr.w as i16;
+        let w = qr.w as i32;
         qr.get(0, -(w + 1));
     }
 }
@@ -196,7 +196,7 @@ impl QR {
         }
     }
 
-    fn draw_finder_pattern_at(&mut self, r: i16, c: i16) {
+    fn draw_finder_pattern_at(&mut self, r: i32, c: i32) {
         let (dr_left, dr_right) = if r > 0 { (-3, 4) } else { (-4, 3) };
         let (dc_top, dc_bottom) = if c > 0 { (-3, 4) } else { (-4, 3) };
         for i in dr_left..=dr_right {
@@ -258,7 +258,7 @@ mod finder_pattern_tests {
 
 impl QR {
     fn draw_timing_pattern(&mut self) {
-        let w = self.w as i16;
+        let w = self.w as i32;
         let (off, last) = match self.ver {
             Version::Micro(_) => (0, w - 1),
             Version::Normal(_) => (6, w - 9),
@@ -267,7 +267,7 @@ impl QR {
         self.draw_line(8, off, last, off);
     }
 
-    fn draw_line(&mut self, r1: i16, c1: i16, r2: i16, c2: i16) {
+    fn draw_line(&mut self, r1: i32, c1: i32, r2: i32, c2: i32) {
         debug_assert!(r1 == r2 || c1 == c2, "Line is neither vertical nor horizontal");
 
         if r1 == r2 {
@@ -336,8 +336,8 @@ impl QR {
         }
     }
 
-    fn draw_alignment_pattern_at(&mut self, r: i16, c: i16) {
-        let w = self.w as i16;
+    fn draw_alignment_pattern_at(&mut self, r: i32, c: i32) {
+        let w = self.w as i32;
         if (r == 6 && (c == 6 || c - w == -7)) || (r - w == -7 && c == 6) {
             return;
         }
@@ -607,7 +607,7 @@ impl QR {
         bit_len: usize,
         off_clr: Module,
         on_clr: Module,
-        coords: &[(i16, i16)],
+        coords: &[(i32, i32)],
     ) {
         let mut mask = 1 << (bit_len - 1);
         for (r, c) in coords {
@@ -872,7 +872,7 @@ impl QR {
         }
     }
 
-    fn fill_remainder_bits(&mut self, coords: impl Iterator<Item = (i16, i16)>) {
+    fn fill_remainder_bits(&mut self, coords: impl Iterator<Item = (i32, i32)>) {
         let n = self.ver.remainder_bits();
         for (r, c) in coords.take(n).by_ref() {
             if matches!(self.get(r, c), Module::Empty) {
@@ -884,7 +884,7 @@ impl QR {
     pub fn apply_mask(&mut self, pattern: MaskPattern) {
         self.mask = Some(pattern);
         let mask_fn = pattern.mask_functions();
-        let w = self.w as i16;
+        let w = self.w as i32;
         for r in 0..w {
             for c in 0..w {
                 if mask_fn(r, c) {
@@ -920,7 +920,7 @@ impl QR {
                 let r = (i - qz_sz) / module_sz;
                 let c = (j - qz_sz) / module_sz;
 
-                let clr = match self.get(r as i16, c as i16) {
+                let clr = match self.get(r as i32, c as i32) {
                     Module::Func(c) | Module::Format(c) | Module::Version(c) | Module::Data(c) => c,
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
                 };
@@ -953,7 +953,7 @@ impl QR {
                 let r = (i - qz_sz) / module_sz;
                 let c = (j - qz_sz) / module_sz;
 
-                let clr = match self.get(r as i16, c as i16) {
+                let clr = match self.get(r as i32, c as i32) {
                     Module::Func(c) | Module::Format(c) | Module::Version(c) | Module::Data(c) => c,
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
                 };
@@ -986,8 +986,8 @@ impl QR {
                     canvas.push('█');
                     continue;
                 }
-                let r = ((i - qz_sz) / module_sz) as i16;
-                let c = ((j - qz_sz) / module_sz) as i16;
+                let r = ((i - qz_sz) / module_sz) as i32;
+                let c = ((j - qz_sz) / module_sz) as i32;
 
                 let clr = match self.get(r, c) {
                     Module::Func(c) | Module::Format(c) | Module::Version(c) | Module::Data(c) => c,

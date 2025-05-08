@@ -30,6 +30,16 @@ pub struct Finder {
 }
 
 impl Finder {
+    #[inline]
+    pub fn map(&self, x: f64, y: f64) -> Point {
+        self.h.map(x, y)
+    }
+
+    #[inline]
+    pub fn unmap(&self, p: &Point) -> (f64, f64) {
+        self.h.unmap(p)
+    }
+
     pub fn rotate(&mut self, pt: &Point, m: &Slope) {
         let (top_left, _) = self
             .corners
@@ -154,15 +164,13 @@ fn is_finder(img: &mut PreparedImage, datum: &DatumLine) -> bool {
         return false;
     }
 
-    match (ring, stone) {
-        (
-            Region::Visited { id: r_id, area: r_area },
-            Region::Visited { id: s_id, area: s_area },
-        ) => {
-            let ratio = s_area * 100 / r_area;
-            r_id != s_id && 20 < ratio && ratio < 50
-        }
-        _ => false,
+    if let (Some(Region { id: r_id, area: r_area }), Some(Region { id: s_id, area: s_area })) =
+        (ring, stone)
+    {
+        let ratio = s_area * 100 / r_area;
+        r_id != s_id && (20 < ratio && ratio < 50)
+    } else {
+        false
     }
 }
 

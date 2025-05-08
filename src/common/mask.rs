@@ -21,41 +21,41 @@ impl Deref for MaskPattern {
 }
 
 mod mask_functions {
-    pub fn checkerboard(r: i16, c: i16) -> bool {
+    pub fn checkerboard(r: i32, c: i32) -> bool {
         (r + c) & 1 == 0
     }
 
-    pub fn horizontal_lines(r: i16, _: i16) -> bool {
+    pub fn horizontal_lines(r: i32, _: i32) -> bool {
         r & 1 == 0
     }
 
-    pub fn vertical_lines(_: i16, c: i16) -> bool {
+    pub fn vertical_lines(_: i32, c: i32) -> bool {
         c % 3 == 0
     }
 
-    pub fn diagonal_lines(r: i16, c: i16) -> bool {
+    pub fn diagonal_lines(r: i32, c: i32) -> bool {
         (r + c) % 3 == 0
     }
 
-    pub fn large_checkerboard(r: i16, c: i16) -> bool {
+    pub fn large_checkerboard(r: i32, c: i32) -> bool {
         ((r >> 1) + (c / 3)) & 1 == 0
     }
 
-    pub fn fields(r: i16, c: i16) -> bool {
+    pub fn fields(r: i32, c: i32) -> bool {
         ((r * c) & 1) + ((r * c) % 3) == 0
     }
 
-    pub fn diamonds(r: i16, c: i16) -> bool {
+    pub fn diamonds(r: i32, c: i32) -> bool {
         (((r * c) & 1) + ((r * c) % 3)) & 1 == 0
     }
 
-    pub fn meadow(r: i16, c: i16) -> bool {
+    pub fn meadow(r: i32, c: i32) -> bool {
         (((r + c) & 1) + ((r * c) % 3)) & 1 == 0
     }
 }
 
 impl MaskPattern {
-    pub fn mask_functions(self) -> fn(i16, i16) -> bool {
+    pub fn mask_functions(self) -> fn(i32, i32) -> bool {
         debug_assert!(*self < 8, "Invalid pattern");
 
         match *self {
@@ -112,7 +112,7 @@ fn compute_adjacent_penalty(qr: &QR) -> u32 {
         let mut last = Color::Dark;
         let mut consec_row_len = 0;
         for (c, col) in cols.iter_mut().enumerate() {
-            let clr = *qr.get(r as i16, c as i16);
+            let clr = *qr.get(r as i32, c as i32);
             if last != clr {
                 last = clr;
                 consec_row_len = 0;
@@ -136,7 +136,7 @@ fn compute_adjacent_penalty(qr: &QR) -> u32 {
 
 fn compute_block_penalty(qr: &QR) -> u32 {
     let mut pen = 0;
-    let w = qr.width() as i16;
+    let w = qr.width() as i32;
     for r in 0..w - 1 {
         for c in 0..w - 1 {
             let clr = *qr.get(r, c);
@@ -151,7 +151,7 @@ fn compute_block_penalty(qr: &QR) -> u32 {
 
 fn compute_finder_pattern_penalty(qr: &QR, is_hor: bool) -> u32 {
     let mut pen = 0;
-    let w = qr.width() as i16;
+    let w = qr.width() as i32;
     static PATTERN: [Color; 7] = [
         Color::Dark,
         Color::Light,
@@ -163,7 +163,7 @@ fn compute_finder_pattern_penalty(qr: &QR, is_hor: bool) -> u32 {
     ];
     for i in 0..w {
         for j in 0..w - 6 {
-            let get: Box<dyn Fn(i16) -> Color> =
+            let get: Box<dyn Fn(i32) -> Color> =
                 if is_hor { Box::new(|c| *qr.get(i, c)) } else { Box::new(|r| *qr.get(r, i)) };
             if !(j..j + 7).map(&*get).ne(PATTERN.iter().copied()) {
                 let match_qz = |x| x >= 0 && x < w && get(x) == Color::Dark;

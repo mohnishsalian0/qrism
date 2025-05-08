@@ -75,15 +75,15 @@ impl DeQR {
     pub fn from_clr_img(qr: &RgbImage, ver: Version) -> Self {
         let qr_w = ver.width();
         let (w, h) = qr.dimensions();
-        let (w, h) = (w as i16, h as i16);
+        let (w, h) = (w as i32, h as i32);
         let qz_sz = if let Version::Normal(_) = ver { 4 } else { 2 };
-        let mod_w = w / (qr_w + 2 * qz_sz) as i16;
-        let qz_w = qz_sz as i16 * mod_w;
+        let mod_w = w / (qr_w + 2 * qz_sz) as i32;
+        let qz_w = qz_sz as i32 * mod_w;
 
         debug_assert!(w == h, "Image is not perfect square");
         let img_w = w - 2 * qz_w;
         debug_assert!(
-            img_w % qr_w as i16 == 0,
+            img_w % qr_w as i32 == 0,
             "Image w {img_w} is not a multiple of qr size {qr_w}"
         );
 
@@ -91,7 +91,7 @@ impl DeQR {
 
         let mut clr_grid = vec![(0u32, 0u32, 0u32); qr_w * qr_w];
         for (c, r, pixel) in qr.enumerate_pixels() {
-            let (r, c) = (r as i16, c as i16);
+            let (r, c) = (r as i32, c as i32);
             if r < qz_w || r >= w - qz_w || c < qz_w || c >= w - qz_w {
                 continue;
             }
@@ -116,18 +116,18 @@ impl DeQR {
     pub fn from_image(qr: &GrayImage, ver: Version) -> Self {
         let qr_w = ver.width();
         let (w, h) = qr.dimensions();
-        let (w, h) = (w as i16, h as i16);
-        let mod_sz = w / qr_w as i16;
+        let (w, h) = (w as i32, h as i32);
+        let mod_sz = w / qr_w as i32;
         let qz_sz = if let Version::Normal(_) = ver { 4 } else { 2 } * mod_sz;
 
         debug_assert!(w == h, "Image is not perfect square");
-        debug_assert!((w - 2 * qz_sz) % qr_w as i16 == 0, "Image w is not a multiple of qr size");
+        debug_assert!((w - 2 * qz_sz) % qr_w as i32 == 0, "Image w is not a multiple of qr size");
 
         let half_area = mod_sz * mod_sz / 2;
 
         let mut black_cnt = vec![0; qr_w * qr_w];
         for (c, r, pixel) in qr.enumerate_pixels() {
-            let (r, c) = (r as i16, c as i16);
+            let (r, c) = (r as i32, c as i32);
             if r < qz_sz || r >= w - qz_sz || c < qz_sz || c >= w - qz_sz {
                 continue;
             }
@@ -174,7 +174,7 @@ impl DeQR {
 
     #[cfg(test)]
     pub fn to_debug_str(&self) -> String {
-        let w = self.w as i16;
+        let w = self.w as i32;
         let mut res = String::with_capacity((w * (w + 1)) as usize);
         res.push('\n');
         for i in 0..w {
@@ -191,8 +191,8 @@ impl DeQR {
         res
     }
 
-    fn coord_to_index(r: i16, c: i16, w: usize) -> usize {
-        let w = w as i16;
+    fn coord_to_index(r: i32, c: i32, w: usize) -> usize {
+        let w = w as i32;
         debug_assert!(-w <= r && r < w, "row shouldn't be greater than or equal to w");
         debug_assert!(-w <= c && c < w, "column shouldn't be greater than or equal to w");
 
@@ -201,16 +201,16 @@ impl DeQR {
         (r * w + c) as _
     }
 
-    pub fn get(&self, r: i16, c: i16) -> DeModule {
+    pub fn get(&self, r: i32, c: i32) -> DeModule {
         self.grid[Self::coord_to_index(r, c, self.w)]
     }
 
-    pub fn get_mut(&mut self, r: i16, c: i16) -> &mut DeModule {
+    pub fn get_mut(&mut self, r: i32, c: i32) -> &mut DeModule {
         let idx = Self::coord_to_index(r, c, self.w);
         &mut self.grid[idx]
     }
 
-    pub fn set(&mut self, r: i16, c: i16, module: DeModule) {
+    pub fn set(&mut self, r: i32, c: i32, module: DeModule) {
         *self.get_mut(r, c) = module;
     }
 }
@@ -225,7 +225,7 @@ mod deqr_util_tests {
     fn test_from_str() {
         let data = "Hello, world! 🌎";
         let ver = Version::Normal(2);
-        let sz = ver.width() as i16;
+        let sz = ver.width() as i32;
         let ecl = ECLevel::L;
 
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
@@ -244,7 +244,7 @@ mod deqr_util_tests {
     fn test_from_image() {
         let data = "Hello, world! 🌎";
         let ver = Version::Normal(2);
-        let sz = ver.width() as i16;
+        let sz = ver.width() as i32;
         let ecl = ECLevel::L;
 
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
@@ -301,7 +301,7 @@ impl DeQR {
         Ok(Version::Normal(v as usize >> VERSION_ERROR_BIT_LEN))
     }
 
-    pub fn get_number(&mut self, coords: &[(i16, i16)]) -> u32 {
+    pub fn get_number(&mut self, coords: &[(i32, i32)]) -> u32 {
         let mut num = 0;
         for (r, c) in coords {
             let m = self.get_mut(*r, *c);
@@ -310,7 +310,7 @@ impl DeQR {
         num
     }
 
-    pub fn mark_coords(&mut self, coords: &[(i16, i16)]) {
+    pub fn mark_coords(&mut self, coords: &[(i32, i32)]) {
         for (r, c) in coords {
             self.set(*r, *c, DeModule::Marked);
         }
@@ -693,7 +693,7 @@ impl DeQR {
         }
     }
 
-    fn mark_finder_pattern_at(&mut self, r: i16, c: i16) {
+    fn mark_finder_pattern_at(&mut self, r: i32, c: i32) {
         let (dr_l, dr_r) = if r > 0 { (-3, 4) } else { (-4, 3) };
         let (dc_t, dc_b) = if c > 0 { (-3, 4) } else { (-4, 3) };
         for i in dr_l..=dr_r {
@@ -761,7 +761,7 @@ mod deqr_finder_tests {
 
 impl DeQR {
     pub fn mark_timing_patterns(&mut self) {
-        let w = self.w as i16;
+        let w = self.w as i32;
         let (off, last) = match self.ver {
             Version::Micro(_) => (0, w - 1),
             Version::Normal(_) => (6, w - 9),
@@ -770,7 +770,7 @@ impl DeQR {
         self.mark_line(8, off, last, off);
     }
 
-    fn mark_line(&mut self, r1: i16, c1: i16, r2: i16, c2: i16) {
+    fn mark_line(&mut self, r1: i32, c1: i32, r2: i32, c2: i32) {
         debug_assert!(r1 == r2 || c1 == c2, "Line is neither vertical nor horizontal");
 
         if r1 == r2 {
@@ -850,8 +850,8 @@ impl DeQR {
         }
     }
 
-    fn mark_alignment_pattern_at(&mut self, r: i16, c: i16) {
-        let w = self.w as i16;
+    fn mark_alignment_pattern_at(&mut self, r: i32, c: i32) {
+        let w = self.w as i32;
         if (r == 6 && (c == 6 || c - w == -7)) || (r - w == -7 && c == 6) {
             return;
         }
@@ -921,7 +921,7 @@ mod deqr_alignement_tests {
 impl DeQR {
     pub fn unmask(&mut self, pattern: MaskPattern) {
         let mask_fn = pattern.mask_functions();
-        let w = self.w as i16;
+        let w = self.w as i32;
         for r in 0..w {
             for c in 0..w {
                 if mask_fn(r, c) {

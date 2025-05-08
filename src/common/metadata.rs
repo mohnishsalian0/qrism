@@ -74,7 +74,7 @@ impl Version {
         }
     }
 
-    pub fn alignment_pattern(self) -> &'static [i16] {
+    pub fn alignment_pattern(self) -> &'static [i32] {
         debug_assert!(matches!(self, Self::Micro(1..=4) | Self::Normal(1..=40)), "Invalid version");
         match self {
             Self::Micro(_) => &[],
@@ -414,7 +414,7 @@ pub fn parse_format_info_qr(info: u32) -> (ECLevel, MaskPattern) {
 // Global constants
 //------------------------------------------------------------------------------
 
-static ALIGNMENT_PATTERN_POSITIONS: [&[i16]; 40] = [
+static ALIGNMENT_PATTERN_POSITIONS: [&[i32]; 40] = [
     &[],
     &[6, 18],
     &[6, 22],
@@ -623,7 +623,7 @@ pub static FORMAT_INFOS_QR: [u32; 32] = [
     0x355f, 0x3068, 0x3f31, 0x3a06, 0x24b4, 0x2183, 0x2eda, 0x2bed,
 ];
 
-pub static FORMAT_INFO_COORDS_QR_MAIN: [(i16, i16); 15] = [
+pub static FORMAT_INFO_COORDS_QR_MAIN: [(i32, i32); 15] = [
     (8, 0),
     (8, 1),
     (8, 2),
@@ -641,7 +641,7 @@ pub static FORMAT_INFO_COORDS_QR_MAIN: [(i16, i16); 15] = [
     (0, 8),
 ];
 
-pub static FORMAT_INFO_COORDS_QR_SIDE: [(i16, i16); 15] = [
+pub static FORMAT_INFO_COORDS_QR_SIDE: [(i32, i32); 15] = [
     (-1, 8),
     (-2, 8),
     (-3, 8),
@@ -670,7 +670,7 @@ pub static VERSION_INFOS: [u32; 34] = [
     0x2542e, 0x26a64, 0x27541, 0x28c69,
 ];
 
-pub static VERSION_INFO_COORDS_BL: [(i16, i16); 18] = [
+pub static VERSION_INFO_COORDS_BL: [(i32, i32); 18] = [
     (-9, 5),
     (-10, 5),
     (-11, 5),
@@ -691,7 +691,7 @@ pub static VERSION_INFO_COORDS_BL: [(i16, i16); 18] = [
     (-11, 0),
 ];
 
-pub static VERSION_INFO_COORDS_TR: [(i16, i16); 18] = [
+pub static VERSION_INFO_COORDS_TR: [(i32, i32); 18] = [
     (5, -9),
     (5, -10),
     (5, -11),

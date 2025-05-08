@@ -1,4 +1,7 @@
-use std::{marker::PhantomData, ops::Index};
+use std::{
+    marker::PhantomData,
+    ops::{Index, IndexMut},
+};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
 pub struct Point {
@@ -21,8 +24,16 @@ pub struct Homography(pub [f64; 8]);
 impl Index<usize> for Homography {
     type Output = f64;
 
+    #[inline]
     fn index(&self, index: usize) -> &Self::Output {
         &self.0[index]
+    }
+}
+
+impl IndexMut<usize> for Homography {
+    #[inline]
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
     }
 }
 

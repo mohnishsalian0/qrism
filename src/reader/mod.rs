@@ -18,7 +18,7 @@ use crate::{
 // FIXME: Remove DeQR
 use deqr::DeQR;
 use prepare::PreparedImage;
-use symbol::Symbol;
+use symbol::{Symbol, SymbolLocation};
 
 pub trait QRReadable {
     fn to_deqr(&self, ver: Version) -> DeQR;
@@ -133,12 +133,17 @@ impl QRReader {
         }
     }
 
-    fn locate_symbols(img: &mut PreparedImage) -> Vec<Symbol> {
+    fn locate_symbol(img: &mut PreparedImage) -> Option<Symbol> {
         let finders = locate_finders(img);
-        let mut groups = group_finders(&finders);
-        let symbols: Vec<_> =
-            groups.iter_mut().filter_map(|g| Symbol::from_group(img, g)).collect();
-        symbols
+        let groups = group_finders(&finders);
+        let mut sym_loc = None;
+        for mut g in groups {
+            if let Some(sl) = SymbolLocation::locate(img, &mut g) {
+                sym_loc = Some(sl);
+                break;
+            }
+        }
+        Some(Symbol::new(img, sym_loc?))
     }
 
     fn deinterleave(
