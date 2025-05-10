@@ -85,11 +85,6 @@ pub fn apply_best_mask(qr: &mut QR) -> MaskPattern {
     best_mask
 }
 
-pub fn apply_mask(qr: &mut QR, pattern: MaskPattern) -> MaskPattern {
-    qr.apply_mask(pattern);
-    pattern
-}
-
 pub fn compute_total_penalty(qr: &QR) -> u32 {
     match qr.version() {
         Version::Micro(_) => todo!(),

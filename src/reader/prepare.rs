@@ -209,7 +209,7 @@ impl PreparedImage {
 
                 Some(new_reg)
             }
-            Pixel::Visited(id, clr) => {
+            Pixel::Visited(id, _) => {
                 Some(*self.regions.get(&id).expect("No region found for visited pixel"))
             }
             _ => None,

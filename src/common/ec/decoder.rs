@@ -150,7 +150,7 @@ impl Block {
 fn eval_poly<'a>(poly: impl Iterator<Item = &'a G>, x: G) -> G {
     let mut res = G(0);
     let mut xpow = G(1);
-    for (j, &coeff) in poly.enumerate() {
+    for &coeff in poly {
         res += coeff * xpow;
         xpow *= x;
     }
