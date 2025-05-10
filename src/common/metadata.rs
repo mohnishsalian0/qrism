@@ -367,16 +367,6 @@ impl Not for Color {
     }
 }
 
-impl From<Color> for u8 {
-    fn from(value: Color) -> Self {
-        match value {
-            Color::White => 0,
-            Color::Black => 1,
-            _ => unreachable!("Trying to cast rgb to u8"),
-        }
-    }
-}
-
 impl From<Color> for u32 {
     fn from(value: Color) -> Self {
         match value {

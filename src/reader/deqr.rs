@@ -947,13 +947,10 @@ impl DeQR {
         for i in 0..chan_bits {
             for (r, c) in rgn_iter.by_ref() {
                 if let DeModule::Unmarked(clr) = self.get(r, c) {
-                    let byte = clr as u8;
-                    let r = !(byte & 0b100 != 0);
-                    let g = !(byte & 0b010 != 0);
-                    let b = !(byte & 0b001 != 0);
-                    pld.put(i, r);
-                    pld.put(i + g_off, g);
-                    pld.put(i + b_off, b);
+                    let (r, g, b) = clr.to_bits();
+                    pld.put(i, !r);
+                    pld.put(i + g_off, !g);
+                    pld.put(i + b_off, !b);
                     break;
                 }
             }

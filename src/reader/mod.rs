@@ -52,6 +52,9 @@ impl QRReader {
         println!("Reading format info...");
         let (ecl, mask) = deqr.read_format_info()?;
 
+        // FIXME: Remove
+        println!("Ecl: {ecl:?}, Mask {mask:?}");
+
         println!("Reading version info...");
         let ver = match ver {
             Version::Normal(7..=40) => deqr.read_version_info()?,
@@ -254,7 +257,7 @@ mod reader_tests {
         let ver = Version::Normal(2);
         let ecl = ECLevel::L;
         let mask = MaskPattern::new(1);
-        let pal = Palette::Mono;
+        let pal = Palette::Poly;
 
         let qr = QRBuilder::new(data.as_bytes())
             .version(ver)

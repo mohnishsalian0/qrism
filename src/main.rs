@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let data = "ABCDEFGHIJKLMNOPQRTSUVWXYZABCDEFGHIJKLMNOPQRTSUVWXYZABCDEFGHIJKLMNOPQRTSUVWXYZ";
     let version = Version::Normal(16);
     let ec_level = ECLevel::L;
-    let pal = Palette::Mono;
+    let pal = Palette::Poly;
     let mask_pattern = MaskPattern::new(1);
 
     let qrb = QRBuilder::new(data.as_bytes())
@@ -34,9 +34,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let image = qrb.to_image(10);
     image.save(path).expect("Failed to save image");
 
-    // let img = image::open(path)?.to_rgb8();
-    // let extracted_data = QRReader::read(&img, version).unwrap();
-    // println!("Extracted Data: {extracted_data}");
+    let img = image::open(path)?.to_rgb8();
+    let extracted_data = QRReader::read(&img, version).unwrap();
+    println!("Extracted Data: {extracted_data}");
 
     // // Example with rqrr
     // let path = Path::new("assets/test5.png");
