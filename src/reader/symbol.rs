@@ -16,7 +16,7 @@ use crate::{
         VERSION_ERROR_CAPACITY, VERSION_INFOS, VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
     },
     utils::{BitArray, EncRegionIter, QRError, QRResult},
-    ECLevel, MaskPattern, Version,
+    ECLevel, MaskPattern, Palette, Version,
 };
 
 // Locates symbol based on 3 finders
@@ -27,6 +27,7 @@ pub struct SymbolLocation {
     h: Homography,
     bounds: [Point; 4],
     ver: Version,
+    pal: Palette,
 }
 
 impl SymbolLocation {
@@ -49,8 +50,9 @@ impl SymbolLocation {
         // Rotate finders so the top left corner is first in the list
         fds.iter_mut().for_each(|f| f.rotate(&c0, &hm));
 
-        let grid_size = measure_timing_patterns(img, fds);
+        let (grid_size, is_poly) = measure_timing_patterns(img, fds);
         let ver = Version::from_grid_size(grid_size)?;
+        let pal = if is_poly { Palette::Poly } else { Palette::Mono };
 
         let hor_line = Line::new(&fds[0].corners[0], &fds[0].corners[1]);
         let ver_line = Line::new(&fds[2].corners[0], &fds[2].corners[3]);
@@ -74,7 +76,7 @@ impl SymbolLocation {
         let w = grid_size as f64;
         let bounds = [h.map(0.0, 0.0), h.map(w, 0.0), h.map(w, w), h.map(0.0, w)];
 
-        Some(Self { h, bounds, ver })
+        Some(Self { h, bounds, ver, pal })
     }
 }
 
@@ -87,12 +89,13 @@ pub struct Symbol {
     h: Homography,
     bounds: [Point; 4],
     pub ver: Version,
+    pub pal: Palette,
 }
 
 impl Symbol {
     pub fn new(img: PreparedImage, sym_loc: SymbolLocation) -> Self {
-        let SymbolLocation { h, bounds, ver } = sym_loc;
-        Self { img, h, bounds, ver }
+        let SymbolLocation { h, bounds, ver, pal } = sym_loc;
+        Self { img, h, bounds, ver, pal }
     }
 
     pub fn get(&self, x: i32, y: i32) -> &Pixel {
@@ -139,7 +142,7 @@ impl Symbol {
 // Locates pt on the middle line of each finder's ring band
 // This pt is nearest to the center of symbol
 // Traces vert and hor lines along these middle pts to count modules
-pub fn measure_timing_patterns(img: &PreparedImage, fds: &[Finder; 3]) -> usize {
+pub fn measure_timing_patterns(img: &PreparedImage, fds: &[Finder; 3]) -> (usize, bool) {
     let p0 = fds[0].map(6.5, 0.5);
     let p1 = fds[1].map(6.5, 6.5);
     let p2 = fds[2].map(0.5, 6.5);
@@ -147,28 +150,31 @@ pub fn measure_timing_patterns(img: &PreparedImage, fds: &[Finder; 3]) -> usize 
     // Measuring horizontal timing pattern
     let dx = (p2.x - p1.x).abs();
     let dy = (p2.y - p1.y).abs();
-    let hscan =
+    let (hscan, h_is_poly) =
         if dx > dy { timing_scan::<X>(img, &p1, &p2) } else { timing_scan::<Y>(img, &p1, &p2) };
 
     // Measuring vertical timing pattern
     let dx = (p0.x - p1.x).abs();
     let dy = (p0.y - p1.y).abs();
-    let vscan =
+    let (vscan, v_is_poly) =
         if dx > dy { timing_scan::<X>(img, &p1, &p0) } else { timing_scan::<Y>(img, &p1, &p0) };
 
     let scan = max(hscan, vscan);
+    let is_poly = h_is_poly | v_is_poly;
 
     // Choose nearest valid grid size
     let size = scan + 13;
     let ver = (size as f64 - 15.0).floor() as usize / 4;
-    ver * 4 + 17
+    (ver * 4 + 17, is_poly)
 }
 
-fn timing_scan<A: Axis>(img: &PreparedImage, from: &Point, to: &Point) -> usize
+fn timing_scan<A: Axis>(img: &PreparedImage, from: &Point, to: &Point) -> (usize, bool)
 where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
     const SEQUENCE: [Color; 3] = [Color::Red, Color::Green, Color::Blue];
+    let mut idx = 0;
+    let mut matches = 0;
     let mut transitions = 0;
     let mut last = img.get_at_point(from);
     let line = BresenhamLine::<A>::new(from, to);
@@ -176,12 +182,27 @@ where
     for p in line {
         let px = img.get_at_point(&p);
         if px != last {
+            let color = Color::from(*px);
             transitions += 1;
             last = px;
+
+            if matches == 3 {
+                continue;
+            }
+
+            if color == SEQUENCE[idx] {
+                matches += 1;
+                idx = (idx + 1) % 3;
+            } else if let Some(i) = SEQUENCE.iter().position(|&c| c == color) {
+                matches = 1;
+                idx = (i + 1) % 3;
+            } else {
+                matches = 0;
+            }
         }
     }
 
-    transitions
+    (transitions, matches == 3)
 }
 
 fn locate_alignment_pattern(
@@ -405,18 +426,36 @@ mod symbol_highlight {
 
 #[cfg(test)]
 mod symbol_tests {
-    use std::path::Path;
 
-    use crate::reader::{
-        finder::{group_finders, locate_finders},
-        locate_symbol,
-        prepare::PreparedImage,
+    use crate::{
+        reader::{
+            finder::{group_finders, locate_finders},
+            locate_symbol,
+            prepare::PreparedImage,
+        },
+        ECLevel, MaskPattern, Palette, QRBuilder, Version,
     };
 
     #[test]
     fn test_locate_symbol() {
-        let path = Path::new("tests/images/clean.png");
-        let img = image::open(path).unwrap().to_rgb8();
+        // let path = Path::new("tests/images/clean.png");
+        // let img = image::open(path).unwrap().to_rgb8();
+
+        let data = "Hello, world!🌎";
+        let ver = Version::Normal(4);
+        let ecl = ECLevel::L;
+        let mask = MaskPattern::new(1);
+        let pal = Palette::Mono;
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(ver)
+            .ec_level(ecl)
+            .palette(pal)
+            .mask(mask)
+            .build()
+            .unwrap();
+
+        let img = qr.to_image(10);
         let bounds = [(40, 40), (370, 40), (370, 370), (40, 370)];
 
         let mut img = PreparedImage::prepare(img);
@@ -623,7 +662,32 @@ impl Symbol {
 
 impl Symbol {
     // TODO: Write testcases
-    pub fn extract_payload(&mut self, mask: &MaskPattern) -> BitArray {
+    pub fn extract_mono_payload(&mut self, mask: &MaskPattern) -> BitArray {
+        let ver = self.ver;
+        let mask_fn = mask.mask_functions();
+        let bit_cap = ver.channel_codewords() << 3;
+        let mut pyld = BitArray::new(bit_cap);
+        let mut rgn_iter = EncRegionIter::new(ver);
+
+        for i in 0..bit_cap {
+            for (y, x) in rgn_iter.by_ref() {
+                let px = self.get(x, y);
+                if !matches!(px, Pixel::Reserved(_)) {
+                    let color = Color::from(*px);
+                    let byte = color as u8;
+                    let mut bit = byte == 7;
+                    if !mask_fn(y, x) {
+                        bit = !bit;
+                    };
+                    pyld.put(i, bit);
+                    break;
+                }
+            }
+        }
+        pyld
+    }
+
+    pub fn extract_poly_payload(&mut self, mask: &MaskPattern) -> BitArray {
         let ver = self.ver;
         let mask_fn = mask.mask_functions();
         let chan_bits = ver.channel_codewords() << 3;

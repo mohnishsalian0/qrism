@@ -13,6 +13,7 @@ use crate::{
     ec::Block,
     metadata::{Metadata, Version},
     utils::{BitStream, QRError, QRResult},
+    Palette,
 };
 // FIXME: Remove DeQR
 use deqr::DeQR;
@@ -51,9 +52,6 @@ impl QRReader {
 
         println!("Reading format info...");
         let (ecl, mask) = deqr.read_format_info()?;
-
-        // FIXME: Remove
-        println!("Ecl: {ecl:?}, Mask {mask:?}");
 
         println!("Reading version info...");
         let ver = match ver {
@@ -124,7 +122,12 @@ impl QRReader {
         symbol.mark_all_function_patterns();
 
         println!("Extracting payload...");
-        let pld = symbol.extract_payload(&mask);
+
+        let pld = if symbol.pal == Palette::Mono {
+            symbol.extract_mono_payload(&mask)
+        } else {
+            symbol.extract_poly_payload(&mask)
+        };
 
         let blk_info = symbol.ver.data_codewords_per_block(ecl);
         let ec_len = symbol.ver.ecc_per_block(ecl);
@@ -139,10 +142,6 @@ impl QRReader {
             let _ = blocks.iter_mut().filter_map(Option::as_mut).map(Block::rectify);
             blocks.iter().filter_map(Option::as_ref).for_each(|b| enc.extend(b.data()));
         });
-
-        // TODO: Introduce color info in timing pattern and remove this function
-        // If the QR is B&W, discard duplicate data from 2 channels
-        dedupe(&mut enc);
 
         println!("Decoding data blocks...");
         let msg = decode(&mut enc, symbol.ver);

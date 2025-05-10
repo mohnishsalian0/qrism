@@ -847,7 +847,7 @@ impl QR {
             payload.len() >> 3
         );
         let mut coords = EncRegionIter::new(self.ver).cycle();
-        for chan in 0..3 {
+        for chan in (0..=2).rev() {
             for bit in Iterator::take(&mut payload, chan_bit_cap) {
                 for (r, c) in coords.by_ref() {
                     match self.get_mut(r, c) {

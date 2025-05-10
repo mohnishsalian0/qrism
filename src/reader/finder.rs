@@ -71,6 +71,7 @@ impl LineScanner {
     }
 
     pub fn reset(&mut self, y: u32) {
+        self.buffer[5] = 0;
         self.prev = None;
         self.transitions = 0;
         self.pos = 0;

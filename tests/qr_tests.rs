@@ -78,11 +78,15 @@ mod qr_tests {
     #[test_case("A111111111111111".repeat(97).to_string(), Version::Normal(40), ECLevel::M)]
     #[test_case( "aAAAAAAAAA111111111111111111AAAAAAAAAAa".repeat(42).to_string(), Version::Normal(40), ECLevel::Q)]
     #[test_case("1234567890".repeat(305).to_string(), Version::Normal(40), ECLevel::H)]
-    fn test_qr(data: String, ver: Version, ecl: ECLevel) {
-        let qr =
-            QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap().to_str(1);
+    fn test_qr_0(data: String, ver: Version, ecl: ECLevel) {
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(ver)
+            .ec_level(ecl)
+            .build()
+            .unwrap()
+            .to_image(10);
 
-        let decoded_data = QRReader::read(&qr, ver).unwrap();
+        let decoded_data = QRReader::read_from_image(qr).unwrap();
 
         assert_eq!(decoded_data, data);
     }
@@ -126,19 +130,6 @@ mod qr_tests {
 
     #[test]
     fn test_qr_3() {
-        let data =
-            "aA000000000000000000000000000000000000000000000000000000000000000000000".to_string();
-        let ecl = ECLevel::L;
-        let pal = Palette::Mono;
-        let qr = QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap();
-
-        let ver = qr.version();
-        let decoded = QRReader::read(&qr, ver).unwrap();
-        assert_eq!(data, decoded);
-    }
-
-    #[test]
-    fn test_qr_4() {
         let data =
             "aA000000000000000000000000000000000000000000000000000000000000000000000".to_string();
         let ecl = ECLevel::L;
