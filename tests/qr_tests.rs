@@ -136,4 +136,17 @@ mod qr_tests {
         let decoded = QRReader::read(&qr, ver).unwrap();
         assert_eq!(data, decoded);
     }
+
+    #[test]
+    fn test_qr_4() {
+        let data =
+            "aA000000000000000000000000000000000000000000000000000000000000000000000".to_string();
+        let ecl = ECLevel::L;
+        let pal = Palette::Poly;
+        let qr = QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap();
+
+        let ver = qr.version();
+        let decoded = QRReader::read(&qr, ver).unwrap();
+        assert_eq!(data, decoded);
+    }
 }

@@ -634,8 +634,7 @@ impl Symbol {
         for i in 0..chan_bits {
             for (y, x) in rgn_iter.by_ref() {
                 let px = self.get(x, y);
-                let color = Color::from(*px);
-                if !matches!(px, Pixel::Reserved(_)) {
+                if let Pixel::Reserved(color) = px {
                     let (mut r, mut g, mut b) = color.to_bits();
                     if !mask_fn(y, x) {
                         r = !r;
