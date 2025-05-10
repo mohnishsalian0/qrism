@@ -137,15 +137,9 @@ impl QRReader {
             blocks.iter().filter_map(Option::as_ref).for_each(|b| enc.extend(b.data()));
         });
 
-        // FIXME: Remove
-        println!("Encoded: {:?}", enc.data());
-
         // TODO: Introduce color info in timing pattern and remove this function
         // If the QR is B&W, discard duplicate data from 2 channels
         dedupe(&mut enc);
-
-        // FIXME: Remove
-        println!("Encoded: {:?}", enc.data());
 
         println!("Decoding data blocks...");
         let msg = decode(&mut enc, symbol.ver);
@@ -260,7 +254,7 @@ mod reader_tests {
         let ver = Version::Normal(2);
         let ecl = ECLevel::L;
         let mask = MaskPattern::new(1);
-        let pal = Palette::Poly;
+        let pal = Palette::Mono;
 
         let qr = QRBuilder::new(data.as_bytes())
             .version(ver)

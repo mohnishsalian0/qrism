@@ -750,7 +750,7 @@ mod qr_information_tests {
 
     #[test]
     fn test_all_function_patterns_and_qr_info() {
-        let mut qr = QR::new(Version::Normal(7), ECLevel::L, Palette::Poly);
+        let mut qr = QR::new(Version::Normal(7), ECLevel::L, Palette::Mono);
         qr.draw_all_function_patterns();
         qr.draw_version_info();
         qr.reserve_format_area();

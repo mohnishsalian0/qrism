@@ -1,7 +1,5 @@
 use std::cmp::max;
 
-use image::Rgb;
-
 use super::{
     finder::Finder,
     prepare::{Pixel, PreparedImage, Region},
@@ -13,9 +11,9 @@ use super::{
 use crate::{
     ec::rectify_info,
     metadata::{
-        parse_format_info_qr, FORMAT_ERROR_CAPACITY, FORMAT_INFOS_QR, FORMAT_INFO_COORDS_QR_MAIN,
-        FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK, VERSION_ERROR_BIT_LEN, VERSION_ERROR_CAPACITY,
-        VERSION_INFOS, VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
+        parse_format_info_qr, Color, FORMAT_ERROR_CAPACITY, FORMAT_INFOS_QR,
+        FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK, VERSION_ERROR_BIT_LEN,
+        VERSION_ERROR_CAPACITY, VERSION_INFOS, VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
     },
     utils::{BitArray, EncRegionIter, QRError, QRResult},
     ECLevel, MaskPattern, Version,
@@ -62,9 +60,9 @@ impl SymbolLocation {
             align_pt = locate_alignment_pattern(img, align_pt, &fds[0], &fds[2])?;
 
             let tlcf = TopLeftCornerFinder::new(&align_pt, &hm);
-            let color = img.get_at_point(&align_pt);
+            let color = Color::from(*img.get_at_point(&align_pt));
             let src = (align_pt.x as u32, align_pt.y as u32);
-            let to = Pixel::Reserved.to_rgb(color);
+            let to = Pixel::Reserved(color);
 
             let tlcf = img.fill_and_accumulate(src, to, tlcf);
 
@@ -97,19 +95,19 @@ impl Symbol {
         Self { img, h, bounds, ver }
     }
 
-    pub fn get(&self, x: i32, y: i32) -> &Rgb<u8> {
+    pub fn get(&self, x: i32, y: i32) -> &Pixel {
         let (x, y) = self.wrap_coord(x, y);
         let pt = self.map(x as f64 + 0.5, y as f64 + 0.5);
         self.img.get_at_point(&pt)
     }
 
-    pub fn get_mut(&mut self, x: i32, y: i32) -> &mut Rgb<u8> {
+    pub fn get_mut(&mut self, x: i32, y: i32) -> &mut Pixel {
         let (x, y) = self.wrap_coord(x, y);
         let pt = self.map(x as f64 + 0.5, y as f64 + 0.5);
         self.img.get_mut_at_point(&pt)
     }
 
-    pub fn set(&mut self, x: i32, y: i32, px: Rgb<u8>) {
+    pub fn set(&mut self, x: i32, y: i32, px: Pixel) {
         *self.get_mut(x, y) = px
     }
 
@@ -170,7 +168,7 @@ fn timing_scan<A: Axis>(img: &PreparedImage, from: &Point, to: &Point) -> usize
 where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
-    const SEQUENCE: [Rgb<u8>; 3] = [Rgb([255, 0, 0]), Rgb([0, 255, 0]), Rgb([0, 0, 255])];
+    const SEQUENCE: [Color; 3] = [Color::Red, Color::Green, Color::Blue];
     let mut transitions = 0;
     let mut last = img.get_at_point(from);
     let line = BresenhamLine::<A>::new(from, to);
@@ -193,8 +191,8 @@ fn locate_alignment_pattern(
     f2: &Finder,
 ) -> Option<Point> {
     // Get the 2 adjacent corners from seed of alignment pattern
-    let w = img.width();
-    let h = img.height();
+    let w = img.w;
+    let h = img.h;
     let (x, y) = f0.unmap(&seed);
     let a = f0.map(x, y + 1.0);
     let (x, y) = f2.unmap(&seed);
@@ -212,14 +210,15 @@ fn locate_alignment_pattern(
     let mut dir = 0;
     let mut run_len = 1;
 
+    let invalid = Color::White;
     // WARN: 10 instead of 100 as multiplier for size estimate
     while run_len * run_len < sz_est * 10 {
         for _ in 0..run_len {
             let x = seed.x as u32;
             let y = seed.y as u32;
-            let invalid = &Rgb([255, 255, 255]);
 
-            if x < w && y < h && img.get_at_point(&seed) != invalid {
+            let color = Color::from(*img.get_at_point(&seed));
+            if x < w && y < h && color != invalid {
                 let reg = img.get_region((x, y));
                 let sz = match reg {
                     Some(Region { area, .. }) => area,
@@ -350,16 +349,17 @@ fn ring_fitness(img: &PreparedImage, h: &Homography, cx: i32, cy: i32, r: i32) -
 
 fn cell_fitness(img: &PreparedImage, hm: &Homography, x: i32, y: i32) -> i32 {
     const OFFSETS: [f64; 3] = [0.3, 0.5, 0.7];
-    let w = img.width();
-    let h = img.height();
-    let white = &Rgb([255, 255, 255]);
+    let w = img.w;
+    let h = img.h;
+    let white = Color::White;
     let mut score = 0;
 
     for dy in OFFSETS.iter() {
         for dx in OFFSETS.iter() {
             let pt = hm.map(x as f64 + dx, y as f64 + dy);
             if !(pt.x < 0 || w <= pt.x as u32 || pt.y < 0 || h <= pt.y as u32) {
-                if img.get_at_point(&pt) == white {
+                let color = Color::from(*img.get_at_point(&pt));
+                if color == white {
                     score -= 1;
                 } else {
                     score += 1;
@@ -444,8 +444,8 @@ impl Symbol {
 
         self.mark_coords(&FORMAT_INFO_COORDS_QR_MAIN);
         self.mark_coords(&FORMAT_INFO_COORDS_QR_SIDE);
-        let color = self.get(8, -8);
-        self.set(8, -8, Pixel::Reserved.to_rgb(color));
+        let color = Color::from(*self.get(8, -8));
+        self.set(8, -8, Pixel::Reserved(color));
 
         f ^= FORMAT_MASK;
         let (ecl, mask) = parse_format_info_qr(f);
@@ -473,8 +473,8 @@ impl Symbol {
     pub fn get_number(&mut self, coords: &[(i32, i32)]) -> u32 {
         let mut num = 0;
         for (y, x) in coords {
-            let Rgb([r, g, b]) = *self.get(*x, *y);
-            let bit = if r != 255 || g != 255 || b != 255 { 1 } else { 0 } as u32;
+            let color = Color::from(*self.get(*x, *y));
+            let bit = (color != Color::White) as u32;
             num = (num << 1) | bit;
         }
         num
@@ -482,8 +482,8 @@ impl Symbol {
 
     pub fn mark_coords(&mut self, coords: &[(i32, i32)]) {
         for (y, x) in coords {
-            let color = self.get(*x, *y);
-            self.set(*x, *y, Pixel::Reserved.to_rgb(color));
+            let color = Color::from(*self.get(*x, *y));
+            self.set(*x, *y, Pixel::Reserved(color));
         }
     }
 }
@@ -553,8 +553,8 @@ impl Symbol {
         let (dx_t, dx_b) = if x > 0 { (-3, 4) } else { (-4, 3) };
         for i in dy_l..=dy_r {
             for j in dx_t..=dx_b {
-                let color = self.get(x + j, y + i);
-                self.set(x + j, y + i, Pixel::Reserved.to_rgb(color));
+                let color = Color::from(*self.get(x + j, y + i));
+                self.set(x + j, y + i, Pixel::Reserved(color));
             }
         }
     }
@@ -579,13 +579,13 @@ impl Symbol {
 
         if x1 == x2 {
             for j in y1..=y2 {
-                let color = self.get(x1, j);
-                self.set(x1, j, Pixel::Reserved.to_rgb(color));
+                let color = Color::from(*self.get(x1, j));
+                self.set(x1, j, Pixel::Reserved(color));
             }
         } else {
             for i in x1..=x2 {
-                let color = self.get(i, y1);
-                self.set(i, y1, Pixel::Reserved.to_rgb(color));
+                let color = Color::from(*self.get(i, y1));
+                self.set(i, y1, Pixel::Reserved(color));
             }
         }
     }
@@ -611,8 +611,8 @@ impl Symbol {
         }
         for i in -2..=2 {
             for j in -2..=2 {
-                let color = self.get(x + i, y + j);
-                self.set(x + i, y + j, Pixel::Reserved.to_rgb(color));
+                let color = Color::from(*self.get(x + i, y + j));
+                self.set(x + i, y + j, Pixel::Reserved(color));
             }
         }
     }
@@ -633,12 +633,10 @@ impl Symbol {
 
         for i in 0..chan_bits {
             for (y, x) in rgn_iter.by_ref() {
-                let color = self.get(x, y);
-                let px: Pixel = (*color).into();
-                if !matches!(px, Pixel::Reserved) {
-                    let mut r = color[0] == 255;
-                    let mut g = color[1] == 255;
-                    let mut b = color[2] == 255;
+                let px = self.get(x, y);
+                let color = Color::from(*px);
+                if !matches!(px, Pixel::Reserved(_)) {
+                    let (mut r, mut g, mut b) = color.to_bits();
                     if !mask_fn(y, x) {
                         r = !r;
                         g = !g;

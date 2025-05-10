@@ -403,8 +403,34 @@ impl From<Color> for Rgb<u8> {
     }
 }
 
+impl TryFrom<Rgb<u8>> for Color {
+    type Error = ();
+
+    fn try_from(value: Rgb<u8>) -> Result<Self, Self::Error> {
+        match value.0 {
+            [0, 0, 0] => Ok(Color::Black),
+            [255, 0, 0] => Ok(Color::Red),
+            [0, 255, 0] => Ok(Color::Green),
+            [0, 0, 255] => Ok(Color::Blue),
+            [255, 255, 0] => Ok(Color::Yellow),
+            [255, 0, 255] => Ok(Color::Magenta),
+            [0, 255, 255] => Ok(Color::Cyan),
+            [255, 255, 255] => Ok(Color::White),
+            _ => Err(()), // Not an exact match for any known Color
+        }
+    }
+}
+
 // TODO: Figure out how to handle hue
 impl Color {
+    pub fn to_bits(self) -> (bool, bool, bool) {
+        let byte = self as u8;
+        let r = byte & 0b100 != 0;
+        let g = byte & 0b010 != 0;
+        let b = byte & 0b001 != 0;
+        (r, g, b)
+    }
+
     pub fn select<T: Debug>(&self, light: T, dark: T) -> T {
         match self {
             Self::White => light,

@@ -1,4 +1,4 @@
-use image::Rgb;
+use crate::metadata::Color;
 
 use super::{
     prepare::{Pixel, PreparedImage, Region},
@@ -58,10 +58,10 @@ impl Finder {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct LineScanner {
-    buffer: [u32; 6],      // Run length of each transition
-    prev: Option<Rgb<u8>>, // Last observed color
-    transitions: u32,      // Count of color changes
-    pos: u32,              // Current position
+    buffer: [u32; 6],    // Run length of each transition
+    prev: Option<Color>, // Last observed color
+    transitions: u32,    // Count of color changes
+    pos: u32,            // Current position
     y: u32,
 }
 
@@ -77,17 +77,17 @@ impl LineScanner {
         self.y = y;
     }
 
-    pub fn advance(&mut self, color: Option<Rgb<u8>>) -> Option<DatumLine> {
+    pub fn advance(&mut self, px: Option<Color>) -> Option<DatumLine> {
         self.pos += 1;
 
-        if self.prev == color {
+        if self.prev == px {
             self.buffer[5] += 1;
             return None;
         }
 
         self.buffer.rotate_left(1);
         self.buffer[5] = 1;
-        self.prev = color;
+        self.prev = px;
         self.transitions += 1;
 
         if self.is_finder_line() {
@@ -103,7 +103,8 @@ impl LineScanner {
     }
 
     fn is_finder_line(&self) -> bool {
-        if !(self.prev == Some(Rgb([255, 255, 255])) && self.transitions >= 5) {
+        let white = Color::White;
+        if !(self.prev == Some(white) && self.transitions >= 5) {
             return false;
         }
 
@@ -126,13 +127,14 @@ impl LineScanner {
 
 pub fn locate_finders(img: &mut PreparedImage) -> Vec<Finder> {
     let mut finders = Vec::new();
-    let w = img.width();
-    let h = img.height();
+    let w = img.w;
+    let h = img.h;
     let mut scanner = LineScanner::new();
 
     for y in 0..h {
         for x in 0..w {
-            let datum = match scanner.advance(img.get(x, y).into()) {
+            let color = Color::from(img.get(x, y));
+            let datum = match scanner.advance(Some(color)) {
                 Some(d) => d,
                 None => continue,
             };
@@ -180,16 +182,16 @@ fn is_finder(img: &mut PreparedImage, datum: &DatumLine) -> bool {
 
 fn construct_finder(img: &mut PreparedImage, datum: &DatumLine) -> Option<Finder> {
     let (_left, right, y) = (datum.left, datum.right, datum.y);
-    let color = img.get(right, y);
+    let color = Color::from(img.get(right, y));
     let refr_pt = Point { x: right as i32, y: y as i32 };
 
     // Locating first corner
     let fcf = FirstCornerFinder::new(refr_pt);
-    let to = Pixel::Temporary.to_rgb(&color);
+    let to = Pixel::Temporary(color);
     let fcf = img.fill_and_accumulate((right, y), to, fcf);
 
     // Locating rest of the corners
-    let to = Pixel::Reserved.to_rgb(&color);
+    let to = Pixel::Reserved(color);
     let acf = AllCornerFinder::new(refr_pt, fcf.corner);
     let acf = img.fill_and_accumulate((right, y), to, acf);
 
