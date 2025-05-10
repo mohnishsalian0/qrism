@@ -3,6 +3,8 @@ use std::cmp::PartialOrd;
 use std::fmt::{Debug, Display};
 use std::ops::{Deref, Not};
 
+use image::Rgb;
+
 use super::{codec::Mode, mask::MaskPattern};
 
 // Metadata
@@ -326,30 +328,32 @@ pub enum Palette {
 // Color
 //------------------------------------------------------------------------------
 
-#[derive(Debug, Eq, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Color {
-    Light,
-    Dark,
-    Rgb([bool; 3]),
+    Black = 0b000,
+    Red = 0b100,
+    Green = 0b010,
+    Blue = 0b001,
+    Yellow = 0b110,
+    Magenta = 0b101,
+    Cyan = 0b011,
+    White = 0b111,
 }
 
-impl PartialEq for Color {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            // Special equivalences
-            (Color::Light, Color::Rgb([true, true, true]))
-            | (Color::Rgb([true, true, true]), Color::Light)
-            | (Color::Dark, Color::Rgb([false, false, false]))
-            | (Color::Rgb([false, false, false]), Color::Dark) => true,
+impl TryFrom<u8> for Color {
+    type Error = ();
 
-            // Direct equivalence
-            (Color::Light, Color::Light) | (Color::Dark, Color::Dark) => true,
-            (Color::Rgb([rs, gs, bs]), Color::Rgb([ro, go, bo])) => {
-                rs == ro && gs == go && bs == bo
-            }
-
-            // Everything else
-            _ => false,
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value & 0b111 {
+            0b000 => Ok(Color::Black),
+            0b100 => Ok(Color::Red),
+            0b010 => Ok(Color::Green),
+            0b001 => Ok(Color::Blue),
+            0b110 => Ok(Color::Yellow),
+            0b101 => Ok(Color::Magenta),
+            0b011 => Ok(Color::Cyan),
+            0b111 => Ok(Color::White),
+            _ => Err(()),
         }
     }
 }
@@ -358,20 +362,17 @@ impl PartialEq for Color {
 impl Not for Color {
     type Output = Self;
     fn not(self) -> Self::Output {
-        match self {
-            Self::Light => Self::Dark,
-            Self::Dark => Self::Light,
-            Self::Rgb([r, g, b]) => Self::Rgb([!r, !g, !b]),
-        }
+        let bit = !(self as u8);
+        Color::try_from(bit).unwrap()
     }
 }
 
 impl From<Color> for u8 {
     fn from(value: Color) -> Self {
         match value {
-            Color::Light => 0,
-            Color::Dark => 1,
-            Color::Rgb(..) => unreachable!("Trying to cast rgb to u8"),
+            Color::White => 0,
+            Color::Black => 1,
+            _ => unreachable!("Trying to cast rgb to u8"),
         }
     }
 }
@@ -379,9 +380,25 @@ impl From<Color> for u8 {
 impl From<Color> for u32 {
     fn from(value: Color) -> Self {
         match value {
-            Color::Light => 0,
-            Color::Dark => 1,
-            Color::Rgb([r, ..]) => !r as u32,
+            Color::White => 0,
+            Color::Black => 1,
+            Color::Red | Color::Yellow | Color::Magenta => 0,
+            _ => 1,
+        }
+    }
+}
+
+impl From<Color> for Rgb<u8> {
+    fn from(value: Color) -> Self {
+        match value {
+            Color::Black => Rgb([0, 0, 0]),
+            Color::Red => Rgb([255, 0, 0]),
+            Color::Green => Rgb([0, 255, 0]),
+            Color::Blue => Rgb([0, 0, 255]),
+            Color::Yellow => Rgb([255, 255, 0]),
+            Color::Magenta => Rgb([255, 0, 255]),
+            Color::Cyan => Rgb([0, 255, 255]),
+            Color::White => Rgb([255, 255, 255]),
         }
     }
 }
@@ -390,9 +407,9 @@ impl From<Color> for u32 {
 impl Color {
     pub fn select<T: Debug>(&self, light: T, dark: T) -> T {
         match self {
-            Self::Light => light,
-            Self::Dark => dark,
-            Self::Rgb(..) => todo!(),
+            Self::White => light,
+            Self::Black => dark,
+            _ => todo!(),
         }
     }
 }

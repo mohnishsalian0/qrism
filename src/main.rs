@@ -14,10 +14,10 @@ use qr_pro_max::{ECLevel, Palette, Version};
 use qr_pro_max::{MaskPattern, QRBuilder};
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let data = "ABCDEFGHIJKLMNOPQRTSUVWXYZABCDEFGHIJKLMNOPQRTSUVWXYZABCDEFGHIJKLMNOPQRTSUVWXYZABCDEFGHIJKLMNOPQRTSUVWXYZ";
+    let data = "ABCDEFGHIJKLMNOPQRTSUVWXYZABCDEFGHIJKLMNOPQRTSUVWXYZABCDEFGHIJKLMNOPQRTSUVWXYZ";
     let version = Version::Normal(16);
     let ec_level = ECLevel::L;
-    let pal = Palette::Poly;
+    let pal = Palette::Mono;
     let mask_pattern = MaskPattern::new(1);
 
     let qrb = QRBuilder::new(data.as_bytes())
@@ -29,15 +29,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         .unwrap();
     let version = qrb.version();
 
-    let path = Path::new("assets/test1.png");
+    let path = Path::new("tests/images/clean.png");
 
-    let image = qrb.render_color(10);
+    let image = qrb.to_image(10);
     image.save(path).expect("Failed to save image");
 
     // let img = image::open(path)?.to_rgb8();
     // let extracted_data = QRReader::read(&img, version).unwrap();
     // println!("Extracted Data: {extracted_data}");
-    //
+
     // // Example with rqrr
     // let path = Path::new("assets/test5.png");
     // let img = image::open(path)?.to_luma8();

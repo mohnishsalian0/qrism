@@ -19,7 +19,7 @@ impl Deref for DeModule {
     fn deref(&self) -> &Self::Target {
         match self {
             DeModule::Unmarked(c) => c,
-            DeModule::Marked => &Color::Dark,
+            DeModule::Marked => &Color::Black,
         }
     }
 }
@@ -104,10 +104,11 @@ impl DeQR {
 
         let mut grid = Box::new([DeModule::Marked; MAX_QR_SIZE]);
         clr_grid.iter().enumerate().for_each(|(i, &m)| {
-            let r = m.0 >= thresh;
-            let g = m.1 >= thresh;
-            let b = m.2 >= thresh;
-            grid[i] = DeModule::Unmarked(Color::Rgb([r, g, b]));
+            let r = (m.0 >= thresh) as u8;
+            let g = (m.1 >= thresh) as u8;
+            let b = (m.2 >= thresh) as u8;
+            let byte = r << 2 | g << 1 | b;
+            grid[i] = DeModule::Unmarked(Color::try_from(byte).unwrap());
         });
 
         Self { w: qr_w, grid, ver, ecl: None, mask: None }
@@ -138,7 +139,7 @@ impl DeQR {
 
         let mut grid = Box::new([DeModule::Marked; MAX_QR_SIZE]);
         black_cnt.iter().enumerate().for_each(|(i, &bc)| {
-            grid[i] = DeModule::Unmarked(if bc > half_area { Color::Dark } else { Color::Light })
+            grid[i] = DeModule::Unmarked(if bc > half_area { Color::Black } else { Color::White })
         });
         Self { w: qr_w, grid, ver, ecl: None, mask: None }
     }
@@ -158,7 +159,7 @@ impl DeQR {
             })
             .enumerate()
             .for_each(|(i, (_, clr))| {
-                grid[i] = DeModule::Unmarked(if clr == ' ' { Color::Dark } else { Color::Light })
+                grid[i] = DeModule::Unmarked(if clr == ' ' { Color::Black } else { Color::White })
             });
 
         Self { w: qr_w, grid, ver, ecl: None, mask: None }
@@ -169,7 +170,7 @@ impl DeQR {
     }
 
     pub fn count_dark_modules(&self) -> usize {
-        self.grid.iter().filter(|&m| matches!(**m, Color::Dark)).count()
+        self.grid.iter().filter(|&m| matches!(**m, Color::Black)).count()
     }
 
     #[cfg(test)]
@@ -180,8 +181,8 @@ impl DeQR {
         for i in 0..w {
             for j in 0..w {
                 let c = match self.get(i, j) {
-                    DeModule::Unmarked(Color::Dark) => 'u',
-                    DeModule::Unmarked(Color::Light | Color::Rgb(..)) => 'U',
+                    DeModule::Unmarked(Color::Black) => 'u',
+                    DeModule::Unmarked(_) => 'U',
                     DeModule::Marked => '.',
                 };
                 res.push(c);
@@ -248,7 +249,7 @@ mod deqr_util_tests {
         let ecl = ECLevel::L;
 
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
-        let qr_str = qr.render(1);
+        let qr_str = qr.to_gray_image(1);
 
         let deqr = DeQR::from_image(&qr_str, ver);
 
@@ -352,9 +353,9 @@ mod deqr_infos_test {
 
         let mut qr =
             QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
-        qr.set(8, 1, Module::Format(Color::Light));
-        qr.set(8, 2, Module::Format(Color::Light));
-        qr.set(8, 4, Module::Format(Color::Dark));
+        qr.set(8, 1, Module::Format(Color::White));
+        qr.set(8, 2, Module::Format(Color::White));
+        qr.set(8, 4, Module::Format(Color::Black));
         let qr_str = qr.to_str(1);
 
         let mut deqr = DeQR::from_str(&qr_str, ver);
@@ -372,10 +373,10 @@ mod deqr_infos_test {
 
         let mut qr =
             QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
-        qr.set(8, 1, Module::Format(Color::Light));
-        qr.set(8, 2, Module::Format(Color::Light));
-        qr.set(8, 3, Module::Format(Color::Dark));
-        qr.set(8, 4, Module::Format(Color::Dark));
+        qr.set(8, 1, Module::Format(Color::White));
+        qr.set(8, 2, Module::Format(Color::White));
+        qr.set(8, 3, Module::Format(Color::Black));
+        qr.set(8, 4, Module::Format(Color::Black));
         let qr_str = qr.to_str(1);
 
         let mut deqr = DeQR::from_str(&qr_str, ver);
@@ -394,14 +395,14 @@ mod deqr_infos_test {
 
         let mut qr =
             QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
-        qr.set(8, 1, Module::Format(Color::Light));
-        qr.set(8, 2, Module::Format(Color::Light));
-        qr.set(8, 3, Module::Format(Color::Dark));
-        qr.set(8, 4, Module::Format(Color::Dark));
-        qr.set(-2, 8, Module::Format(Color::Light));
-        qr.set(-3, 8, Module::Format(Color::Light));
-        qr.set(-4, 8, Module::Format(Color::Dark));
-        qr.set(-5, 8, Module::Format(Color::Dark));
+        qr.set(8, 1, Module::Format(Color::White));
+        qr.set(8, 2, Module::Format(Color::White));
+        qr.set(8, 3, Module::Format(Color::Black));
+        qr.set(8, 4, Module::Format(Color::Black));
+        qr.set(-2, 8, Module::Format(Color::White));
+        qr.set(-3, 8, Module::Format(Color::White));
+        qr.set(-4, 8, Module::Format(Color::Black));
+        qr.set(-5, 8, Module::Format(Color::Black));
         let qr_str = qr.to_str(1);
 
         let mut deqr = DeQR::from_str(&qr_str, ver);
@@ -475,9 +476,9 @@ mod deqr_infos_test {
         let ecl = ECLevel::L;
 
         let mut qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
-        qr.set(-9, 5, Module::Format(Color::Dark));
-        qr.set(-10, 5, Module::Format(Color::Dark));
-        qr.set(-11, 5, Module::Format(Color::Dark));
+        qr.set(-9, 5, Module::Format(Color::Black));
+        qr.set(-10, 5, Module::Format(Color::Black));
+        qr.set(-11, 5, Module::Format(Color::Black));
         let qr_str = qr.to_str(1);
 
         let mut deqr = DeQR::from_str(&qr_str, ver);
@@ -493,10 +494,10 @@ mod deqr_infos_test {
         let ecl = ECLevel::L;
 
         let mut qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
-        qr.set(-9, 5, Module::Format(Color::Dark));
-        qr.set(-10, 5, Module::Format(Color::Dark));
-        qr.set(-11, 5, Module::Format(Color::Dark));
-        qr.set(-9, 4, Module::Format(Color::Light));
+        qr.set(-9, 5, Module::Format(Color::Black));
+        qr.set(-10, 5, Module::Format(Color::Black));
+        qr.set(-11, 5, Module::Format(Color::Black));
+        qr.set(-9, 4, Module::Format(Color::White));
         let qr_str = qr.to_str(1);
 
         let mut deqr = DeQR::from_str(&qr_str, ver);
@@ -513,14 +514,14 @@ mod deqr_infos_test {
         let ecl = ECLevel::L;
 
         let mut qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
-        qr.set(-9, 5, Module::Format(Color::Dark));
-        qr.set(-10, 5, Module::Format(Color::Dark));
-        qr.set(-11, 5, Module::Format(Color::Dark));
-        qr.set(-9, 4, Module::Format(Color::Light));
-        qr.set(5, -9, Module::Format(Color::Dark));
-        qr.set(5, -10, Module::Format(Color::Dark));
-        qr.set(5, -11, Module::Format(Color::Dark));
-        qr.set(4, -9, Module::Format(Color::Light));
+        qr.set(-9, 5, Module::Format(Color::Black));
+        qr.set(-10, 5, Module::Format(Color::Black));
+        qr.set(-11, 5, Module::Format(Color::Black));
+        qr.set(-9, 4, Module::Format(Color::White));
+        qr.set(5, -9, Module::Format(Color::Black));
+        qr.set(5, -10, Module::Format(Color::Black));
+        qr.set(5, -11, Module::Format(Color::Black));
+        qr.set(4, -9, Module::Format(Color::White));
         let qr_str = qr.to_str(1);
 
         let mut deqr = DeQR::from_str(&qr_str, ver);
@@ -946,11 +947,10 @@ impl DeQR {
         for i in 0..chan_bits {
             for (r, c) in rgn_iter.by_ref() {
                 if let DeModule::Unmarked(clr) = self.get(r, c) {
-                    let (r, g, b) = match clr {
-                        Color::Light => (false, false, false),
-                        Color::Dark => (true, true, true),
-                        Color::Rgb([r, g, b]) => (!r, !g, !b),
-                    };
+                    let byte = clr as u8;
+                    let r = !(byte & 0b100 != 0);
+                    let g = !(byte & 0b010 != 0);
+                    let b = !(byte & 0b001 != 0);
                     pld.put(i, r);
                     pld.put(i + g_off, g);
                     pld.put(i + b_off, b);

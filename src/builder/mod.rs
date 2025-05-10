@@ -320,8 +320,12 @@ mod builder_tests {
     #[test_case( "aAAAAAAAAA111111111111111111AAAAAAAAAAa".repeat(42).to_string(), Version::Normal(40), ECLevel::Q)]
     #[test_case("1234567890".repeat(305).to_string(), Version::Normal(40), ECLevel::H)]
     fn test_builder(data: String, ver: Version, ecl: ECLevel) {
-        let qr =
-            QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap().render(10);
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(ver)
+            .ec_level(ecl)
+            .build()
+            .unwrap()
+            .to_gray_image(10);
 
         let mut img = rqrr::PreparedImage::prepare(qr);
         let grids = img.detect_grids();
@@ -341,7 +345,6 @@ mod builder_tests {
             .version(Version::Normal(40))
             .ec_level(ECLevel::H)
             .build()
-            .unwrap()
-            .render(10);
+            .unwrap();
     }
 }

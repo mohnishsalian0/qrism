@@ -19,7 +19,7 @@ impl Deref for Module {
     type Target = Color;
     fn deref(&self) -> &Self::Target {
         match self {
-            Module::Empty => &Color::Light,
+            Module::Empty => &Color::White,
             Module::Func(c) => c,
             Module::Version(c) => c,
             Module::Format(c) => c,
@@ -81,7 +81,7 @@ impl QR {
     }
 
     pub fn count_dark_modules(&self) -> usize {
-        self.grid.iter().filter(|&m| matches!(**m, Color::Dark)).count()
+        self.grid.iter().filter(|&m| matches!(**m, Color::Black)).count()
     }
 
     #[cfg(test)]
@@ -93,14 +93,14 @@ impl QR {
             for j in 0..w {
                 let c = match self.get(i, j) {
                     Module::Empty => '.',
-                    Module::Func(Color::Dark) => 'f',
-                    Module::Func(Color::Light | Color::Rgb(..)) => 'F',
-                    Module::Version(Color::Dark) => 'v',
-                    Module::Version(Color::Light | Color::Rgb(..)) => 'V',
-                    Module::Format(Color::Dark) => 'm',
-                    Module::Format(Color::Light | Color::Rgb(..)) => 'M',
-                    Module::Data(Color::Dark) => 'd',
-                    Module::Data(Color::Light | Color::Rgb(..)) => 'D',
+                    Module::Func(Color::Black) => 'f',
+                    Module::Func(_) => 'F',
+                    Module::Version(Color::Black) => 'v',
+                    Module::Version(_) => 'V',
+                    Module::Format(Color::Black) => 'm',
+                    Module::Format(_) => 'M',
+                    Module::Data(Color::Black) => 'd',
+                    Module::Data(_) => 'D',
                 };
                 res.push(c);
             }
@@ -142,10 +142,10 @@ mod qr_util_tests {
     fn test_index_wrap() {
         let mut qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
         let w = qr.w as i32;
-        qr.set(-1, -1, Module::Func(Color::Dark));
-        assert_eq!(qr.get(w - 1, w - 1), Module::Func(Color::Dark));
-        qr.set(0, 0, Module::Func(Color::Dark));
-        assert_eq!(qr.get(-w, -w), Module::Func(Color::Dark));
+        qr.set(-1, -1, Module::Func(Color::Black));
+        assert_eq!(qr.get(w - 1, w - 1), Module::Func(Color::Black));
+        qr.set(0, 0, Module::Func(Color::Black));
+        assert_eq!(qr.get(-w, -w), Module::Func(Color::Black));
     }
 
     #[test]
@@ -205,10 +205,10 @@ impl QR {
                     r + i,
                     c + j,
                     match (i, j) {
-                        (4 | -4, _) | (_, 4 | -4) => Module::Func(Color::Light),
-                        (3 | -3, _) | (_, 3 | -3) => Module::Func(Color::Dark),
-                        (2 | -2, _) | (_, 2 | -2) => Module::Func(Color::Light),
-                        _ => Module::Func(Color::Dark),
+                        (4 | -4, _) | (_, 4 | -4) => Module::Func(Color::White),
+                        (3 | -3, _) | (_, 3 | -3) => Module::Func(Color::Black),
+                        (2 | -2, _) | (_, 2 | -2) => Module::Func(Color::White),
+                        _ => Module::Func(Color::Black),
                     },
                 );
             }
@@ -270,17 +270,22 @@ impl QR {
     fn draw_line(&mut self, r1: i32, c1: i32, r2: i32, c2: i32) {
         debug_assert!(r1 == r2 || c1 == c2, "Line is neither vertical nor horizontal");
 
+        let colors = if self.pal == Palette::Mono {
+            vec![Color::Black, Color::White]
+        } else {
+            vec![Color::Green, Color::Blue, Color::Red]
+        };
+        let len = colors.len();
+
         if r1 == r2 {
             for j in c1..=c2 {
-                let m =
-                    if j & 1 == 0 { Module::Func(Color::Dark) } else { Module::Func(Color::Light) };
-                self.set(r1, j, m);
+                let m = colors[j as usize % len];
+                self.set(r1, j, Module::Func(m));
             }
         } else {
             for i in r1..=r2 {
-                let m =
-                    if i & 1 == 0 { Module::Func(Color::Dark) } else { Module::Func(Color::Light) };
-                self.set(i, c1, m);
+                let m = colors[i as usize % len];
+                self.set(i, c1, Module::Func(m));
             }
         }
     }
@@ -347,8 +352,8 @@ impl QR {
                     r + i,
                     c + j,
                     match (i, j) {
-                        (-2 | 2, _) | (_, -2 | 2) | (0, 0) => Module::Func(Color::Dark),
-                        _ => Module::Func(Color::Light),
+                        (-2 | 2, _) | (_, -2 | 2) | (0, 0) => Module::Func(Color::Black),
+                        _ => Module::Func(Color::White),
                     },
                 )
             }
@@ -561,18 +566,18 @@ impl QR {
                 self.draw_number(
                     format_info,
                     FORMAT_INFO_BIT_LEN,
-                    Module::Format(Color::Light),
-                    Module::Format(Color::Dark),
+                    Module::Format(Color::White),
+                    Module::Format(Color::Black),
                     &FORMAT_INFO_COORDS_QR_MAIN,
                 );
                 self.draw_number(
                     format_info,
                     FORMAT_INFO_BIT_LEN,
-                    Module::Format(Color::Light),
-                    Module::Format(Color::Dark),
+                    Module::Format(Color::White),
+                    Module::Format(Color::Black),
                     &FORMAT_INFO_COORDS_QR_SIDE,
                 );
-                self.set(-8, 8, Module::Format(Color::Dark));
+                self.set(-8, 8, Module::Format(Color::Black));
             }
         }
     }
@@ -585,15 +590,15 @@ impl QR {
                 self.draw_number(
                     ver_info,
                     VERSION_INFO_BIT_LEN,
-                    Module::Version(Color::Light),
-                    Module::Version(Color::Dark),
+                    Module::Version(Color::White),
+                    Module::Version(Color::Black),
                     &VERSION_INFO_COORDS_BL,
                 );
                 self.draw_number(
                     ver_info,
                     VERSION_INFO_BIT_LEN,
-                    Module::Version(Color::Light),
-                    Module::Version(Color::Dark),
+                    Module::Version(Color::White),
+                    Module::Version(Color::Black),
                     &VERSION_INFO_COORDS_TR,
                 );
             }
@@ -821,7 +826,7 @@ impl QR {
     fn draw_payload(&mut self, payload: BitStream) {
         let mut coords = EncRegionIter::new(self.ver);
         for bit in payload {
-            let module = Module::Data(if bit { Color::Dark } else { Color::Light });
+            let module = Module::Data(if bit { Color::Black } else { Color::White });
             for (r, c) in coords.by_ref() {
                 if matches!(self.get(r, c), Module::Empty) {
                     self.set(r, c, module);
@@ -847,21 +852,18 @@ impl QR {
                 for (r, c) in coords.by_ref() {
                     match self.get_mut(r, c) {
                         Module::Empty => {
-                            let module = Module::Data(Color::Rgb([!bit, false, false]));
+                            let clr = if bit { Color::Black } else { Color::Red };
+                            let module = Module::Data(clr);
                             self.set(r, c, module);
                             break;
                         }
-                        Module::Data(rgb) => {
-                            if let Color::Rgb([_r, g, b]) = rgb {
-                                match chan {
-                                    0 => unreachable!(
-                                        "Color module found before parsing red channel"
-                                    ),
-                                    1 => *g = !bit,
-                                    2 => *b = !bit,
-                                    _ => unreachable!("Invalid channel"),
-                                }
+                        Module::Data(clr) => {
+                            let mut byte = *clr as u8;
+                            if !bit {
+                                byte |= 1 << chan;
                             }
+                            let clr = Color::try_from(byte).unwrap();
+                            self.set(r, c, Module::Data(clr));
                             break;
                         }
                         _ => (),
@@ -876,7 +878,7 @@ impl QR {
         let n = self.ver.remainder_bits();
         for (r, c) in coords.take(n).by_ref() {
             if matches!(self.get(r, c), Module::Empty) {
-                self.set(r, c, Module::Data(Color::Light));
+                self.set(r, c, Module::Data(Color::White));
             }
         }
     }
@@ -904,8 +906,7 @@ impl QR {
 
 // TODO: Write testcases
 impl QR {
-    // TODO: Merge render gray and poly if possible and improve the functions
-    pub fn render(&self, module_sz: u32) -> GrayImage {
+    pub fn to_gray_image(&self, module_sz: u32) -> GrayImage {
         let qz_sz = if let Version::Normal(_) = self.ver { 4 } else { 2 } * module_sz;
         let qr_sz = self.w as u32 * module_sz;
         let total_sz = qz_sz + qr_sz + qz_sz;
@@ -925,11 +926,8 @@ impl QR {
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
                 };
 
-                let pixel = match clr {
-                    Color::Dark => Luma([0]),
-                    Color::Light => Luma([255]),
-                    Color::Rgb(..) => todo!(),
-                };
+                let pixel =
+                    if clr != Color::White { Luma([(clr as u8) * 35]) } else { Luma([255]) };
 
                 canvas.put_pixel(j, i, pixel);
             }
@@ -938,7 +936,7 @@ impl QR {
         canvas
     }
 
-    pub fn render_color(&self, module_sz: u32) -> RgbImage {
+    pub fn to_image(&self, module_sz: u32) -> RgbImage {
         let qz_sz = if let Version::Normal(_) = self.ver { 4 } else { 2 } * module_sz;
         let qr_sz = self.w as u32 * module_sz;
         let total_sz = qz_sz + qr_sz + qz_sz;
@@ -958,16 +956,7 @@ impl QR {
                     Module::Empty => panic!("Empty module found at: {r} {c}"),
                 };
 
-                let pixel = match clr {
-                    Color::Dark => Rgb([0, 0, 0]),
-                    Color::Light => Rgb([255, 255, 255]),
-                    Color::Rgb([r, g, b]) => {
-                        let (r, g, b) = (255 * (r as u8), 255 * (g as u8), 255 * (b as u8));
-                        Rgb([r, g, b])
-                    }
-                };
-
-                canvas.put_pixel(j, i, pixel);
+                canvas.put_pixel(j, i, clr.into());
             }
         }
 

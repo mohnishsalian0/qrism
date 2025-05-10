@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 g2p = "1.2.2"         #FIXME: Remove later
 image = "0.25.2"
+lru = "0.14.0"
 num-traits = "0.2.19"
 proptest = "1.6.0"
 rand = "0.9.0"

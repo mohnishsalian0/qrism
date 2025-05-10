@@ -107,9 +107,9 @@ pub fn compute_total_penalty(qr: &QR) -> u32 {
 fn compute_adjacent_penalty(qr: &QR) -> u32 {
     let mut pen = 0;
     let w = qr.width();
-    let mut cols = vec![(Color::Dark, 0); w];
+    let mut cols = vec![(Color::Black, 0); w];
     for r in 0..w {
-        let mut last = Color::Dark;
+        let mut last = Color::Black;
         let mut consec_row_len = 0;
         for (c, col) in cols.iter_mut().enumerate() {
             let clr = *qr.get(r as i32, c as i32);
@@ -153,20 +153,20 @@ fn compute_finder_pattern_penalty(qr: &QR, is_hor: bool) -> u32 {
     let mut pen = 0;
     let w = qr.width() as i32;
     static PATTERN: [Color; 7] = [
-        Color::Dark,
-        Color::Light,
-        Color::Dark,
-        Color::Dark,
-        Color::Dark,
-        Color::Light,
-        Color::Dark,
+        Color::Black,
+        Color::White,
+        Color::Black,
+        Color::Black,
+        Color::Black,
+        Color::White,
+        Color::Black,
     ];
     for i in 0..w {
         for j in 0..w - 6 {
             let get: Box<dyn Fn(i32) -> Color> =
                 if is_hor { Box::new(|c| *qr.get(i, c)) } else { Box::new(|r| *qr.get(r, i)) };
             if !(j..j + 7).map(&*get).ne(PATTERN.iter().copied()) {
-                let match_qz = |x| x >= 0 && x < w && get(x) == Color::Dark;
+                let match_qz = |x| x >= 0 && x < w && get(x) == Color::Black;
                 if (j - 4..j).any(&match_qz) || (j + 7..j + 11).any(&match_qz) {
                     pen += 40;
                 }

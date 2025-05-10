@@ -19,3 +19,9 @@ OUT OF SCOPE:
 Detecting branded (custom colors) traditional QR
 Detecting unconventional/hard to perceive QR
 Detecting multiple QRs
+
+Image debug code:
+use std::path::Path;
+println!("R {r}, Y {y}");
+let _ = img.save(Path::new("assets/ring.png"));
+panic!("Exiting early");

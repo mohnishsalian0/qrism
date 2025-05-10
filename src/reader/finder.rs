@@ -1,4 +1,4 @@
-use crate::metadata::Color;
+use image::Rgb;
 
 use super::{
     prepare::{Pixel, PreparedImage, Region},
@@ -13,10 +13,10 @@ use super::{
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct DatumLine {
-    left: usize,
-    stone: usize,
-    right: usize,
-    y: usize,
+    left: u32,
+    stone: u32,
+    right: u32,
+    y: u32,
 }
 
 // Finder type
@@ -58,11 +58,11 @@ impl Finder {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct LineScanner {
-    buffer: [usize; 6],  // Run length of each transition
-    prev: Option<Color>, // Last observed color
-    transitions: usize,  // Count of color changes
-    pos: usize,          // Current position
-    y: usize,
+    buffer: [u32; 6],      // Run length of each transition
+    prev: Option<Rgb<u8>>, // Last observed color
+    transitions: u32,      // Count of color changes
+    pos: u32,              // Current position
+    y: u32,
 }
 
 impl LineScanner {
@@ -70,14 +70,14 @@ impl LineScanner {
         Self { buffer: [0; 6], prev: None, transitions: 0, pos: 0, y: 0 }
     }
 
-    pub fn reset(&mut self, y: usize) {
+    pub fn reset(&mut self, y: u32) {
         self.prev = None;
         self.transitions = 0;
         self.pos = 0;
         self.y = y;
     }
 
-    pub fn advance(&mut self, color: Option<Color>) -> Option<DatumLine> {
+    pub fn advance(&mut self, color: Option<Rgb<u8>>) -> Option<DatumLine> {
         self.pos += 1;
 
         if self.prev == color {
@@ -92,8 +92,8 @@ impl LineScanner {
 
         if self.is_finder_line() {
             Some(DatumLine {
-                left: self.pos - self.buffer[..5].iter().sum::<usize>(),
-                stone: self.pos - self.buffer[2..5].iter().sum::<usize>(),
+                left: self.pos - self.buffer[..5].iter().sum::<u32>(),
+                stone: self.pos - self.buffer[2..5].iter().sum::<u32>(),
                 right: self.pos - self.buffer[4],
                 y: self.y,
             })
@@ -103,14 +103,14 @@ impl LineScanner {
     }
 
     fn is_finder_line(&self) -> bool {
-        if !(self.prev == Some(Color::Light) && self.transitions >= 5) {
+        if !(self.prev == Some(Rgb([255, 255, 255])) && self.transitions >= 5) {
             return false;
         }
 
-        let avg = self.buffer.iter().sum::<usize>() / 7;
+        let avg = self.buffer.iter().sum::<u32>() / 7;
         let tol = avg / 2;
 
-        let ratio: [usize; 5] = [1, 1, 3, 1, 1];
+        let ratio: [u32; 5] = [1, 1, 3, 1, 1];
         for (i, r) in ratio.iter().enumerate() {
             if self.buffer[i] < r * avg - tol || self.buffer[i] > r * avg + tol {
                 return false;
@@ -164,28 +164,34 @@ fn is_finder(img: &mut PreparedImage, datum: &DatumLine) -> bool {
         return false;
     }
 
-    if let (Some(Region { id: r_id, area: r_area }), Some(Region { id: s_id, area: s_area })) =
-        (ring, stone)
+    if let (
+        Some(Region { src: r_src, area: r_area, .. }),
+        Some(Region { src: s_src, area: s_area, .. }),
+    ) = (ring, stone)
     {
         let ratio = s_area * 100 / r_area;
-        r_id != s_id && (20 < ratio && ratio < 50)
+        let r_color = img.get(r_src.0, r_src.1);
+        let s_color = img.get(s_src.0, s_src.1);
+        r_color != s_color && (20 < ratio && ratio < 50)
     } else {
         false
     }
 }
 
 fn construct_finder(img: &mut PreparedImage, datum: &DatumLine) -> Option<Finder> {
-    let (left, right, y) = (datum.left, datum.right, datum.y);
-    let px = img.get(right, y);
+    let (_left, right, y) = (datum.left, datum.right, datum.y);
+    let color = img.get(right, y);
     let refr_pt = Point { x: right as i32, y: y as i32 };
 
     // Locating first corner
-    let mut fcf = FirstCornerFinder::new(refr_pt);
-    img.repaint_and_accumulate((right, y), px, Pixel::Temporary, &mut fcf);
+    let fcf = FirstCornerFinder::new(refr_pt);
+    let to = Pixel::Temporary.to_rgb(&color);
+    let fcf = img.fill_and_accumulate((right, y), to, fcf);
 
     // Locating rest of the corners
-    let mut acf = AllCornerFinder::new(refr_pt, fcf.corner);
-    img.repaint_and_accumulate((right, y), Pixel::Temporary, Pixel::Finder, &mut acf);
+    let to = Pixel::Reserved.to_rgb(&color);
+    let acf = AllCornerFinder::new(refr_pt, fcf.corner);
+    let acf = img.fill_and_accumulate((right, y), to, acf);
 
     // Setting up homographic projection
     let h = Homography::create(&acf.corners, 7.0, 7.0)?;
@@ -193,6 +199,85 @@ fn construct_finder(img: &mut PreparedImage, datum: &DatumLine) -> Option<Finder
     let center = h.map(3.5, 3.5);
 
     Some(Finder { h, corners, center })
+}
+
+#[cfg(test)]
+mod finder_highlight {
+    use image::RgbImage;
+
+    use crate::reader::utils::{
+        geometry::{BresenhamLine, X, Y},
+        Highlight,
+    };
+
+    use super::Finder;
+
+    impl Highlight for Finder {
+        fn highlight(&self, img: &mut RgbImage) {
+            for (i, crn) in self.corners.iter().enumerate() {
+                let next = self.corners[(i + 1) % 4];
+                let dx = (next.x - crn.x).abs();
+                let dy = (next.y - crn.y).abs();
+                if dx > dy {
+                    let line = BresenhamLine::<X>::new(crn, &next);
+                    for pt in line {
+                        pt.highlight(img);
+                    }
+                } else {
+                    let line = BresenhamLine::<Y>::new(crn, &next);
+                    for pt in line {
+                        pt.highlight(img);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod finder_tests {
+
+    use crate::{
+        reader::{prepare::PreparedImage, utils::geometry::Point},
+        ECLevel, MaskPattern, Palette, QRBuilder, Version,
+    };
+
+    use super::locate_finders;
+
+    #[test]
+    fn test_locate_finder() {
+        let data = "Hello, world!🌎";
+        let ver = Version::Normal(4);
+        let ecl = ECLevel::L;
+        let mask = MaskPattern::new(1);
+        let pal = Palette::Mono;
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(ver)
+            .ec_level(ecl)
+            .palette(pal)
+            .mask(mask)
+            .build()
+            .unwrap();
+        let img = qr.to_image(10);
+
+        let corners = [
+            [[40, 40], [109, 40], [109, 109], [40, 109]],
+            [[300, 109], [300, 40], [369, 109], [369, 40]],
+            [[40, 369], [40, 300], [109, 300], [109, 369]],
+        ];
+        let centers = [[75, 75], [335, 75], [75, 335]];
+        let mut img = PreparedImage::prepare(img);
+        let finders = locate_finders(&mut img);
+        for (i, f) in finders.iter().enumerate() {
+            for crn in corners[i] {
+                let pt = Point { x: crn[0], y: crn[1] };
+                assert!(f.corners.contains(&pt), "Finder corners don't match");
+            }
+            let cent_pt = Point { x: centers[i][0], y: centers[i][1] };
+            assert_eq!(f.center, cent_pt, "Finder center doesn't match");
+        }
+    }
 }
 
 // Groups finders in 3, which form potential symbols
@@ -290,5 +375,44 @@ fn get_relative_position(f1: &Finder, f2: &Finder) -> (Orientation, f64) {
         (Orientation::Vertical, y)
     } else {
         (Orientation::None, 0.0)
+    }
+}
+
+#[cfg(test)]
+mod group_finders_tests {
+
+    use crate::{
+        reader::prepare::PreparedImage, ECLevel, MaskPattern, Palette, QRBuilder, Version,
+    };
+
+    use super::{group_finders, locate_finders};
+
+    #[test]
+    fn test_group_finder() {
+        let data = "Hello, world!🌎";
+        let ver = Version::Normal(4);
+        let ecl = ECLevel::L;
+        let mask = MaskPattern::new(1);
+        let pal = Palette::Mono;
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(ver)
+            .ec_level(ecl)
+            .palette(pal)
+            .mask(mask)
+            .build()
+            .unwrap();
+        let img = qr.to_image(10);
+
+        let centers = [(75, 75), (335, 75), (75, 335)];
+
+        let mut img = PreparedImage::prepare(img);
+        let finders = locate_finders(&mut img);
+        let group = group_finders(&finders);
+        assert_eq!(group.len(), 1, "No group found");
+        for f in group[0].iter() {
+            let c = (f.center.x, f.center.y);
+            assert!(centers.contains(&c))
+        }
     }
 }

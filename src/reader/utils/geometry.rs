@@ -3,11 +3,38 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+// Point
+//------------------------------------------------------------------------------
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
 pub struct Point {
     pub x: i32,
     pub y: i32,
 }
+
+#[cfg(test)]
+mod point_highlight {
+    use image::{Rgb, RgbImage};
+
+    use crate::reader::utils::Highlight;
+
+    use super::Point;
+
+    impl Highlight for Point {
+        fn highlight(&self, img: &mut RgbImage) {
+            for i in [-1, 0, 1] {
+                for j in [-1, 0, 1] {
+                    let nx = self.x.saturating_add(i) as u32;
+                    let ny = self.y.saturating_add(j) as u32;
+                    img.put_pixel(nx, ny, Rgb([255, 0, 0]));
+                }
+            }
+        }
+    }
+}
+
+// Slope
+//------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
 pub struct Slope {
@@ -205,17 +232,19 @@ impl Iterator for BresenhamLine<Y> {
 
 #[derive(Debug, Clone)]
 pub struct Line {
-    a: i32,
+    s: Point, // Start point
+    e: Point, // End point
+    a: i32,   // Ax + By + C = 0
     b: i32,
     c: i32,
 }
 
 impl Line {
-    pub fn new(p1: &Point, p2: &Point) -> Self {
-        let a = -(p2.y - p1.y);
-        let b = p2.x - p1.x;
-        let c = p1.x * p2.y - p1.y * p2.x;
-        Self { a, b, c }
+    pub fn new(s: &Point, e: &Point) -> Self {
+        let a = -(e.y - s.y);
+        let b = e.x - s.x;
+        let c = s.x * e.y - s.y * e.x;
+        Self { s: *s, e: *e, a, b, c }
     }
 
     pub fn intersection(&self, other: &Line) -> Option<Point> {
@@ -227,6 +256,33 @@ impl Line {
         let y = (self.c * other.a - self.a * other.c) / den;
 
         Some(Point { x, y })
+    }
+}
+
+#[cfg(test)]
+mod line_highlight {
+    use image::RgbImage;
+
+    use crate::reader::utils::Highlight;
+
+    use super::{BresenhamLine, Line, X, Y};
+
+    impl Highlight for Line {
+        fn highlight(&self, img: &mut RgbImage) {
+            let dx = (self.e.x - self.s.x).abs();
+            let dy = (self.e.y - self.s.y).abs();
+            if dx > dy {
+                let line = BresenhamLine::<X>::new(&self.s, &self.e);
+                for pt in line {
+                    pt.highlight(img);
+                }
+            } else {
+                let line = BresenhamLine::<Y>::new(&self.s, &self.e);
+                for pt in line {
+                    pt.highlight(img);
+                }
+            }
+        }
     }
 }
 

@@ -1,54 +1,69 @@
-use std::{cmp, collections::VecDeque};
+use std::{cmp, collections::VecDeque, num::NonZeroUsize};
 
-use image::RgbImage;
-
-use crate::metadata::Color;
+use image::{Rgb, RgbImage};
+use lru::LruCache;
 
 use super::utils::{
     accumulate::{Accumulator, Area, Row},
     geometry::Point,
 };
 
+#[cfg(test)]
+use std::path::Path;
+
+#[cfg(test)]
+use image::ImageResult;
+
 // Pixel
 //------------------------------------------------------------------------------
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Pixel {
-    Color([bool; 3]),
-    Visited(usize), // Contains id of associated region
+    Visited(u8), // Contains id of associated region
+    Unvisited,
     Temporary,
-    Finder,
-    Alignment,
-    Format,
-    Version,
-    Timing,
+    Reserved,
+    White,
 }
 
-impl From<Pixel> for Option<Color> {
-    fn from(p: Pixel) -> Self {
-        match p {
-            Pixel::Color(clr) => Some(Color::Rgb(clr)),
-            _ => None,
+impl From<Rgb<u8>> for Pixel {
+    fn from(p: Rgb<u8>) -> Self {
+        for c in p.0 {
+            if c != 255 {
+                return match c {
+                    0 => Self::Unvisited,
+                    1 => Self::Temporary,
+                    2 => Self::Reserved,
+                    id => Self::Visited(id - 3),
+                };
+            }
         }
+        Self::White
     }
 }
 
-impl From<Pixel> for Option<u32> {
-    fn from(value: Pixel) -> Self {
-        match value {
-            Pixel::Color([r, g, b]) => Some(!(r | g | b) as u32),
-            _ => None,
+impl Pixel {
+    // Takes current Rgb color and updates redundant channel with Pixel value
+    pub fn to_rgb(self, color: &Rgb<u8>) -> Rgb<u8> {
+        let val = match self {
+            Self::Visited(id) => id + 3,
+            Self::Unvisited => return *color,
+            Self::Temporary => 1,
+            Self::Reserved => return Rgb([2, 2, 2]),
+            Self::White => return Rgb([255, 255, 255]),
+        };
+        let mut res = *color;
+        if res[0] != 255 {
+            res[0] = val;
         }
+        if res[1] != 255 {
+            res[1] = val;
+        }
+        if res[2] != 255 {
+            res[2] = val;
+        }
+        res
     }
-}
-
-// Direction
-//------------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum Direction {
-    Up,
-    Down,
 }
 
 // Region
@@ -56,27 +71,25 @@ enum Direction {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Region {
-    pub id: usize,
-    pub area: usize,
+    pub src: (u32, u32),
+    pub color: Rgb<u8>,
+    pub area: u32,
 }
 
 // QR type for reader
 //------------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct PreparedImage {
-    grid: Vec<Pixel>,
-    regions: Vec<usize>, // Areas of visited regions. Index is id
-    w: usize,
-    h: usize,
+    pub buffer: RgbImage,
+    regions: LruCache<u8, Region>, // Areas of visited regions. Index is id
 }
 
 impl PreparedImage {
     /// Performs adaptive binarization on an RGB image using a sliding window
     /// and per-channel average filtering.
-    pub fn from_image(img: &RgbImage) -> Self {
+    pub fn prepare(mut img: RgbImage) -> Self {
         let (w, h) = img.dimensions();
-        let mut grid = Vec::with_capacity(w.checked_mul(h).expect("Image too large") as usize);
         let win_sz = cmp::max(w / 8, 1);
         let den = 200 * win_sz;
         let mut u_avg = [0, 0, 0];
@@ -98,141 +111,186 @@ impl PreparedImage {
             }
 
             for x in 0..w {
-                let mut out = [false, false, false];
-                let px = img.get_pixel(x, y);
-                for (i, p) in out.iter_mut().enumerate() {
+                let px = img.get_pixel_mut(x, y);
+                for (i, p) in px.0.iter_mut().enumerate() {
                     let thresh = row_avg[x as usize][i] * (100 - 5) / den;
-                    *p = px[i] as u32 >= thresh;
+                    if *p as u32 >= thresh {
+                        *p = 255;
+                    } else {
+                        *p = 0;
+                    }
                 }
-                grid.push(Pixel::Color(out));
             }
 
             row_avg.fill([0, 0, 0]);
         }
-        Self { grid, regions: vec![], w: w as usize, h: h as usize }
+        Self { buffer: img, regions: LruCache::new(NonZeroUsize::new(250).unwrap()) }
     }
 
-    pub fn grid(&self) -> &[Pixel] {
-        &self.grid
+    #[inline]
+    pub fn width(&self) -> u32 {
+        self.buffer.width()
     }
 
-    pub fn width(&self) -> usize {
-        self.w
+    #[inline]
+    pub fn height(&self) -> u32 {
+        self.buffer.height()
     }
 
-    pub fn height(&self) -> usize {
-        self.h
+    pub fn get(&self, x: u32, y: u32) -> Rgb<u8> {
+        *self.buffer.get_pixel(x, y)
     }
 
-    pub fn get(&self, r: usize, c: usize) -> Pixel {
-        self.grid[r * self.w + c]
+    fn coord_to_index(&self, x: i32, y: i32) -> (u32, u32) {
+        let w = self.width() as i32;
+        let h = self.height() as i32;
+        debug_assert!(-w <= x && x < w, "row shouldn't be greater than or equal to w");
+        debug_assert!(-h <= y && y < h, "column shouldn't be greater than or equal to w");
+
+        let x = if x < 0 { x + w } else { x };
+        let y = if y < 0 { y + h } else { y };
+        (x as u32, y as u32)
     }
 
-    fn coord_to_index(&self, r: i32, c: i32) -> usize {
-        let w = self.w as i32;
-        let h = self.h as i32;
-        debug_assert!(-w <= r && r < w, "row shouldn't be greater than or equal to w");
-        debug_assert!(-h <= c && c < h, "column shouldn't be greater than or equal to w");
-
-        let r = if r < 0 { r + w } else { r };
-        let c = if c < 0 { c + h } else { c };
-        (r * w + c) as _
+    pub fn get_at_point(&self, pt: &Point) -> &Rgb<u8> {
+        let (x, y) = self.coord_to_index(pt.x, pt.y);
+        self.buffer.get_pixel(x, y)
     }
 
-    pub fn get_at_point(&self, p: &Point) -> Pixel {
-        let idx = self.coord_to_index(p.y, p.x);
-        self.grid[idx]
+    pub fn get_mut(&mut self, x: u32, y: u32) -> &mut Rgb<u8> {
+        self.buffer.get_pixel_mut(x, y)
     }
 
-    pub fn get_mut(&mut self, r: usize, c: usize) -> &mut Pixel {
-        &mut self.grid[r * self.w + c]
+    pub fn get_mut_at_point(&mut self, pt: &Point) -> &mut Rgb<u8> {
+        let (x, y) = self.coord_to_index(pt.x, pt.y);
+        self.buffer.get_pixel_mut(x, y)
     }
 
-    pub fn get_mut_at_point(&mut self, pt: &Point) -> &mut Pixel {
-        let idx = self.coord_to_index(pt.y, pt.x);
-        &mut self.grid[idx]
+    pub fn set(&mut self, x: u32, y: u32, px: Rgb<u8>) {
+        *self.get_mut(x, y) = px;
     }
 
-    pub fn set(&mut self, r: usize, c: usize, px: Pixel) {
-        *self.get_mut(r, c) = px;
-    }
-
-    pub fn set_at_point(&mut self, pt: &Point, px: Pixel) {
+    pub fn set_at_point(&mut self, pt: &Point, px: Rgb<u8>) {
         *self.get_mut_at_point(pt) = px;
     }
 
-    pub(crate) fn get_region(&mut self, src: (usize, usize)) -> Option<Region> {
-        let px = self.get(src.0, src.1);
+    #[cfg(test)]
+    pub fn save(&self, path: &Path) -> ImageResult<()> {
+        self.buffer.save(path)
+    }
+
+    pub(crate) fn get_region(&mut self, src: (u32, u32)) -> Option<Region> {
+        let color = self.get(src.0, src.1);
+        let px: Pixel = color.into();
+
         match px {
-            Pixel::Color(clr) => {
-                let id = self.regions.len();
-                let mut area = Area(0);
-                self.repaint_and_accumulate(src, px, Pixel::Visited(id), &mut area);
-                self.regions.push(area.0);
-                Some(Region { id, area: area.0 })
+            Pixel::Unvisited => {
+                let reg_count = self.regions.len() as u8;
+
+                let reg_id = if reg_count == self.regions.cap().get() as u8 {
+                    let (id, reg) = self.regions.pop_lru().expect("Cache is full");
+                    let Region { src, color, .. } = reg;
+
+                    let _ = self.fill_and_accumulate(src, color, |_| ());
+
+                    id
+                } else {
+                    reg_count
+                };
+
+                let area = Area(0);
+                let to = Pixel::Visited(reg_id).to_rgb(&color);
+                let acc = self.fill_and_accumulate(src, to, area);
+                let new_reg = Region { src, color, area: acc.0 };
+
+                self.regions.put(reg_id, new_reg);
+
+                Some(new_reg)
             }
-            Pixel::Visited(id) => Some(Region { id, area: self.regions[id] }),
+            Pixel::Visited(id) => {
+                Some(*self.regions.get(&id).expect("No region found for visited pixel"))
+            }
             _ => None,
         }
     }
 
-    /// Repaints region and accumulates info
-    pub fn repaint_and_accumulate<A: Accumulator>(
+    /// Fills region with provided color and accumulates info
+    pub fn fill_and_accumulate<A: Accumulator>(
         &mut self,
-        src: (usize, usize),
-        from: Pixel,
-        to: Pixel,
-        acc: &mut A,
-    ) {
+        src: (u32, u32),
+        target: Rgb<u8>,
+        mut acc: A,
+    ) -> A {
+        let from = *self.buffer.get_pixel(src.0, src.1);
+
         debug_assert!(
-            from != to && from != Pixel::Color([true, true, true]),
-            "Cannot repaint white or same color"
+            from != target && from != Rgb([255, 255, 255]),
+            "Cannot fill white or same color"
         );
 
         // Flood fill algorithm
-        let w = self.w;
+        let w = self.width();
+        let h = self.height();
         let mut queue = VecDeque::new();
-        let mut left = src.0;
-        let mut right = src.0;
-        let y = src.1;
+        queue.push_back(src);
 
-        // Traverse left until boundary
-        while left > 0 && self.get(left - 1, y) == from {
-            left -= 1;
-            self.set(left, y, to);
-        }
+        while let Some(pt) = queue.pop_front() {
+            let (x, y) = pt;
+            let mut left = x;
+            let mut right = x;
+            self.set(x, y, target);
 
-        // Traverse right until boundary
-        while right < w - 1 && self.get(right + 1, y) == from {
-            right += 1;
-            self.set(right, y, to);
-        }
+            // Traverse left till boundary
+            while left > 0 && self.get(left - 1, y) == from {
+                left -= 1;
+                self.set(left, y, target);
+            }
 
-        queue.push_back(Row { left, right, y });
+            // Traverse right till boundary
+            while right < w - 1 && self.get(right + 1, y) == from {
+                right += 1;
+                self.set(right, y, target);
+            }
 
-        while let Some(row) = queue.pop_front() {
-            let Row { left, right, y } = row;
-            acc.accumulate(row);
+            acc.accumulate(Row { left, right, y });
 
             for ny in [y.saturating_sub(1), y + 1] {
-                if ny != y && y < self.h {
-                    let mut rl = left;
-                    let mut reg_found = false;
+                if ny != y && ny < h {
+                    let mut seg_len = 0;
                     for x in left..=right {
-                        let px = self.get(x, y);
+                        let px = self.get(x, ny);
                         if px == from {
-                            self.set(x, y, to);
-                            if !reg_found {
-                                rl = x;
-                                reg_found = true;
-                            }
-                        } else if reg_found {
-                            queue.push_back(Row { left: rl, right: x - 1, y });
-                            reg_found = false;
+                            seg_len += 1;
+                        } else if seg_len > 1 {
+                            queue.push_back((x - 1, ny));
+                            seg_len = 0;
                         }
+                    }
+                    if seg_len > 1 {
+                        queue.push_back((right, ny));
                     }
                 }
             }
         }
+        acc
+    }
+}
+
+#[cfg(test)]
+mod prepare_tests {
+
+    use image::Rgb;
+    use std::path::Path;
+
+    use super::PreparedImage;
+
+    #[test]
+    fn test_flood_fill() {
+        let path = Path::new("assets/test1.png");
+        let img = image::open(path).unwrap().to_rgb8();
+        let mut img = PreparedImage::prepare(img);
+        let _ = img.fill_and_accumulate((101, 60), Rgb([127, 127, 127]), |_| ());
+        let out_path = Path::new("assets/test_flood_fill.png");
+        img.save(out_path).expect("Failed to save image");
     }
 }

@@ -3,24 +3,33 @@ use super::geometry::{Point, Slope};
 // Accumulator trait for flood fill
 //------------------------------------------------------------------------------
 
-pub(crate) trait Accumulator {
+pub trait Accumulator {
     fn accumulate(&mut self, row: Row);
+}
+
+impl<F> Accumulator for F
+where
+    F: FnMut(Row),
+{
+    fn accumulate(&mut self, row: Row) {
+        self(row)
+    }
 }
 
 // Region row
 //------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub(crate) struct Row {
-    pub left: usize,
-    pub right: usize,
-    pub y: usize,
+pub struct Row {
+    pub left: u32,
+    pub right: u32,
+    pub y: u32,
 }
 
 // Area accumulator to estimate region area
 //------------------------------------------------------------------------------
 
-pub struct Area(pub usize);
+pub struct Area(pub u32);
 
 impl Accumulator for Area {
     fn accumulate(&mut self, row: Row) {

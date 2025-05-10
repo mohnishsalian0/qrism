@@ -100,7 +100,7 @@ mod qr_tests {
 
         let path = Path::new("assets/output.png");
 
-        let image = qr.render_color(10);
+        let image = qr.to_image(10);
         image.save(path).expect("Failed to save image");
 
         let img = image::open(path).unwrap().to_luma8();

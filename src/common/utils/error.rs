@@ -17,6 +17,7 @@ pub enum QRError {
     InvalidMaskingPattern,
 
     // QR reader
+    SymbolNotFound,
     TooManyError,
     InvalidInfo,
     InvalidFormatInfo,
@@ -39,6 +40,7 @@ impl Display for QRError {
             Self::InvalidColor => "Invalid color",
             Self::InvalidChar => "Invalid character",
             Self::InvalidMaskingPattern => "Invalid masking pattern",
+            Self::SymbolNotFound => "Symbol not found",
             Self::TooManyError => "Too many errors to correct successfully",
             Self::InvalidInfo => "Invalid info",
             Self::InvalidFormatInfo => "Invalid format info detected",
