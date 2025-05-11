@@ -234,7 +234,7 @@ impl Iterator for BresenhamLine<Y> {
 pub struct Line {
     s: Point, // Start point
     e: Point, // End point
-    a: i32,   // Ax + By + C = 0
+    a: i32,
     b: i32,
     c: i32,
 }

@@ -221,8 +221,8 @@ pub mod decode {
             res.extend(decoded_seg);
             total_bit_len += bit_len;
 
-            // Handles the edge case where the data len is smaller than the capacity by 4 bits or
-            // less, in which case the there isn't enough space for 4 terminator bits and the
+            // Handles the rare edge case where the data len is smaller than the capacity by 4 bits
+            // or less, in which case the there isn't enough space for 4 terminator bits and the
             // deocder would proceed to the next channel
             if total_bit_len < data_bit_cap
                 && data_bit_cap - total_bit_len < 4

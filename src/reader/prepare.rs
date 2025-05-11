@@ -136,10 +136,10 @@ impl PreparedImage {
     }
 
     pub fn get(&self, x: u32, y: u32) -> Pixel {
-        // assert!(x <= i32::MAX as u32);
-        // assert!(x >= i32::MIN as u32);
-        // assert!(y <= i32::MAX as u32);
-        // assert!(y >= i32::MIN as u32);
+        assert!(x <= i32::MAX as u32);
+        assert!(x >= i32::MIN as u32);
+        assert!(y <= i32::MAX as u32);
+        assert!(y >= i32::MIN as u32);
 
         let idx = self.coord_to_index(x as i32, y as i32);
         self.buffer[idx]
@@ -162,10 +162,10 @@ impl PreparedImage {
     }
 
     pub fn get_mut(&mut self, x: u32, y: u32) -> &mut Pixel {
-        // assert!(x <= i32::MAX as u32);
-        // assert!(x >= i32::MIN as u32);
-        // assert!(y <= i32::MAX as u32);
-        // assert!(y >= i32::MIN as u32);
+        assert!(x <= i32::MAX as u32);
+        assert!(x >= i32::MIN as u32);
+        assert!(y <= i32::MAX as u32);
+        assert!(y >= i32::MIN as u32);
 
         let idx = self.coord_to_index(x as i32, y as i32);
         &mut self.buffer[idx]
@@ -288,14 +288,4 @@ impl PreparedImage {
         }
         acc
     }
-}
-
-#[cfg(test)]
-mod prepare_tests {
-
-    use std::path::Path;
-
-    use crate::metadata::Color;
-
-    use super::{Pixel, PreparedImage};
 }

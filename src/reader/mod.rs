@@ -124,14 +124,6 @@ fn deinterleave(
     blks
 }
 
-fn dedupe(enc: &mut BitStream) {
-    let data = enc.data();
-    let split = (enc.len() >> 3) / 3;
-    if data[..split] == data[split..split * 2] && data[..split] == data[split * 2..] {
-        enc.truncate(split << 3);
-    }
-}
-
 #[cfg(test)]
 mod reader_tests {
 

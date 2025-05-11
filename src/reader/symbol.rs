@@ -111,10 +111,6 @@ impl Symbol {
         *self.get_mut(x, y) = px
     }
 
-    pub fn set_version(&mut self, ver: Version) {
-        self.ver = ver;
-    }
-
     fn wrap_coord(&self, x: i32, y: i32) -> (i32, i32) {
         let w = self.ver.width() as i32;
         debug_assert!(-w <= x && x < w, "row shouldn't be greater than or equal to w");
@@ -621,7 +617,7 @@ mod symbol_infos_tests {
         let groups = group_finders(&finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
 
-        let fmt_info = symbol.read_format_info().expect("Failed to read format info");
+        let _ = symbol.read_format_info().expect("Failed to read format info");
     }
 
     #[test]
@@ -708,7 +704,7 @@ mod symbol_infos_tests {
         let groups = group_finders(&finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
 
-        let scanned_ver = symbol.read_version_info().expect("Failed to read format info");
+        let _ = symbol.read_version_info().expect("Failed to read format info");
     }
 
     // #[test]
