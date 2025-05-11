@@ -109,8 +109,8 @@ impl LineScanner {
             return false;
         }
 
-        let avg = self.buffer.iter().sum::<u32>() / 7;
-        let tol = avg / 2;
+        let avg = (self.buffer[0] + self.buffer[1] + self.buffer[3] + self.buffer[4]) / 4;
+        let tol = avg * 3 / 4;
 
         let ratio: [u32; 5] = [1, 1, 3, 1, 1];
         for (i, r) in ratio.iter().enumerate() {

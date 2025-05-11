@@ -16,7 +16,7 @@ use crate::{
         VERSION_ERROR_CAPACITY, VERSION_INFOS, VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
     },
     utils::{BitArray, EncRegionIter, QRError, QRResult},
-    ECLevel, MaskPattern, Palette, Version,
+    ECLevel, MaskPattern, Version,
 };
 
 // Locates symbol based on 3 finders
@@ -27,7 +27,6 @@ pub struct SymbolLocation {
     h: Homography,
     bounds: [Point; 4],
     ver: Version,
-    pal: Palette,
 }
 
 impl SymbolLocation {
@@ -50,9 +49,8 @@ impl SymbolLocation {
         // Rotate finders so the top left corner is first in the list
         fds.iter_mut().for_each(|f| f.rotate(&c0, &hm));
 
-        let (grid_size, is_poly) = measure_timing_patterns(img, fds);
+        let grid_size = measure_timing_patterns(img, fds);
         let ver = Version::from_grid_size(grid_size)?;
-        let pal = if is_poly { Palette::Poly } else { Palette::Mono };
 
         let hor_line = Line::new(&fds[0].corners[0], &fds[0].corners[1]);
         let ver_line = Line::new(&fds[2].corners[0], &fds[2].corners[3]);
@@ -76,7 +74,7 @@ impl SymbolLocation {
         let w = grid_size as f64;
         let bounds = [h.map(0.0, 0.0), h.map(w, 0.0), h.map(w, w), h.map(0.0, w)];
 
-        Some(Self { h, bounds, ver, pal })
+        Some(Self { h, bounds, ver })
     }
 }
 
@@ -89,13 +87,12 @@ pub struct Symbol {
     h: Homography,
     bounds: [Point; 4],
     pub ver: Version,
-    pub pal: Palette,
 }
 
 impl Symbol {
     pub fn new(img: PreparedImage, sym_loc: SymbolLocation) -> Self {
-        let SymbolLocation { h, bounds, ver, pal } = sym_loc;
-        Self { img, h, bounds, ver, pal }
+        let SymbolLocation { h, bounds, ver } = sym_loc;
+        Self { img, h, bounds, ver }
     }
 
     pub fn get(&self, x: i32, y: i32) -> &Pixel {
@@ -142,7 +139,7 @@ impl Symbol {
 // Locates pt on the middle line of each finder's ring band
 // This pt is nearest to the center of symbol
 // Traces vert and hor lines along these middle pts to count modules
-pub fn measure_timing_patterns(img: &PreparedImage, fds: &[Finder; 3]) -> (usize, bool) {
+pub fn measure_timing_patterns(img: &PreparedImage, fds: &[Finder; 3]) -> usize {
     let p0 = fds[0].map(6.5, 0.5);
     let p1 = fds[1].map(6.5, 6.5);
     let p2 = fds[2].map(0.5, 6.5);
@@ -150,59 +147,44 @@ pub fn measure_timing_patterns(img: &PreparedImage, fds: &[Finder; 3]) -> (usize
     // Measuring horizontal timing pattern
     let dx = (p2.x - p1.x).abs();
     let dy = (p2.y - p1.y).abs();
-    let (hscan, h_is_poly) =
+    let hscan =
         if dx > dy { timing_scan::<X>(img, &p1, &p2) } else { timing_scan::<Y>(img, &p1, &p2) };
 
     // Measuring vertical timing pattern
     let dx = (p0.x - p1.x).abs();
     let dy = (p0.y - p1.y).abs();
-    let (vscan, v_is_poly) =
+    let vscan =
         if dx > dy { timing_scan::<X>(img, &p1, &p0) } else { timing_scan::<Y>(img, &p1, &p0) };
 
     let scan = max(hscan, vscan);
-    let is_poly = h_is_poly | v_is_poly;
 
     // Choose nearest valid grid size
     let size = scan + 13;
     let ver = (size as f64 - 15.0).floor() as usize / 4;
-    (ver * 4 + 17, is_poly)
+    ver * 4 + 17
 }
 
-fn timing_scan<A: Axis>(img: &PreparedImage, from: &Point, to: &Point) -> (usize, bool)
+fn timing_scan<A: Axis>(img: &PreparedImage, from: &Point, to: &Point) -> usize
 where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
-    const SEQUENCE: [Color; 3] = [Color::Red, Color::Green, Color::Blue];
-    let mut idx = 0;
-    let mut matches = 0;
-    let mut transitions = 0;
-    let mut last = img.get_at_point(from);
+    let mut transitions = [0, 0, 0];
+    let px = img.get_at_point(from);
+    let mut last = Color::from(*px).to_bits();
     let line = BresenhamLine::<A>::new(from, to);
 
     for p in line {
         let px = img.get_at_point(&p);
-        if px != last {
-            let color = Color::from(*px);
-            transitions += 1;
-            last = px;
-
-            if matches == 3 {
-                continue;
-            }
-
-            if color == SEQUENCE[idx] {
-                matches += 1;
-                idx = (idx + 1) % 3;
-            } else if let Some(i) = SEQUENCE.iter().position(|&c| c == color) {
-                matches = 1;
-                idx = (i + 1) % 3;
-            } else {
-                matches = 0;
+        let color = Color::from(*px).to_bits();
+        for i in 0..3 {
+            if color[i] != last[i] {
+                transitions[i] += 1;
+                last[i] = color[i];
             }
         }
     }
 
-    (transitions, matches == 3)
+    *transitions.iter().min().unwrap()
 }
 
 fn locate_alignment_pattern(
@@ -427,20 +409,20 @@ mod symbol_highlight {
 #[cfg(test)]
 mod symbol_tests {
 
+    use std::path::Path;
+
     use crate::{
         reader::{
             finder::{group_finders, locate_finders},
             locate_symbol,
             prepare::PreparedImage,
+            utils::Highlight,
         },
         ECLevel, MaskPattern, Palette, QRBuilder, Version,
     };
 
     #[test]
-    fn test_locate_symbol() {
-        // let path = Path::new("tests/images/clean.png");
-        // let img = image::open(path).unwrap().to_rgb8();
-
+    fn test_locate_symbol_0() {
         let data = "Hello, world!🌎";
         let ver = Version::Normal(4);
         let ecl = ECLevel::L;
@@ -465,6 +447,35 @@ mod symbol_tests {
         for b in symbol.bounds {
             assert!(bounds.contains(&(b.x, b.y)), "Symbol not within bounds");
         }
+    }
+
+    #[test]
+    fn test_locate_symbol_1() {
+        let path = Path::new("assets/test1.jpg");
+        let img = image::open(path).unwrap().to_rgb8();
+
+        let mut prepd_img = PreparedImage::prepare(img);
+        let finders = locate_finders(&mut prepd_img);
+        let mut img = image::open(path).unwrap().to_rgb8();
+        println!("length: {:?}", finders.len());
+        finders.iter().for_each(|f| f.highlight(&mut img));
+
+        let out = Path::new("assets/test3_out.png");
+        img.save(out).unwrap();
+        // let groups = group_finders(&finders);
+        // let symbol = locate_symbol(img, groups);
+        // FIXME: Remove
+        // let outp = Path::new("assets/out1.png");
+        // img.save(outp).unwrap();
+        // use super::utils::Highlight;
+        // use std::path::Path;
+        // println!("From: {from:?}, To: {to:?}");
+        // let path = Path::new("assets/test4.jpg");
+        // let mut out = image::open(path).unwrap().to_rgb8();
+        // let line = Line::new(from, to);
+        // line.highlight(&mut out);
+        // let outp = Path::new("assets/out.png");
+        // out.save(outp).unwrap();
     }
 }
 
@@ -531,12 +542,13 @@ impl Symbol {
 mod symbol_infos_tests {
 
     use crate::{
+        metadata::Color,
         reader::{
             finder::{group_finders, locate_finders},
             locate_symbol,
             prepare::PreparedImage,
         },
-        ECLevel, MaskPattern, QRBuilder, Version,
+        ECLevel, MaskPattern, Module, QRBuilder, Version,
     };
 
     #[test]
@@ -557,6 +569,168 @@ mod symbol_infos_tests {
 
         let fmt_info = symbol.read_format_info().expect("Failed to read format info");
         assert_eq!(fmt_info, (ecl, mask));
+    }
+
+    #[test]
+    fn test_read_format_info_one_corrupted() {
+        let data = "Hello, world! 🌎";
+        let ver = Version::Normal(2);
+        let ecl = ECLevel::L;
+        let mask = MaskPattern::new(1);
+
+        let mut qr =
+            QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
+        qr.set(8, 1, Module::Format(Color::White));
+        qr.set(8, 2, Module::Format(Color::White));
+        qr.set(8, 4, Module::Format(Color::Black));
+        let img = qr.to_image(10);
+
+        let mut img = PreparedImage::prepare(img);
+        let finders = locate_finders(&mut img);
+        let groups = group_finders(&finders);
+        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+
+        let fmt_info = symbol.read_format_info().expect("Failed to read format info");
+        assert_eq!(fmt_info, (ecl, mask));
+    }
+
+    #[test]
+    fn test_read_format_info_one_fully_corrupted() {
+        let data = "Hello, world! 🌎";
+        let ver = Version::Normal(2);
+        let ecl = ECLevel::L;
+        let mask = MaskPattern::new(1);
+
+        let mut qr =
+            QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
+        qr.set(8, 1, Module::Format(Color::White));
+        qr.set(8, 2, Module::Format(Color::White));
+        qr.set(8, 3, Module::Format(Color::Black));
+        qr.set(8, 4, Module::Format(Color::Black));
+        let img = qr.to_image(10);
+
+        let mut img = PreparedImage::prepare(img);
+        let finders = locate_finders(&mut img);
+        let groups = group_finders(&finders);
+        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+
+        let fmt_info = symbol.read_format_info().expect("Failed to read format info");
+        assert_eq!(fmt_info, (ecl, mask));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_read_format_info_both_fully_corrupted() {
+        let data = "Hello, world! 🌎";
+        let ver = Version::Normal(2);
+        let ecl = ECLevel::L;
+        let mask = MaskPattern::new(1);
+
+        let mut qr =
+            QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
+        qr.set(8, 1, Module::Format(Color::White));
+        qr.set(8, 2, Module::Format(Color::White));
+        qr.set(8, 3, Module::Format(Color::Black));
+        qr.set(8, 4, Module::Format(Color::Black));
+        qr.set(-2, 8, Module::Format(Color::White));
+        qr.set(-3, 8, Module::Format(Color::White));
+        qr.set(-4, 8, Module::Format(Color::Black));
+        qr.set(-5, 8, Module::Format(Color::Black));
+        let img = qr.to_image(10);
+
+        let mut img = PreparedImage::prepare(img);
+        let finders = locate_finders(&mut img);
+        let groups = group_finders(&finders);
+        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+
+        let fmt_info = symbol.read_format_info().expect("Failed to read format info");
+    }
+
+    #[test]
+    fn test_read_version_info() {
+        let data = "Hello, world! 🌎";
+        let ver = Version::Normal(7);
+        let ecl = ECLevel::L;
+
+        let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
+        let img = qr.to_image(10);
+
+        let mut img = PreparedImage::prepare(img);
+        let finders = locate_finders(&mut img);
+        let groups = group_finders(&finders);
+        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+
+        let scanned_ver = symbol.read_version_info().expect("Failed to read format info");
+        assert_eq!(scanned_ver, ver);
+    }
+
+    #[test]
+    fn test_read_version_info_one_corrupted() {
+        let data = "Hello, world! 🌎";
+        let ver = Version::Normal(7);
+        let ecl = ECLevel::L;
+
+        let mut qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
+        qr.set(-9, 5, Module::Format(Color::Black));
+        qr.set(-10, 5, Module::Format(Color::Black));
+        qr.set(-11, 5, Module::Format(Color::Black));
+        let img = qr.to_image(10);
+
+        let mut img = PreparedImage::prepare(img);
+        let finders = locate_finders(&mut img);
+        let groups = group_finders(&finders);
+        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+
+        let scanned_ver = symbol.read_version_info().expect("Failed to read format info");
+        assert_eq!(scanned_ver, ver);
+    }
+
+    #[test]
+    fn test_read_version_info_one_fully_corrupted() {
+        let data = "Hello, world! 🌎";
+        let ver = Version::Normal(7);
+        let ecl = ECLevel::L;
+
+        let mut qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
+        qr.set(-9, 5, Module::Format(Color::Black));
+        qr.set(-10, 5, Module::Format(Color::Black));
+        qr.set(-11, 5, Module::Format(Color::Black));
+        qr.set(-9, 4, Module::Format(Color::White));
+        let img = qr.to_image(10);
+
+        let mut img = PreparedImage::prepare(img);
+        let finders = locate_finders(&mut img);
+        let groups = group_finders(&finders);
+        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+
+        let scanned_ver = symbol.read_version_info().expect("Failed to read format info");
+        assert_eq!(scanned_ver, ver);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_read_version_info_both_fully_corrupted() {
+        let data = "Hello, world! 🌎";
+        let ver = Version::Normal(7);
+        let ecl = ECLevel::L;
+
+        let mut qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
+        qr.set(-9, 5, Module::Format(Color::Black));
+        qr.set(-10, 5, Module::Format(Color::Black));
+        qr.set(-11, 5, Module::Format(Color::Black));
+        qr.set(-9, 4, Module::Format(Color::White));
+        qr.set(5, -9, Module::Format(Color::Black));
+        qr.set(5, -10, Module::Format(Color::Black));
+        qr.set(5, -11, Module::Format(Color::Black));
+        qr.set(4, -9, Module::Format(Color::White));
+        let img = qr.to_image(10);
+
+        let mut img = PreparedImage::prepare(img);
+        let finders = locate_finders(&mut img);
+        let groups = group_finders(&finders);
+        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+
+        let scanned_ver = symbol.read_version_info().expect("Failed to read format info");
     }
 }
 
@@ -700,7 +874,7 @@ impl Symbol {
                 let px = self.get(x, y);
                 if !matches!(px, Pixel::Reserved(_)) {
                     let color = Color::from(*px);
-                    let (mut r, mut g, mut b) = color.to_bits();
+                    let [mut r, mut g, mut b] = color.to_bits();
                     if !mask_fn(y, x) {
                         r = !r;
                         g = !g;

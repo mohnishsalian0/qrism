@@ -1,4 +1,3 @@
-mod deqr;
 mod finder;
 mod prepare;
 mod symbol;
@@ -8,91 +7,17 @@ use finder::{group_finders, locate_finders, Finder};
 use image::RgbImage;
 
 use crate::{
-    builder::QR,
     codec::decode,
     ec::Block,
     metadata::{Metadata, Version},
     utils::{BitStream, QRError, QRResult},
-    Palette,
 };
-// FIXME: Remove DeQR
-use deqr::DeQR;
 use prepare::PreparedImage;
 use symbol::{Symbol, SymbolLocation};
-
-pub trait QRReadable {
-    fn to_deqr(&self, ver: Version) -> DeQR;
-}
-
-impl QRReadable for RgbImage {
-    fn to_deqr(&self, ver: Version) -> DeQR {
-        DeQR::from_clr_img(self, ver)
-    }
-}
-
-impl QRReadable for String {
-    fn to_deqr(&self, ver: Version) -> DeQR {
-        DeQR::from_str(self, ver)
-    }
-}
-
-impl QRReadable for QR {
-    fn to_deqr(&self, _ver: Version) -> DeQR {
-        DeQR::from(self)
-    }
-}
 
 pub struct QRReader();
 
 impl QRReader {
-    // TODO: Remove version
-    pub fn read<T: QRReadable>(qr: &T, ver: Version) -> QRResult<String> {
-        println!("Reading QR...");
-        let mut deqr = qr.to_deqr(ver);
-
-        println!("Reading format info...");
-        let (ecl, mask) = deqr.read_format_info()?;
-
-        println!("Reading version info...");
-        let ver = match ver {
-            Version::Normal(7..=40) => deqr.read_version_info()?,
-            _ => ver,
-        };
-
-        println!("Marking all function patterns...");
-        deqr.mark_all_function_patterns();
-
-        println!("Unmasking payload...");
-        deqr.unmask(mask);
-
-        println!("Extracting payload...");
-        let pld = deqr.extract_payload(ver);
-
-        let blk_info = ver.data_codewords_per_block(ecl);
-        let ec_len = ver.ecc_per_block(ecl);
-
-        // Extracting encoded data from payload
-        let mut enc = BitStream::new(pld.len() << 3);
-        let chan_cap = ver.channel_codewords();
-
-        println!("Separating channels, deinterleaving & rectifying payload...");
-        pld.data().chunks_exact(chan_cap).for_each(|c| {
-            let mut blocks = deinterleave(c, blk_info, ec_len);
-            let _ = blocks.iter_mut().filter_map(Option::as_mut).map(Block::rectify);
-            blocks.iter().filter_map(Option::as_ref).for_each(|b| enc.extend(b.data()));
-        });
-
-        // If the QR is B&W, discard duplicate data from 2 channels
-        dedupe(&mut enc);
-
-        println!("Decoding data blocks...");
-        let msg = decode(&mut enc, ver);
-
-        println!("\n{}\n", deqr.metadata());
-
-        String::from_utf8(msg).or(Err(QRError::InvalidUTF8Sequence))
-    }
-
     // TODO: Rename to read
     pub fn read_from_image(img: RgbImage) -> QRResult<String> {
         println!("Reading QR...");
@@ -113,6 +38,7 @@ impl QRReader {
         let (ecl, mask) = symbol.read_format_info()?;
 
         println!("Reading version info...");
+        println!("Version: {:?}", symbol.ver);
         if matches!(symbol.ver, Version::Normal(7..=40)) {
             let ver = symbol.read_version_info()?;
             symbol.set_version(ver);
@@ -123,11 +49,7 @@ impl QRReader {
 
         println!("Extracting payload...");
 
-        let pld = if symbol.pal == Palette::Mono {
-            symbol.extract_mono_payload(&mask)
-        } else {
-            symbol.extract_poly_payload(&mask)
-        };
+        let pld = symbol.extract_poly_payload(&mask);
 
         let blk_info = symbol.ver.data_codewords_per_block(ecl);
         let ec_len = symbol.ver.ecc_per_block(ecl);
@@ -142,6 +64,9 @@ impl QRReader {
             let _ = blocks.iter_mut().filter_map(Option::as_mut).map(Block::rectify);
             blocks.iter().filter_map(Option::as_ref).for_each(|b| enc.extend(b.data()));
         });
+
+        // If the QR is B&W, discard duplicate data from 2 channels
+        dedupe(&mut enc);
 
         println!("Decoding data blocks...");
         let msg = decode(&mut enc, symbol.ver);
@@ -211,9 +136,7 @@ fn dedupe(enc: &mut BitStream) {
 #[cfg(test)]
 mod reader_tests {
 
-    use std::path::Path;
-
-    use super::{prepare::PreparedImage, QRReader};
+    use super::QRReader;
 
     use crate::{
         builder::QRBuilder,
@@ -222,15 +145,6 @@ mod reader_tests {
         utils::BitStream,
         MaskPattern,
     };
-
-    #[test]
-    fn test_prepare() {
-        let path = Path::new("assets/test1.png");
-        let img = image::open(path).unwrap().to_rgb8();
-        let img = PreparedImage::prepare(img);
-        let out_path = Path::new("assets/test_out.png");
-        img.save(out_path).expect("Failed to save image");
-    }
 
     #[test]
     fn test_deinterleave() {

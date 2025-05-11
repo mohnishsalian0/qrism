@@ -10,10 +10,10 @@ use super::utils::{
     geometry::Point,
 };
 
-#[cfg(test)]
+// #[cfg(test)]
 use std::path::Path;
 
-#[cfg(test)]
+// #[cfg(test)]
 use image::ImageResult;
 
 // Pixel
@@ -120,6 +120,21 @@ impl PreparedImage {
         Self { buffer, regions: LruCache::new(NonZeroUsize::new(250).unwrap()), w, h }
     }
 
+    /// Performs absolute binarization
+    pub fn binarize(img: RgbImage) -> Self {
+        let (w, h) = img.dimensions();
+        let mut buffer = Vec::with_capacity((w * h) as usize);
+
+        for p in img.pixels() {
+            let r = (p[0] > 127) as u8;
+            let g = (p[1] > 127) as u8;
+            let b = (p[2] > 127) as u8;
+            let np = Color::try_from(r << 2 | g << 1 | b).unwrap();
+            buffer.push(Pixel::Unvisited(np));
+        }
+        Self { buffer, regions: LruCache::new(NonZeroUsize::new(250).unwrap()), w, h }
+    }
+
     pub fn get(&self, x: u32, y: u32) -> Pixel {
         // assert!(x <= i32::MAX as u32);
         // assert!(x >= i32::MIN as u32);
@@ -169,7 +184,7 @@ impl PreparedImage {
         *self.get_mut_at_point(pt) = px;
     }
 
-    #[cfg(test)]
+    // #[cfg(test)]
     pub fn save(&self, path: &Path) -> ImageResult<()> {
         let w = self.w;
         let mut img = RgbImage::new(w, self.h);

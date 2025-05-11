@@ -270,21 +270,14 @@ impl QR {
     fn draw_line(&mut self, r1: i32, c1: i32, r2: i32, c2: i32) {
         debug_assert!(r1 == r2 || c1 == c2, "Line is neither vertical nor horizontal");
 
-        let colors = if self.pal == Palette::Mono {
-            vec![Color::Black, Color::White]
-        } else {
-            vec![Color::Green, Color::Blue, Color::Red]
-        };
-        let len = colors.len();
-
         if r1 == r2 {
             for j in c1..=c2 {
-                let m = colors[j as usize % len];
+                let m = if j & 1 == 0 { Color::Black } else { Color::White };
                 self.set(r1, j, Module::Func(m));
             }
         } else {
             for i in r1..=r2 {
-                let m = colors[i as usize % len];
+                let m = if i & 1 == 0 { Color::Black } else { Color::White };
                 self.set(i, c1, Module::Func(m));
             }
         }

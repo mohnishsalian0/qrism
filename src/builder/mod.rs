@@ -251,6 +251,7 @@ impl QRBuilder<'_> {
 
 #[cfg(test)]
 mod builder_tests {
+
     use test_case::test_case;
 
     use super::QRBuilder;
