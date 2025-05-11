@@ -16,7 +16,7 @@ use crate::{
         VERSION_ERROR_CAPACITY, VERSION_INFOS, VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
     },
     utils::{BitArray, EncRegionIter, QRError, QRResult},
-    ECLevel, MaskPattern, Version,
+    ECLevel, MaskPattern, Palette, Version,
 };
 
 // Locates symbol based on 3 finders
@@ -409,14 +409,11 @@ mod symbol_highlight {
 #[cfg(test)]
 mod symbol_tests {
 
-    use std::path::Path;
-
     use crate::{
         reader::{
             finder::{group_finders, locate_finders},
             locate_symbol,
             prepare::PreparedImage,
-            utils::Highlight,
         },
         ECLevel, MaskPattern, Palette, QRBuilder, Version,
     };
@@ -448,38 +445,9 @@ mod symbol_tests {
             assert!(bounds.contains(&(b.x, b.y)), "Symbol not within bounds");
         }
     }
-
-    #[test]
-    fn test_locate_symbol_1() {
-        let path = Path::new("assets/test1.jpg");
-        let img = image::open(path).unwrap().to_rgb8();
-
-        let mut prepd_img = PreparedImage::prepare(img);
-        let finders = locate_finders(&mut prepd_img);
-        let mut img = image::open(path).unwrap().to_rgb8();
-        println!("length: {:?}", finders.len());
-        finders.iter().for_each(|f| f.highlight(&mut img));
-
-        let out = Path::new("assets/test3_out.png");
-        img.save(out).unwrap();
-        // let groups = group_finders(&finders);
-        // let symbol = locate_symbol(img, groups);
-        // FIXME: Remove
-        // let outp = Path::new("assets/out1.png");
-        // img.save(outp).unwrap();
-        // use super::utils::Highlight;
-        // use std::path::Path;
-        // println!("From: {from:?}, To: {to:?}");
-        // let path = Path::new("assets/test4.jpg");
-        // let mut out = image::open(path).unwrap().to_rgb8();
-        // let line = Line::new(from, to);
-        // line.highlight(&mut out);
-        // let outp = Path::new("assets/out.png");
-        // out.save(outp).unwrap();
-    }
 }
 
-// Format & version info read and mark
+// Format, version & palette info read and mark
 //------------------------------------------------------------------------------
 
 impl Symbol {
@@ -518,6 +486,16 @@ impl Symbol {
         self.mark_coords(&VERSION_INFO_COORDS_BL);
         self.mark_coords(&VERSION_INFO_COORDS_TR);
         Ok(Version::Normal(v as usize >> VERSION_ERROR_BIT_LEN))
+    }
+
+    pub fn read_palette_info(&mut self) -> Palette {
+        let coords = [(8, -8)];
+        let num = self.get_number(&coords);
+        if num == 1 {
+            Palette::Mono
+        } else {
+            Palette::Poly
+        }
     }
 
     pub fn get_number(&mut self, coords: &[(i32, i32)]) -> u32 {
@@ -732,6 +710,28 @@ mod symbol_infos_tests {
 
         let scanned_ver = symbol.read_version_info().expect("Failed to read format info");
     }
+
+    // #[test]
+    // fn test_format_info_1() {
+    //     let path = Path::new("assets/out.png");
+    //     let img = image::open(path).unwrap().to_rgb8();
+    //
+    //     let mut img = PreparedImage::prepare(img);
+    //     let finders = locate_finders(&mut img);
+    //     let groups = group_finders(&finders);
+    //     let symbol = locate_symbol(img, groups).unwrap();
+    //     println!("Version: {:?}", symbol.ver);
+    //
+    //     let mut img = image::open(path).unwrap().to_rgb8();
+    //
+    //     for (y, x) in FORMAT_INFO_COORDS_QR_MAIN {
+    //         let (x, y) = symbol.wrap_coord(x, y);
+    //         let pt = symbol.map(x as f64 + 0.5, y as f64 + 0.5);
+    //         pt.highlight(&mut img);
+    //     }
+    //
+    //     let out = Path::new("assets/out.jpg");
+    // }
 }
 
 // Mark all function patterns
@@ -835,33 +835,7 @@ impl Symbol {
 //------------------------------------------------------------------------------
 
 impl Symbol {
-    // TODO: Write testcases
-    pub fn extract_mono_payload(&mut self, mask: &MaskPattern) -> BitArray {
-        let ver = self.ver;
-        let mask_fn = mask.mask_functions();
-        let bit_cap = ver.channel_codewords() << 3;
-        let mut pyld = BitArray::new(bit_cap);
-        let mut rgn_iter = EncRegionIter::new(ver);
-
-        for i in 0..bit_cap {
-            for (y, x) in rgn_iter.by_ref() {
-                let px = self.get(x, y);
-                if !matches!(px, Pixel::Reserved(_)) {
-                    let color = Color::from(*px);
-                    let byte = color as u8;
-                    let mut bit = byte == 7;
-                    if !mask_fn(y, x) {
-                        bit = !bit;
-                    };
-                    pyld.put(i, bit);
-                    break;
-                }
-            }
-        }
-        pyld
-    }
-
-    pub fn extract_poly_payload(&mut self, mask: &MaskPattern) -> BitArray {
+    pub fn extract_payload(&mut self, mask: &MaskPattern) -> BitArray {
         let ver = self.ver;
         let mask_fn = mask.mask_functions();
         let chan_bits = ver.channel_codewords() << 3;

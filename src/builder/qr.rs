@@ -570,7 +570,12 @@ impl QR {
                     Module::Format(Color::Black),
                     &FORMAT_INFO_COORDS_QR_SIDE,
                 );
-                self.set(-8, 8, Module::Format(Color::Black));
+                let unused_mod = if self.palette() == Palette::Mono {
+                    Module::Format(Color::Black)
+                } else {
+                    Module::Format(Color::White)
+                };
+                self.set(-8, 8, unused_mod);
             }
         }
     }

@@ -121,34 +121,34 @@ impl Version {
         }
     }
 
-    pub fn data_bit_capacity(self, ecl: ECLevel, palette: Palette) -> usize {
+    pub fn data_bit_capacity(self, ecl: ECLevel, pal: Palette) -> usize {
         let mut bc = match self {
             Version::Micro(v) => VERSION_DATA_BIT_CAPACITY[39 + v][ecl as usize],
             Version::Normal(v) => VERSION_DATA_BIT_CAPACITY[v - 1][ecl as usize],
         };
-        if matches!(palette, Palette::Poly) {
+        if matches!(pal, Palette::Poly) {
             bc *= 3;
         }
         bc
     }
 
-    pub fn data_capacity(self, ecl: ECLevel, palette: Palette) -> usize {
+    pub fn data_capacity(self, ecl: ECLevel, pal: Palette) -> usize {
         let mut bc = match self {
             Version::Micro(v) => VERSION_DATA_BIT_CAPACITY[39 + v][ecl as usize],
             Version::Normal(v) => VERSION_DATA_BIT_CAPACITY[v - 1][ecl as usize],
         };
-        if matches!(palette, Palette::Poly) {
+        if matches!(pal, Palette::Poly) {
             bc *= 3;
         }
         bc >> 3
     }
 
-    pub fn total_codewords(self, palette: Palette) -> usize {
+    pub fn total_codewords(self, pal: Palette) -> usize {
         let mut tc = match self {
             Version::Micro(v) => VERSION_TOTAL_CODEWORDS[39 + v],
             Version::Normal(v) => VERSION_TOTAL_CODEWORDS[v - 1],
         };
-        if matches!(palette, Palette::Poly) {
+        if matches!(pal, Palette::Poly) {
             tc *= 3;
         }
         tc

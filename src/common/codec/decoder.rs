@@ -10,14 +10,16 @@ mod reader {
     use crate::metadata::Version;
     use crate::utils::BitStream;
 
-    pub fn take_segment(inp: &mut BitStream, ver: Version) -> Option<Vec<u8>> {
+    pub fn take_segment(inp: &mut BitStream, ver: Version) -> Option<(Vec<u8>, usize)> {
         let (mode, char_cnt) = take_header(inp, ver)?;
         let byte_data = match mode {
             Mode::Numeric => take_numeric_data(inp, char_cnt),
             Mode::Alphanumeric => take_alphanumeric_data(inp, char_cnt),
             Mode::Byte => take_byte_data(inp, char_cnt),
         };
-        Some(byte_data)
+        let encoded_len = mode.encoded_len(byte_data.len());
+        let bit_len = ver.mode_bits() + ver.char_cnt_bits(mode) + encoded_len;
+        Some((byte_data, bit_len))
     }
 
     fn take_header(inp: &mut BitStream, ver: Version) -> Option<(Mode, usize)> {
@@ -189,15 +191,15 @@ mod reader {
             let ecl = ECLevel::L;
             let pal = Palette::Mono;
             let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
-            let seg_data = take_segment(&mut bs, ver).unwrap();
+            let (seg_data, _) = take_segment(&mut bs, ver).unwrap();
             assert_eq!(seg_data, "abc".as_bytes().to_vec());
-            let seg_data = take_segment(&mut bs, ver).unwrap();
+            let (seg_data, _) = take_segment(&mut bs, ver).unwrap();
             assert_eq!(seg_data, "ABCDEF".as_bytes().to_vec());
-            let seg_data = take_segment(&mut bs, ver).unwrap();
+            let (seg_data, _) = take_segment(&mut bs, ver).unwrap();
             assert_eq!(seg_data, "1234567890123".as_bytes().to_vec());
-            let seg_data = take_segment(&mut bs, ver).unwrap();
+            let (seg_data, _) = take_segment(&mut bs, ver).unwrap();
             assert_eq!(seg_data, "ABCDEF".as_bytes().to_vec());
-            let seg_data = take_segment(&mut bs, ver).unwrap();
+            let (seg_data, _) = take_segment(&mut bs, ver).unwrap();
             assert_eq!(seg_data, "abc".as_bytes().to_vec());
         }
     }
@@ -209,12 +211,25 @@ mod reader {
 pub mod decode {
     use super::reader::take_segment;
     use crate::utils::BitStream;
-    use crate::Version;
+    use crate::{ECLevel, Palette, Version};
 
-    pub fn decode(encoded: &mut BitStream, ver: Version) -> Vec<u8> {
+    pub fn decode(encoded: &mut BitStream, ver: Version, ecl: ECLevel, pal: Palette) -> Vec<u8> {
+        let data_bit_cap = ver.data_bit_capacity(ecl, Palette::Mono);
         let mut res = Vec::with_capacity(encoded.len());
-        while let Some(decoded_seg) = take_segment(encoded, ver) {
+        let mut total_bit_len = 0;
+        while let Some((decoded_seg, bit_len)) = take_segment(encoded, ver) {
             res.extend(decoded_seg);
+            total_bit_len += bit_len;
+
+            // Handles the edge case where the data len is smaller than the capacity by 4 bits or
+            // less, in which case the there isn't enough space for 4 terminator bits and the
+            // deocder would proceed to the next channel
+            if total_bit_len < data_bit_cap
+                && data_bit_cap - total_bit_len < 4
+                && pal == Palette::Mono
+            {
+                break;
+            }
         }
         res
     }
@@ -232,7 +247,7 @@ pub mod decode {
             let ecl = ECLevel::L;
             let pal = Palette::Mono;
             let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
-            let decoded_data = decode(&mut bs, ver);
+            let decoded_data = decode(&mut bs, ver, ecl, pal);
             assert_eq!(decoded_data, data);
         }
     }

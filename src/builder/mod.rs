@@ -1,6 +1,5 @@
 mod qr;
 
-pub(crate) use qr::Module;
 pub(crate) use qr::QR;
 
 use crate::common::{
@@ -10,6 +9,9 @@ use crate::common::{
     metadata::{ECLevel, Palette, Version},
     utils::{BitStream, QRError, QRResult},
 };
+
+#[cfg(test)]
+pub(crate) use qr::Module;
 
 pub struct QRBuilder<'a> {
     data: &'a [u8],

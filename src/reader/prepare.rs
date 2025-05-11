@@ -298,14 +298,4 @@ mod prepare_tests {
     use crate::metadata::Color;
 
     use super::{Pixel, PreparedImage};
-
-    #[test]
-    fn test_flood_fill() {
-        let path = Path::new("assets/test1.png");
-        let img = image::open(path).unwrap().to_rgb8();
-        let mut img = PreparedImage::prepare(img);
-        let _ = img.fill_and_accumulate((101, 60), Pixel::Reserved(Color::Blue), |_| ());
-        let out_path = Path::new("assets/test_flood_fill.png");
-        img.save(out_path).expect("Failed to save image");
-    }
 }

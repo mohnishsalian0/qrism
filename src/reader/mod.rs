@@ -38,25 +38,27 @@ impl QRReader {
         let (ecl, mask) = symbol.read_format_info()?;
 
         println!("Reading version info...");
-        println!("Version: {:?}", symbol.ver);
-        if matches!(symbol.ver, Version::Normal(7..=40)) {
-            let ver = symbol.read_version_info()?;
-            symbol.set_version(ver);
-        }
+        let ver = if matches!(symbol.ver, Version::Normal(7..=40)) {
+            symbol.read_version_info()?
+        } else {
+            symbol.ver
+        };
+
+        println!("Reading palette info...");
+        let pal = symbol.read_palette_info();
 
         println!("Marking all function patterns...");
         symbol.mark_all_function_patterns();
 
         println!("Extracting payload...");
+        let pld = symbol.extract_payload(&mask);
 
-        let pld = symbol.extract_poly_payload(&mask);
-
-        let blk_info = symbol.ver.data_codewords_per_block(ecl);
-        let ec_len = symbol.ver.ecc_per_block(ecl);
+        let blk_info = ver.data_codewords_per_block(ecl);
+        let ec_len = ver.ecc_per_block(ecl);
 
         // Extracting encoded data from payload
         let mut enc = BitStream::new(pld.len() << 3);
-        let chan_cap = symbol.ver.channel_codewords();
+        let chan_cap = ver.channel_codewords();
 
         println!("Separating channels, deinterleaving & rectifying payload...");
         pld.data().chunks_exact(chan_cap).for_each(|c| {
@@ -65,13 +67,10 @@ impl QRReader {
             blocks.iter().filter_map(Option::as_ref).for_each(|b| enc.extend(b.data()));
         });
 
-        // If the QR is B&W, discard duplicate data from 2 channels
-        dedupe(&mut enc);
-
         println!("Decoding data blocks...");
-        let msg = decode(&mut enc, symbol.ver);
+        let msg = decode(&mut enc, ver, ecl, pal);
 
-        println!("\n{}\n", Metadata::new(Some(symbol.ver), Some(ecl), Some(mask)));
+        println!("\n{}\n", Metadata::new(Some(ver), Some(ecl), Some(mask)));
 
         String::from_utf8(msg).or(Err(QRError::InvalidUTF8Sequence))
     }
