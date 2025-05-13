@@ -17,6 +17,7 @@ pub mod encode {
         let (ver, segs) = find_optimal_version_and_segments(data, ecl, pal)?;
         let bcap = ver.data_bit_capacity(ecl, pal);
         let mut bs = BitStream::new(bcap);
+
         for seg in segs {
             push_segment(seg, &mut bs);
         }
@@ -41,6 +42,7 @@ pub mod encode {
         }
         let bcap = ver.data_bit_capacity(ecl, pal);
         let mut bs = BitStream::new(bcap);
+
         for seg in segs {
             push_segment(seg, &mut bs);
         }

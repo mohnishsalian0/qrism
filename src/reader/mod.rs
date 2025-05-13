@@ -19,7 +19,7 @@ pub struct QRReader();
 
 impl QRReader {
     // TODO: Rename to read
-    pub fn read_from_image(img: RgbImage) -> QRResult<String> {
+    pub fn read(img: RgbImage) -> QRResult<String> {
         println!("Reading QR...");
 
         println!("Preparing image...");
@@ -38,11 +38,10 @@ impl QRReader {
         let (ecl, mask) = symbol.read_format_info()?;
 
         println!("Reading version info...");
-        let ver = if matches!(symbol.ver, Version::Normal(7..=40)) {
-            symbol.read_version_info()?
-        } else {
-            symbol.ver
-        };
+        if matches!(symbol.ver, Version::Normal(7..=40)) {
+            symbol.ver = symbol.read_version_info()?;
+        }
+        let ver = symbol.ver;
 
         println!("Reading palette info...");
         let pal = symbol.read_palette_info();
@@ -127,12 +126,12 @@ fn deinterleave(
 #[cfg(test)]
 mod reader_tests {
 
-    use super::QRReader;
+    use super::{finder::locate_finders, prepare::PreparedImage, QRReader};
 
     use crate::{
         builder::QRBuilder,
         metadata::{ECLevel, Palette, Version},
-        reader::deinterleave,
+        reader::{deinterleave, finder::group_finders, utils::Highlight},
         utils::BitStream,
         MaskPattern,
     };
@@ -156,7 +155,7 @@ mod reader_tests {
     }
 
     #[test]
-    fn test_new_reader() {
+    fn test_reader_0() {
         let data = "Hello, world!🌎";
         let ver = Version::Normal(2);
         let ecl = ECLevel::L;
@@ -172,8 +171,18 @@ mod reader_tests {
             .unwrap();
         let img = qr.to_image(10);
 
-        let extracted_data = QRReader::read_from_image(img).expect("Couldn't read data");
+        let extracted_data = QRReader::read(img).expect("Couldn't read data");
 
         assert_eq!(extracted_data, data, "Incorrect data read from qr image");
+    }
+
+    #[test]
+    fn test_reader_1() {
+        let path = std::path::Path::new("assets/branded.png");
+        let img = image::open(path).unwrap().to_rgb8();
+        let img = PreparedImage::prepare(img);
+
+        let out = std::path::Path::new("assets/read.png");
+        img.save(out).unwrap();
     }
 }

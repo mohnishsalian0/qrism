@@ -1,4 +1,4 @@
-use std::cmp::max;
+use std::{cmp::max, path::Path};
 
 use super::{
     finder::Finder,
@@ -113,8 +113,8 @@ impl Symbol {
 
     fn wrap_coord(&self, x: i32, y: i32) -> (i32, i32) {
         let w = self.ver.width() as i32;
-        debug_assert!(-w <= x && x < w, "row shouldn't be greater than or equal to w");
-        debug_assert!(-w <= y && y < w, "column shouldn't be greater than or equal to w");
+        debug_assert!(-w <= x && x < w, "x shouldn't be greater than or equal to w");
+        debug_assert!(-w <= y && y < w, "y shouldn't be greater than or equal to w");
 
         let x = if x < 0 { x + w } else { x };
         let y = if y < 0 { y + w } else { y };
@@ -129,6 +129,11 @@ impl Symbol {
     #[inline]
     pub fn unmap(&self, p: &Point) -> (f64, f64) {
         self.h.unmap(p)
+    }
+
+    #[inline]
+    pub fn save(&self, path: &Path) {
+        self.img.save(path).unwrap()
     }
 }
 
@@ -449,7 +454,7 @@ mod symbol_tests {
 impl Symbol {
     pub fn read_format_info(&mut self) -> QRResult<(ECLevel, MaskPattern)> {
         let main = self.get_number(&FORMAT_INFO_COORDS_QR_MAIN);
-        let mut f = rectify_info(main, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY)
+        let mut format = rectify_info(main, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY)
             .or_else(|_| {
                 let side = self.get_number(&FORMAT_INFO_COORDS_QR_SIDE);
                 rectify_info(side, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY)
@@ -458,11 +463,9 @@ impl Symbol {
 
         self.mark_coords(&FORMAT_INFO_COORDS_QR_MAIN);
         self.mark_coords(&FORMAT_INFO_COORDS_QR_SIDE);
-        let color = Color::from(*self.get(8, -8));
-        self.set(8, -8, Pixel::Reserved(color));
 
-        f ^= FORMAT_MASK;
-        let (ecl, mask) = parse_format_info_qr(f);
+        format ^= FORMAT_MASK;
+        let (ecl, mask) = parse_format_info_qr(format);
         Ok((ecl, mask))
     }
 
@@ -471,6 +474,7 @@ impl Symbol {
             !matches!(self.ver, Version::Micro(_) | Version::Normal(1..=6)),
             "Version is too small to read version info"
         );
+
         let bl = self.get_number(&VERSION_INFO_COORDS_BL);
         let v = rectify_info(bl, &VERSION_INFOS, VERSION_ERROR_CAPACITY)
             .or_else(|_| {
@@ -481,13 +485,15 @@ impl Symbol {
 
         self.mark_coords(&VERSION_INFO_COORDS_BL);
         self.mark_coords(&VERSION_INFO_COORDS_TR);
+
         Ok(Version::Normal(v as usize >> VERSION_ERROR_BIT_LEN))
     }
 
     pub fn read_palette_info(&mut self) -> Palette {
-        let coords = [(8, -8)];
-        let num = self.get_number(&coords);
-        if num == 1 {
+        let color = Color::from(*self.get(8, -8));
+        self.set(8, -8, Pixel::Reserved(color));
+
+        if color == Color::Black {
             Palette::Mono
         } else {
             Palette::Poly
@@ -534,7 +540,7 @@ mod symbol_infos_tests {
 
         let qr =
             QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
-        let img = qr.to_image(10);
+        let img = qr.to_image(3);
 
         let mut img = PreparedImage::prepare(img);
         let finders = locate_finders(&mut img);
@@ -557,7 +563,7 @@ mod symbol_infos_tests {
         qr.set(8, 1, Module::Format(Color::White));
         qr.set(8, 2, Module::Format(Color::White));
         qr.set(8, 4, Module::Format(Color::Black));
-        let img = qr.to_image(10);
+        let img = qr.to_image(3);
 
         let mut img = PreparedImage::prepare(img);
         let finders = locate_finders(&mut img);
@@ -581,7 +587,7 @@ mod symbol_infos_tests {
         qr.set(8, 2, Module::Format(Color::White));
         qr.set(8, 3, Module::Format(Color::Black));
         qr.set(8, 4, Module::Format(Color::Black));
-        let img = qr.to_image(10);
+        let img = qr.to_image(3);
 
         let mut img = PreparedImage::prepare(img);
         let finders = locate_finders(&mut img);
@@ -610,7 +616,7 @@ mod symbol_infos_tests {
         qr.set(-3, 8, Module::Format(Color::White));
         qr.set(-4, 8, Module::Format(Color::Black));
         qr.set(-5, 8, Module::Format(Color::Black));
-        let img = qr.to_image(10);
+        let img = qr.to_image(3);
 
         let mut img = PreparedImage::prepare(img);
         let finders = locate_finders(&mut img);
@@ -627,7 +633,7 @@ mod symbol_infos_tests {
         let ecl = ECLevel::L;
 
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
-        let img = qr.to_image(10);
+        let img = qr.to_image(3);
 
         let mut img = PreparedImage::prepare(img);
         let finders = locate_finders(&mut img);
@@ -648,7 +654,7 @@ mod symbol_infos_tests {
         qr.set(-9, 5, Module::Format(Color::Black));
         qr.set(-10, 5, Module::Format(Color::Black));
         qr.set(-11, 5, Module::Format(Color::Black));
-        let img = qr.to_image(10);
+        let img = qr.to_image(3);
 
         let mut img = PreparedImage::prepare(img);
         let finders = locate_finders(&mut img);
@@ -670,7 +676,7 @@ mod symbol_infos_tests {
         qr.set(-10, 5, Module::Format(Color::Black));
         qr.set(-11, 5, Module::Format(Color::Black));
         qr.set(-9, 4, Module::Format(Color::White));
-        let img = qr.to_image(10);
+        let img = qr.to_image(3);
 
         let mut img = PreparedImage::prepare(img);
         let finders = locate_finders(&mut img);
@@ -697,7 +703,7 @@ mod symbol_infos_tests {
         qr.set(5, -10, Module::Format(Color::Black));
         qr.set(5, -11, Module::Format(Color::Black));
         qr.set(4, -9, Module::Format(Color::White));
-        let img = qr.to_image(10);
+        let img = qr.to_image(3);
 
         let mut img = PreparedImage::prepare(img);
         let finders = locate_finders(&mut img);
@@ -706,28 +712,6 @@ mod symbol_infos_tests {
 
         let _ = symbol.read_version_info().expect("Failed to read format info");
     }
-
-    // #[test]
-    // fn test_format_info_1() {
-    //     let path = Path::new("assets/out.png");
-    //     let img = image::open(path).unwrap().to_rgb8();
-    //
-    //     let mut img = PreparedImage::prepare(img);
-    //     let finders = locate_finders(&mut img);
-    //     let groups = group_finders(&finders);
-    //     let symbol = locate_symbol(img, groups).unwrap();
-    //     println!("Version: {:?}", symbol.ver);
-    //
-    //     let mut img = image::open(path).unwrap().to_rgb8();
-    //
-    //     for (y, x) in FORMAT_INFO_COORDS_QR_MAIN {
-    //         let (x, y) = symbol.wrap_coord(x, y);
-    //         let pt = symbol.map(x as f64 + 0.5, y as f64 + 0.5);
-    //         pt.highlight(&mut img);
-    //     }
-    //
-    //     let out = Path::new("assets/out.jpg");
-    // }
 }
 
 // Mark all function patterns

@@ -366,9 +366,10 @@ impl BitArray {
         let off = pos & 7;
         let index = pos >> 3;
 
-        self.data[index] &= !(0b10000000 >> off);
         if bit {
             self.data[index] |= (0b10000000) >> off;
+        } else {
+            self.data[index] &= !(0b10000000 >> off);
         }
     }
 }

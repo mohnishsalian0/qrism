@@ -221,10 +221,13 @@ pub mod decode {
             res.extend(decoded_seg);
             total_bit_len += bit_len;
 
-            // Handles the rare edge case where the data len is smaller than the capacity by 4 bits
-            // or less, in which case the there isn't enough space for 4 terminator bits and the
-            // deocder would proceed to the next channel
-            if total_bit_len < data_bit_cap
+            //FIXME: Remove
+            println!("Total bit len: {total_bit_len}, Data cap: {data_bit_cap}, Palette {pal:?}");
+
+            // Handles an edge case where the diff between capacity and data len is less than
+            // 4 bits, in which case there isn't enough space for 4 terminator bits, in the
+            // absence of which the decoder would proceed to the next channel
+            if total_bit_len <= data_bit_cap
                 && data_bit_cap - total_bit_len < 4
                 && pal == Palette::Mono
             {

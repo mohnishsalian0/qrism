@@ -570,12 +570,7 @@ impl QR {
                     Module::Format(Color::Black),
                     &FORMAT_INFO_COORDS_QR_SIDE,
                 );
-                let unused_mod = if self.palette() == Palette::Mono {
-                    Module::Format(Color::Black)
-                } else {
-                    Module::Format(Color::White)
-                };
-                self.set(-8, 8, unused_mod);
+                self.set(-8, 8, Module::Format(Color::Black));
             }
         }
     }
@@ -811,9 +806,13 @@ impl QR {
     pub fn draw_encoding_region(&mut self, payload: BitStream) {
         self.reserve_format_area();
         self.draw_version_info();
+
         match self.pal {
             Palette::Mono => self.draw_payload(payload),
-            Palette::Poly => self.draw_color_payload(payload),
+            Palette::Poly => {
+                self.set(-8, 8, Module::Format(Color::White));
+                self.draw_color_payload(payload)
+            }
         }
 
         let w = self.ver.width();

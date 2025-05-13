@@ -166,7 +166,6 @@ mod ec_rectifier_tests {
     #[test_case(&[32, 91, 11, 45, 89, 123, 77, 44, 56, 99, 202], &[32, 91, 11, 45, 89, 46, 77, 44, 56, 99, 249, 0, 0, 0, 0])]
     fn test_rectifier(data: &[u8], bad: &[u8]) {
         let mut blk = Block::new(data, 15);
-        println!("Ecc {:?}", blk.ecc());
         blk.data[..11].copy_from_slice(&bad[..11]);
         let rect = blk.rectify().unwrap();
         assert_eq!(rect, data, "Rectified data and original data don't match: Rectified {rect:?}, Original data {data:?}");

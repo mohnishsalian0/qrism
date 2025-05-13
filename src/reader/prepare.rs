@@ -23,8 +23,9 @@ use image::ImageResult;
 pub enum Pixel {
     Visited(u8, Color), // Contains id of associated region
     Unvisited(Color),
-    Temporary(Color),
-    Reserved(Color),
+    Temporary(Color), // Temporary tag before converting to candidate
+    Candidate(Color), // Candidate for finder
+    Reserved(Color),  // Reserved pixels for functional patterns and infos
 }
 impl From<Pixel> for Color {
     fn from(p: Pixel) -> Self {
@@ -32,6 +33,7 @@ impl From<Pixel> for Color {
             Pixel::Visited(_, c) => c,
             Pixel::Unvisited(c) => c,
             Pixel::Temporary(c) => c,
+            Pixel::Candidate(c) => c,
             Pixel::Reserved(c) => c,
         }
     }
@@ -50,7 +52,8 @@ impl From<Pixel> for Rgb<u8> {
             Pixel::Visited(_, c)
             | Pixel::Unvisited(c)
             | Pixel::Temporary(c)
-            | Pixel::Reserved(c) => c.into(),
+            | Pixel::Reserved(c)
+            | Pixel::Candidate(c) => c.into(),
         }
     }
 }
@@ -77,6 +80,15 @@ pub struct PreparedImage {
 }
 
 impl PreparedImage {
+    pub fn new(img: RgbImage) -> Self {
+        let (w, h) = img.dimensions();
+        let mut buffer = Vec::with_capacity((w * h) as usize);
+        for &px in img.pixels() {
+            buffer.push(px.into());
+        }
+        Self { buffer, regions: LruCache::new(NonZeroUsize::new(250).unwrap()), w, h }
+    }
+
     /// Performs adaptive binarization on an RGB image using a sliding window
     /// and per-channel average filtering.
     pub fn prepare(img: RgbImage) -> Self {
@@ -137,9 +149,7 @@ impl PreparedImage {
 
     pub fn get(&self, x: u32, y: u32) -> Pixel {
         assert!(x <= i32::MAX as u32);
-        assert!(x >= i32::MIN as u32);
         assert!(y <= i32::MAX as u32);
-        assert!(y >= i32::MIN as u32);
 
         let idx = self.coord_to_index(x as i32, y as i32);
         self.buffer[idx]
@@ -162,10 +172,8 @@ impl PreparedImage {
     }
 
     pub fn get_mut(&mut self, x: u32, y: u32) -> &mut Pixel {
-        assert!(x <= i32::MAX as u32);
-        assert!(x >= i32::MIN as u32);
-        assert!(y <= i32::MAX as u32);
-        assert!(y >= i32::MIN as u32);
+        debug_assert!(x <= i32::MAX as u32);
+        debug_assert!(y <= i32::MAX as u32);
 
         let idx = self.coord_to_index(x as i32, y as i32);
         &mut self.buffer[idx]

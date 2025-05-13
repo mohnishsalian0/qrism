@@ -192,7 +192,7 @@ fn construct_finder(img: &mut PreparedImage, datum: &DatumLine) -> Option<Finder
     let fcf = img.fill_and_accumulate((right, y), to, fcf);
 
     // Locating rest of the corners
-    let to = Pixel::Reserved(color);
+    let to = Pixel::Candidate(color);
     let acf = AllCornerFinder::new(refr_pt, fcf.corner);
     let acf = img.fill_and_accumulate((right, y), to, acf);
 

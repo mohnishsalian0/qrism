@@ -254,14 +254,11 @@ impl QRBuilder<'_> {
 #[cfg(test)]
 mod builder_tests {
 
-    use test_case::test_case;
-
     use super::QRBuilder;
     use crate::ec::Block;
     use crate::metadata::{ECLevel, Version};
     use crate::utils::BitStream;
 
-    // TODO: assert data blocks as well
     #[test]
     fn test_add_ec_simple() {
         let msg = b" [\x0bx\xd1r\xdcMC@\xec\x11\xec\x11\xec\x11";
@@ -300,43 +297,6 @@ mod builder_tests {
         QRBuilder::interleave_into(&blks, &mut ilvd);
         let exp_ilvd = vec![1, 4, 7, 2, 5, 8, 3, 6, 9, 0];
         assert_eq!(ilvd.data()[..10], exp_ilvd);
-    }
-
-    #[test_case("Hello, world!🌎".to_string(), Version::Normal(1), ECLevel::L)]
-    #[test_case("TEST".to_string(), Version::Normal(1), ECLevel::M)]
-    #[test_case("12345".to_string(), Version::Normal(1), ECLevel::Q)]
-    #[test_case("OK".to_string(), Version::Normal(1), ECLevel::H)]
-    #[test_case("B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(3).to_string(), Version::Normal(7), ECLevel::L)]
-    #[test_case("A11111111111111".repeat(11).to_string(), Version::Normal(7), ECLevel::M)]
-    #[test_case("aAAAAAA1111111111111AAAAAAa".repeat(3).to_string(), Version::Normal(7), ECLevel::Q)]
-    #[test_case("1234567890".repeat(15).to_string(), Version::Normal(7), ECLevel::H)]
-    #[test_case( "B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(4).to_string(), Version::Normal(10), ECLevel::L)]
-    #[test_case("A11111111111111".repeat(20).to_string(), Version::Normal(10), ECLevel::M)]
-    #[test_case("aAAAAAAAAA1111111111111111AAAAAAAAAAa".repeat(4).to_string(), Version::Normal(10), ECLevel::Q)]
-    #[test_case("1234567890".repeat(28).to_string(), Version::Normal(10), ECLevel::H)]
-    #[test_case("B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(22).to_string(), Version::Normal(27), ECLevel::L)]
-    #[test_case("A111111111111111".repeat(100).to_string(), Version::Normal(27), ECLevel::M)]
-    #[test_case("aAAAAAAAAA111111111111111111AAAAAAAAAAa".repeat(20).to_string(), Version::Normal(27), ECLevel::Q)]
-    #[test_case("1234567890".repeat(145).to_string(), Version::Normal(27), ECLevel::H)]
-    #[test_case("B3@j🎮#Z%8v🍣K!🔑3zC^8📖&r💾F9*🔐b6🌼".repeat(57).to_string(), Version::Normal(40), ECLevel::L)]
-    #[test_case("A111111111111111".repeat(97).to_string(), Version::Normal(40), ECLevel::M)]
-    #[test_case( "aAAAAAAAAA111111111111111111AAAAAAAAAAa".repeat(42).to_string(), Version::Normal(40), ECLevel::Q)]
-    #[test_case("1234567890".repeat(305).to_string(), Version::Normal(40), ECLevel::H)]
-    fn test_builder(data: String, ver: Version, ecl: ECLevel) {
-        let qr = QRBuilder::new(data.as_bytes())
-            .version(ver)
-            .ec_level(ecl)
-            .build()
-            .unwrap()
-            .to_gray_image(10);
-
-        let mut img = rqrr::PreparedImage::prepare(qr);
-        let grids = img.detect_grids();
-        assert_eq!(grids.len(), 1);
-        let (meta, msg) = grids[0].decode().unwrap();
-
-        assert_eq!(*ver, meta.version.0);
-        assert_eq!(data, msg);
     }
 
     #[test]

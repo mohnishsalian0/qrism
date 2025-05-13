@@ -24,8 +24,8 @@ mod point_highlight {
         fn highlight(&self, img: &mut RgbImage) {
             for i in [-1, 0, 1] {
                 for j in [-1, 0, 1] {
-                    let nx = self.x.saturating_add(i) as u32;
-                    let ny = self.y.saturating_add(j) as u32;
+                    let nx = (self.x - i).max(0) as u32;
+                    let ny = (self.y - j).max(0) as u32;
                     img.put_pixel(nx, ny, Rgb([255, 0, 0]));
                 }
             }
