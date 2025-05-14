@@ -3,7 +3,7 @@ mod prepare;
 mod symbol;
 mod utils;
 
-use finder::{group_finders, locate_finders, Finder, FinderGroup};
+use finder::{group_finders, locate_finders, FinderGroup};
 use image::RgbImage;
 
 use crate::{
@@ -129,19 +129,12 @@ fn deinterleave(
 #[cfg(test)]
 mod reader_tests {
 
-    use super::{
-        finder::locate_finders, locate_symbol, prepare::PreparedImage, utils::geometry::Line,
-        QRReader,
-    };
+    use super::{finder::locate_finders, locate_symbol, prepare::PreparedImage, QRReader};
 
     use crate::{
         builder::QRBuilder,
         metadata::{ECLevel, Palette, Version},
-        reader::{
-            deinterleave,
-            finder::group_finders,
-            utils::{geometry::Slope, Highlight},
-        },
+        reader::{deinterleave, finder::group_finders, utils::Highlight},
         utils::BitStream,
         MaskPattern,
     };
@@ -187,26 +180,30 @@ mod reader_tests {
     }
 
     #[test]
+    fn test_reader_1() {
+        let path = std::path::Path::new("assets/test1.png");
+        let img = image::open(path).unwrap().to_rgb8();
+        let msg = QRReader::read(img).unwrap();
+        println!("Msg: {msg:?}");
+    }
+
+    #[test]
     fn reader_debugger() {
-        let path = std::path::Path::new("assets/test8.jpeg");
+        let path = std::path::Path::new("assets/test1.png");
         let img = image::open(path).unwrap().to_rgb8();
         let mut img = PreparedImage::prepare(img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
-        let symbol = locate_symbol(img, groups).unwrap();
+        // let symbol = locate_symbol(img, groups).unwrap();
 
         let mut img = image::open(path).unwrap().to_rgb8();
-        symbol.highlight(&mut img);
+        for f in groups[0].finders.iter() {
+            println!("Finder {} center {:?}", f.id, f.center);
+            f.highlight(&mut img);
+        }
+        // symbol.highlight(&mut img);
 
         let out = std::path::Path::new("assets/read.png");
         img.save(out).unwrap();
-    }
-
-    #[test]
-    fn test_reader_2() {
-        let path = std::path::Path::new("assets/test8.jpeg");
-        let img = image::open(path).unwrap().to_rgb8();
-        let msg = QRReader::read(img).unwrap();
-        println!("Msg: {msg:?}");
     }
 }
