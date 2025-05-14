@@ -3,7 +3,7 @@ mod prepare;
 mod symbol;
 mod utils;
 
-use finder::{group_finders, locate_finders, Finder};
+use finder::{group_finders, locate_finders, Finder, FinderGroup};
 use image::RgbImage;
 
 use crate::{
@@ -46,6 +46,9 @@ impl QRReader {
         println!("Reading palette info...");
         let pal = symbol.read_palette_info();
 
+        // FIXME:
+        println!("\n{}\n", Metadata::new(Some(ver), Some(ecl), Some(mask)));
+
         println!("Marking all function patterns...");
         symbol.mark_all_function_patterns();
 
@@ -75,10 +78,10 @@ impl QRReader {
     }
 }
 
-fn locate_symbol(mut img: PreparedImage, groups: Vec<[Finder; 3]>) -> Option<Symbol> {
+fn locate_symbol(mut img: PreparedImage, groups: Vec<FinderGroup>) -> Option<Symbol> {
     let mut sym_loc = None;
     for mut g in groups {
-        if let Some(sl) = SymbolLocation::locate(&mut img, &mut g) {
+        if let Some(sl) = SymbolLocation::locate(&mut img, &mut g.finders) {
             sym_loc = Some(sl);
             break;
         }
@@ -126,12 +129,19 @@ fn deinterleave(
 #[cfg(test)]
 mod reader_tests {
 
-    use super::{finder::locate_finders, prepare::PreparedImage, QRReader};
+    use super::{
+        finder::locate_finders, locate_symbol, prepare::PreparedImage, utils::geometry::Line,
+        QRReader,
+    };
 
     use crate::{
         builder::QRBuilder,
         metadata::{ECLevel, Palette, Version},
-        reader::{deinterleave, finder::group_finders, utils::Highlight},
+        reader::{
+            deinterleave,
+            finder::group_finders,
+            utils::{geometry::Slope, Highlight},
+        },
         utils::BitStream,
         MaskPattern,
     };
@@ -177,12 +187,26 @@ mod reader_tests {
     }
 
     #[test]
-    fn test_reader_1() {
-        let path = std::path::Path::new("assets/branded.png");
+    fn reader_debugger() {
+        let path = std::path::Path::new("assets/test8.jpeg");
         let img = image::open(path).unwrap().to_rgb8();
-        let img = PreparedImage::prepare(img);
+        let mut img = PreparedImage::prepare(img);
+        let finders = locate_finders(&mut img);
+        let groups = group_finders(&finders);
+        let symbol = locate_symbol(img, groups).unwrap();
+
+        let mut img = image::open(path).unwrap().to_rgb8();
+        symbol.highlight(&mut img);
 
         let out = std::path::Path::new("assets/read.png");
         img.save(out).unwrap();
+    }
+
+    #[test]
+    fn test_reader_2() {
+        let path = std::path::Path::new("assets/test8.jpeg");
+        let img = image::open(path).unwrap().to_rgb8();
+        let msg = QRReader::read(img).unwrap();
+        println!("Msg: {msg:?}");
     }
 }

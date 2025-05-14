@@ -24,6 +24,7 @@ struct DatumLine {
 
 #[derive(Debug, Clone)]
 pub struct Finder {
+    pub id: usize,
     pub h: Homography,
     pub corners: [Point; 4],
     pub center: Point,
@@ -48,6 +49,7 @@ impl Finder {
             .min_by_key(|(_, c)| (c.y - pt.y) * m.dx - (c.x - pt.x) * m.dy)
             .expect("Corners cannot be empty");
         self.corners.rotate_left(top_left);
+
         self.h =
             Homography::create(&self.corners, 7.0, 7.0).expect("rotating homography cant fail");
     }
@@ -127,7 +129,7 @@ impl LineScanner {
 //------------------------------------------------------------------------------
 
 pub fn locate_finders(img: &mut PreparedImage) -> Vec<Finder> {
-    let mut finders = Vec::new();
+    let mut finders = Vec::with_capacity(100);
     let w = img.w;
     let h = img.h;
     let mut scanner = LineScanner::new();
@@ -144,7 +146,7 @@ pub fn locate_finders(img: &mut PreparedImage) -> Vec<Finder> {
                 continue;
             }
 
-            if let Some(f) = construct_finder(img, &datum) {
+            if let Some(f) = construct_finder(img, &datum, finders.len()) {
                 finders.push(f);
             }
         }
@@ -181,7 +183,7 @@ fn is_finder(img: &mut PreparedImage, datum: &DatumLine) -> bool {
     }
 }
 
-fn construct_finder(img: &mut PreparedImage, datum: &DatumLine) -> Option<Finder> {
+fn construct_finder(img: &mut PreparedImage, datum: &DatumLine, id: usize) -> Option<Finder> {
     let (_left, right, y) = (datum.left, datum.right, datum.y);
     let color = Color::from(img.get(right, y));
     let refr_pt = Point { x: right as i32, y: y as i32 };
@@ -201,7 +203,7 @@ fn construct_finder(img: &mut PreparedImage, datum: &DatumLine) -> Option<Finder
     let corners = acf.corners;
     let center = h.map(3.5, 3.5);
 
-    Some(Finder { h, corners, center })
+    Some(Finder { id, h, corners, center })
 }
 
 #[cfg(test)]
@@ -299,40 +301,37 @@ impl Orientation {
     }
 }
 
-pub fn group_finders(finders: &[Finder]) -> Vec<[Finder; 3]> {
-    let mut groups = Vec::new();
+pub struct FinderGroup {
+    pub finders: [Finder; 3],
+    pub score: f64,
+}
+
+pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
+    let mut groups: Vec<FinderGroup> = Vec::new();
     let len = finders.len();
-    let mut is_grouped = vec![false; len];
 
-    for i1 in 0..len {
-        if is_grouped[i1] {
-            continue;
-        }
-
-        let f1 = &finders[i1];
-        // Indices of horizontal and vertical neighbor
+    for (i1, f1) in finders.iter().enumerate() {
+        // Indices of best horizontal and vertical neighbor
         let mut ih: Option<usize> = None;
         let mut iv: Option<usize> = None;
-        // Equidistance of the 2 finders from datum finder. Lower the better
+        // Equidistance score of 2 finders from datum finder. Lower is better
         let mut best_score = 2.5;
 
-        for i2 in 0..len {
-            if i2 == i1 || is_grouped[i2] {
+        for (i2, f2) in finders.iter().enumerate() {
+            if i2 == i1 {
                 continue;
             }
 
-            let f2 = &finders[i2];
             let (o2, d2) = get_relative_position(f1, f2);
             if o2.is_none() {
                 continue;
             }
 
-            for i3 in 0..len {
-                if i3 == i2 || i3 == i1 || is_grouped[i3] {
+            for (i3, f3) in finders.iter().enumerate() {
+                if i3 == i2 || i3 == i1 {
                     continue;
                 }
 
-                let f3 = &finders[i3];
                 let (o3, d3) = get_relative_position(f1, f3);
 
                 match (o2, o3) {
@@ -356,12 +355,13 @@ pub fn group_finders(finders: &[Finder]) -> Vec<[Finder; 3]> {
         }
 
         if let (Some(ih), Some(iv)) = (ih, iv) {
-            groups.push([finders[iv].clone(), f1.clone(), finders[ih].clone()]);
-            is_grouped[i1] = true;
-            is_grouped[ih] = true;
-            is_grouped[iv] = true;
+            let finders = [finders[iv].clone(), f1.clone(), finders[ih].clone()];
+            let score = best_score;
+            groups.push(FinderGroup { finders, score });
         }
     }
+
+    groups.sort_unstable_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
 
     groups
 }
@@ -413,7 +413,7 @@ mod group_finders_tests {
         let finders = locate_finders(&mut img);
         let group = group_finders(&finders);
         assert_eq!(group.len(), 1, "No group found");
-        for f in group[0].iter() {
+        for f in group[0].finders.iter() {
             let c = (f.center.x, f.center.y);
             assert!(centers.contains(&c))
         }

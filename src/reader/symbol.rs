@@ -30,34 +30,40 @@ pub struct SymbolLocation {
 }
 
 impl SymbolLocation {
-    pub fn locate(img: &mut PreparedImage, fds: &mut [Finder; 3]) -> Option<SymbolLocation> {
-        let mut c0 = fds[0].center;
-        let c1 = fds[1].center;
-        let mut c2 = fds[2].center;
+    pub fn locate(img: &mut PreparedImage, group: &mut [Finder; 3]) -> Option<SymbolLocation> {
+        let mut c0 = group[0].center;
+        let c1 = group[1].center;
+        let mut c2 = group[2].center;
 
         // Hypotenuse slope
         let mut hm = Slope { dx: c2.x - c0.x, dy: c2.y - c0.y };
 
-        // Make sure the middle finder is top-left and not bottom-right
+        // Make sure the middle(datum) finder is top-left and not bottom-right
         if (c1.y - c0.y) * hm.dx - (c1.x - c0.x) * hm.dy > 0 {
-            fds.swap(0, 2);
+            group.swap(0, 2);
             std::mem::swap(&mut c0, &mut c2);
             hm.dx = -hm.dx;
             hm.dy = -hm.dy;
         }
 
         // Rotate finders so the top left corner is first in the list
-        fds.iter_mut().for_each(|f| f.rotate(&c0, &hm));
+        group.iter_mut().for_each(|f| f.rotate(&c0, &hm));
 
-        let grid_size = measure_timing_patterns(img, fds);
+        let grid_size = measure_timing_patterns(img, group);
         let ver = Version::from_grid_size(grid_size)?;
 
-        let hor_line = Line::new(&fds[0].corners[0], &fds[0].corners[1]);
-        let ver_line = Line::new(&fds[2].corners[0], &fds[2].corners[3]);
+        let hor_line = Line::new(&group[0].corners[0], &group[0].corners[1]);
+        let ver_line = Line::new(&group[2].corners[0], &group[2].corners[3]);
         let mut align_pt = hor_line.intersection(&ver_line)?;
 
+        // Exit if projected alignment pt is outside the image
+        let Point { x: ax, y: ay } = align_pt;
+        if ax < 0 || ax as u32 >= img.w || ay < 0 || ay as u32 > img.h {
+            return None;
+        }
+
         if grid_size > 21 {
-            align_pt = locate_alignment_pattern(img, align_pt, &fds[0], &fds[2])?;
+            align_pt = locate_alignment_pattern(img, align_pt, &group[0], &group[2])?;
 
             let tlcf = TopLeftCornerFinder::new(&align_pt, &hm);
             let color = Color::from(*img.get_at_point(&align_pt));
@@ -69,7 +75,7 @@ impl SymbolLocation {
             align_pt = tlcf.corner;
         }
 
-        let h = setup_homography(img, fds, &align_pt, ver)?;
+        let h = setup_homography(img, group, &align_pt, ver)?;
 
         let w = grid_size as f64;
         let bounds = [h.map(0.0, 0.0), h.map(w, 0.0), h.map(w, w), h.map(0.0, w)];

@@ -221,9 +221,6 @@ pub mod decode {
             res.extend(decoded_seg);
             total_bit_len += bit_len;
 
-            //FIXME: Remove
-            println!("Total bit len: {total_bit_len}, Data cap: {data_bit_cap}, Palette {pal:?}");
-
             // Handles an edge case where the diff between capacity and data len is less than
             // 4 bits, in which case there isn't enough space for 4 terminator bits, in the
             // absence of which the decoder would proceed to the next channel
