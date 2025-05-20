@@ -19,7 +19,7 @@ struct DatumLine {
     y: u32,
 }
 
-// Finder type
+// Finder
 //------------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
