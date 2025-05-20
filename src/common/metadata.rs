@@ -334,9 +334,9 @@ pub enum Color {
     Red = 0b100,
     Green = 0b010,
     Blue = 0b001,
-    Yellow = 0b110,
-    Magenta = 0b101,
-    Cyan = 0b011,
+    Yellow = 0b110,  // Red + Green
+    Magenta = 0b101, // Red + Blue
+    Cyan = 0b011,    // Green + Blue
     White = 0b111,
 }
 

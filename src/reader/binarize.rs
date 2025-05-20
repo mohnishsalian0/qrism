@@ -72,14 +72,14 @@ pub struct Region {
 //------------------------------------------------------------------------------
 
 #[derive(Debug)]
-pub struct PreparedImage {
+pub struct BinaryImage {
     pub buffer: Vec<Pixel>,
     regions: LruCache<u8, Region>, // Areas of visited regions. Index is id
     pub w: u32,
     pub h: u32,
 }
 
-impl PreparedImage {
+impl BinaryImage {
     pub fn new(img: RgbImage) -> Self {
         let (w, h) = img.dimensions();
         let mut buffer = Vec::with_capacity((w * h) as usize);

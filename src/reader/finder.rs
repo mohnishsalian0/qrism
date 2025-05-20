@@ -1,7 +1,7 @@
 use crate::metadata::Color;
 
 use super::{
-    prepare::{Pixel, PreparedImage, Region},
+    binarize::{BinaryImage, Pixel, Region},
     utils::{
         accumulate::{AllCornerFinder, FirstCornerFinder},
         geometry::{Homography, Point, Slope},
@@ -111,7 +111,7 @@ impl LineScanner {
             return false;
         }
 
-        let avg = (self.buffer[0] + self.buffer[1] + self.buffer[3] + self.buffer[4]) / 4;
+        let avg = self.buffer[..5].iter().sum::<u32>() / 7;
         let tol = avg * 3 / 4;
 
         let ratio: [u32; 5] = [1, 1, 3, 1, 1];
@@ -128,7 +128,7 @@ impl LineScanner {
 // Locate finders
 //------------------------------------------------------------------------------
 
-pub fn locate_finders(img: &mut PreparedImage) -> Vec<Finder> {
+pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
     let mut finders = Vec::with_capacity(100);
     let w = img.w;
     let h = img.h;
@@ -160,7 +160,7 @@ pub fn locate_finders(img: &mut PreparedImage) -> Vec<Finder> {
 // Stone area is roughly 37.5% of ring area
 // Stone and ring areas arent connected
 // Left and right points of row lying inside the ring are connected
-fn is_finder(img: &mut PreparedImage, datum: &DatumLine) -> bool {
+fn is_finder(img: &mut BinaryImage, datum: &DatumLine) -> bool {
     let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
     let ring = img.get_region((r, y));
     let stone = img.get_region((s, y));
@@ -183,7 +183,7 @@ fn is_finder(img: &mut PreparedImage, datum: &DatumLine) -> bool {
     }
 }
 
-fn construct_finder(img: &mut PreparedImage, datum: &DatumLine, id: usize) -> Option<Finder> {
+fn construct_finder(img: &mut BinaryImage, datum: &DatumLine, id: usize) -> Option<Finder> {
     let (_left, right, y) = (datum.left, datum.right, datum.y);
     let color = Color::from(img.get(right, y));
     let refr_pt = Point { x: right as i32, y: y as i32 };
@@ -243,7 +243,7 @@ mod finder_highlight {
 mod finder_tests {
 
     use crate::{
-        reader::{prepare::PreparedImage, utils::geometry::Point},
+        reader::{binarize::BinaryImage, utils::geometry::Point},
         ECLevel, MaskPattern, Palette, QRBuilder, Version,
     };
 
@@ -272,7 +272,7 @@ mod finder_tests {
             [[40, 369], [40, 300], [109, 300], [109, 369]],
         ];
         let centers = [[75, 75], [335, 75], [75, 335]];
-        let mut img = PreparedImage::prepare(img);
+        let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
         for (i, f) in finders.iter().enumerate() {
             for crn in corners[i] {
@@ -384,9 +384,7 @@ fn get_relative_position(f1: &Finder, f2: &Finder) -> (Orientation, f64) {
 #[cfg(test)]
 mod group_finders_tests {
 
-    use crate::{
-        reader::prepare::PreparedImage, ECLevel, MaskPattern, Palette, QRBuilder, Version,
-    };
+    use crate::{reader::binarize::BinaryImage, ECLevel, MaskPattern, Palette, QRBuilder, Version};
 
     use super::{group_finders, locate_finders};
 
@@ -409,7 +407,7 @@ mod group_finders_tests {
 
         let centers = [(75, 75), (335, 75), (75, 335)];
 
-        let mut img = PreparedImage::prepare(img);
+        let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
         let group = group_finders(&finders);
         assert_eq!(group.len(), 1, "No group found");

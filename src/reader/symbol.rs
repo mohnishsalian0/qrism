@@ -1,8 +1,8 @@
 use std::{cmp::max, path::Path};
 
 use super::{
+    binarize::{BinaryImage, Pixel, Region},
     finder::Finder,
-    prepare::{Pixel, PreparedImage, Region},
     utils::{
         accumulate::TopLeftCornerFinder,
         geometry::{Axis, BresenhamLine, Homography, Line, Point, Slope, X, Y},
@@ -30,7 +30,7 @@ pub struct SymbolLocation {
 }
 
 impl SymbolLocation {
-    pub fn locate(img: &mut PreparedImage, group: &mut [Finder; 3]) -> Option<SymbolLocation> {
+    pub fn locate(img: &mut BinaryImage, group: &mut [Finder; 3]) -> Option<SymbolLocation> {
         let mut c0 = group[0].center;
         let c1 = group[1].center;
         let mut c2 = group[2].center;
@@ -89,14 +89,14 @@ impl SymbolLocation {
 
 #[derive(Debug)]
 pub struct Symbol {
-    img: PreparedImage,
+    img: BinaryImage,
     h: Homography,
     bounds: [Point; 4],
     pub ver: Version,
 }
 
 impl Symbol {
-    pub fn new(img: PreparedImage, sym_loc: SymbolLocation) -> Self {
+    pub fn new(img: BinaryImage, sym_loc: SymbolLocation) -> Self {
         let SymbolLocation { h, bounds, ver } = sym_loc;
         Self { img, h, bounds, ver }
     }
@@ -146,7 +146,7 @@ impl Symbol {
 // Locates pt on the middle line of each finder's ring band
 // This pt is nearest to the center of symbol
 // Traces vert and hor lines along these middle pts to count modules
-pub fn measure_timing_patterns(img: &PreparedImage, fds: &[Finder; 3]) -> usize {
+pub fn measure_timing_patterns(img: &BinaryImage, fds: &[Finder; 3]) -> usize {
     let p0 = fds[0].map(6.5, 0.5);
     let p1 = fds[1].map(6.5, 6.5);
     let p2 = fds[2].map(0.5, 6.5);
@@ -171,7 +171,7 @@ pub fn measure_timing_patterns(img: &PreparedImage, fds: &[Finder; 3]) -> usize 
     ver * 4 + 17
 }
 
-fn timing_scan<A: Axis>(img: &PreparedImage, from: &Point, to: &Point) -> usize
+fn timing_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> usize
 where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
@@ -195,7 +195,7 @@ where
 }
 
 fn locate_alignment_pattern(
-    img: &mut PreparedImage,
+    img: &mut BinaryImage,
     mut seed: Point,
     f0: &Finder,
     f2: &Finder,
@@ -255,7 +255,7 @@ fn locate_alignment_pattern(
 }
 
 fn setup_homography(
-    img: &PreparedImage,
+    img: &BinaryImage,
     fds: &[Finder; 3],
     align_stone_tl: &Point,
     ver: Version,
@@ -268,7 +268,7 @@ fn setup_homography(
 }
 
 // Adjust the homography slightly to refine viewport of qr
-fn jiggle_homography(img: &PreparedImage, mut h: Homography, ver: Version) -> Homography {
+fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Homography {
     let mut best = symbol_fitness(img, &h, ver);
     let mut adjustments = [0.0; 8];
     h.0.iter().enumerate().for_each(|(i, v)| adjustments[i] = v * 0.02f64);
@@ -297,7 +297,7 @@ fn jiggle_homography(img: &PreparedImage, mut h: Homography, ver: Version) -> Ho
     h
 }
 
-fn symbol_fitness(img: &PreparedImage, h: &Homography, ver: Version) -> i32 {
+fn symbol_fitness(img: &BinaryImage, h: &Homography, ver: Version) -> i32 {
     let mut score = 0;
     let grid_size = ver.width() as i32;
 
@@ -334,17 +334,17 @@ fn symbol_fitness(img: &PreparedImage, h: &Homography, ver: Version) -> i32 {
     score
 }
 
-fn finder_fitness(img: &PreparedImage, h: &Homography, x: i32, y: i32) -> i32 {
+fn finder_fitness(img: &BinaryImage, h: &Homography, x: i32, y: i32) -> i32 {
     let (x, y) = (x + 3, y + 3);
     cell_fitness(img, h, x, y) + ring_fitness(img, h, x, y, 1) - ring_fitness(img, h, x, y, 2)
         + ring_fitness(img, h, x, y, 3)
 }
 
-fn alignment_fitness(img: &PreparedImage, h: &Homography, x: i32, y: i32) -> i32 {
+fn alignment_fitness(img: &BinaryImage, h: &Homography, x: i32, y: i32) -> i32 {
     cell_fitness(img, h, x, y) - ring_fitness(img, h, x, y, 1) + ring_fitness(img, h, x, y, 2)
 }
 
-fn ring_fitness(img: &PreparedImage, h: &Homography, cx: i32, cy: i32, r: i32) -> i32 {
+fn ring_fitness(img: &BinaryImage, h: &Homography, cx: i32, cy: i32, r: i32) -> i32 {
     let mut score = 0;
 
     for i in 0..r * 2 {
@@ -357,7 +357,7 @@ fn ring_fitness(img: &PreparedImage, h: &Homography, cx: i32, cy: i32, r: i32) -
     score
 }
 
-fn cell_fitness(img: &PreparedImage, hm: &Homography, x: i32, y: i32) -> i32 {
+fn cell_fitness(img: &BinaryImage, hm: &Homography, x: i32, y: i32) -> i32 {
     const OFFSETS: [f64; 3] = [0.3, 0.5, 0.7];
     let w = img.w;
     let h = img.h;
@@ -418,9 +418,9 @@ mod symbol_tests {
 
     use crate::{
         reader::{
+            binarize::BinaryImage,
             finder::{group_finders, locate_finders},
             locate_symbol,
-            prepare::PreparedImage,
         },
         ECLevel, MaskPattern, Palette, QRBuilder, Version,
     };
@@ -444,7 +444,7 @@ mod symbol_tests {
         let img = qr.to_image(10);
         let bounds = [(40, 40), (370, 40), (370, 370), (40, 370)];
 
-        let mut img = PreparedImage::prepare(img);
+        let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let symbol = locate_symbol(img, groups).expect("No symbol found");
@@ -530,9 +530,9 @@ mod symbol_infos_tests {
     use crate::{
         metadata::Color,
         reader::{
+            binarize::BinaryImage,
             finder::{group_finders, locate_finders},
             locate_symbol,
-            prepare::PreparedImage,
         },
         ECLevel, MaskPattern, Module, QRBuilder, Version,
     };
@@ -548,7 +548,7 @@ mod symbol_infos_tests {
             QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
         let img = qr.to_image(3);
 
-        let mut img = PreparedImage::prepare(img);
+        let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
@@ -571,7 +571,7 @@ mod symbol_infos_tests {
         qr.set(8, 4, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = PreparedImage::prepare(img);
+        let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
@@ -595,7 +595,7 @@ mod symbol_infos_tests {
         qr.set(8, 4, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = PreparedImage::prepare(img);
+        let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
@@ -624,7 +624,7 @@ mod symbol_infos_tests {
         qr.set(-5, 8, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = PreparedImage::prepare(img);
+        let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
@@ -641,7 +641,7 @@ mod symbol_infos_tests {
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let img = qr.to_image(3);
 
-        let mut img = PreparedImage::prepare(img);
+        let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
@@ -662,7 +662,7 @@ mod symbol_infos_tests {
         qr.set(-11, 5, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = PreparedImage::prepare(img);
+        let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
@@ -684,7 +684,7 @@ mod symbol_infos_tests {
         qr.set(-9, 4, Module::Format(Color::White));
         let img = qr.to_image(3);
 
-        let mut img = PreparedImage::prepare(img);
+        let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
@@ -711,7 +711,7 @@ mod symbol_infos_tests {
         qr.set(4, -9, Module::Format(Color::White));
         let img = qr.to_image(3);
 
-        let mut img = PreparedImage::prepare(img);
+        let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");

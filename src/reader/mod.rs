@@ -1,5 +1,5 @@
+mod binarize;
 mod finder;
-mod prepare;
 mod symbol;
 mod utils;
 
@@ -12,7 +12,7 @@ use crate::{
     metadata::{Metadata, Version},
     utils::{BitStream, QRError, QRResult},
 };
-use prepare::PreparedImage;
+use binarize::BinaryImage;
 use symbol::{Symbol, SymbolLocation};
 
 pub struct QRReader();
@@ -23,7 +23,7 @@ impl QRReader {
         println!("Reading QR...");
 
         println!("Preparing image...");
-        let mut img = PreparedImage::prepare(img);
+        let mut img = BinaryImage::prepare(img);
 
         println!("Locating finders...");
         let finders = locate_finders(&mut img);
@@ -78,7 +78,7 @@ impl QRReader {
     }
 }
 
-fn locate_symbol(mut img: PreparedImage, groups: Vec<FinderGroup>) -> Option<Symbol> {
+fn locate_symbol(mut img: BinaryImage, groups: Vec<FinderGroup>) -> Option<Symbol> {
     let mut sym_loc = None;
     for mut g in groups {
         if let Some(sl) = SymbolLocation::locate(&mut img, &mut g.finders) {
@@ -129,7 +129,7 @@ fn deinterleave(
 #[cfg(test)]
 mod reader_tests {
 
-    use super::{finder::locate_finders, locate_symbol, prepare::PreparedImage, QRReader};
+    use super::{binarize::BinaryImage, finder::locate_finders, locate_symbol, QRReader};
 
     use crate::{
         builder::QRBuilder,
@@ -191,7 +191,7 @@ mod reader_tests {
     fn reader_debugger() {
         let path = std::path::Path::new("assets/test1.png");
         let img = image::open(path).unwrap().to_rgb8();
-        let mut img = PreparedImage::prepare(img);
+        let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         // let symbol = locate_symbol(img, groups).unwrap();
