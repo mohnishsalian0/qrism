@@ -62,7 +62,7 @@ impl SymbolLocation {
         }
 
         if let Version::Normal(2..=40) = ver {
-            align_seed = locate_alignment_pattern(img, &group, align_seed)?;
+            align_seed = locate_alignment_pattern(img, group, align_seed)?;
 
             let cl = CenterLocator::new();
             let color = Color::from(*img.get_at_point(&align_seed));
@@ -146,7 +146,7 @@ fn locate_alignment_pattern(
     // Calculate area of module
     let m0 = Slope::new(&group.finders[0].center, &group.mids[0]);
     let m1 = Slope::new(&group.finders[1].center, &group.mids[5]);
-    let mod_area = m0.cross(&m1).abs() as u32;
+    let mod_area = m0.cross(&m1).unsigned_abs();
 
     // x & y increments w.r.t direction
     const DX: [i32; 4] = [1, 0, -1, 0];

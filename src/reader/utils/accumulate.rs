@@ -182,7 +182,16 @@ impl CenterLocator {
 
     pub fn get_center(&self) -> Point {
         let x = self.sum_x as f64 / (2 * self.area) as f64;
-        let y = self.sum_y as f64 / (2 * self.area) as f64;
+        let y = self.sum_y as f64 / self.area as f64;
+
+        let x = x.round();
+        let y = y.round();
+
+        assert!(x <= i32::MAX as f64);
+        assert!(x >= i32::MIN as f64);
+        assert!(y <= i32::MAX as f64);
+        assert!(y >= i32::MIN as f64);
+
         Point { x: x as i32, y: y as i32 }
     }
 }
