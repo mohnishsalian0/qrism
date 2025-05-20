@@ -1,16 +1,20 @@
-use crate::metadata::Color;
+use crate::{metadata::Color, reader::utils::geometry::BresenhamLine};
 
 use super::{
     binarize::{BinaryImage, Pixel, Region},
     utils::{
-        accumulate::{AllCornerFinder, FirstCornerFinder},
-        geometry::{Homography, Point, Slope},
+        accumulate::CenterLocator,
+        geometry::{Axis, Line, Point, Slope, X, Y},
     },
 };
 
 // Finder line
 //------------------------------------------------------------------------------
 
+// **   ******   **  <- Finder line
+// ^    ^        ^
+// left |        right
+//      stone
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct DatumLine {
     left: u32,
@@ -25,34 +29,7 @@ struct DatumLine {
 #[derive(Debug, Clone)]
 pub struct Finder {
     pub id: usize,
-    pub h: Homography,
-    pub corners: [Point; 4],
     pub center: Point,
-}
-
-impl Finder {
-    #[inline]
-    pub fn map(&self, x: f64, y: f64) -> Point {
-        self.h.map(x, y)
-    }
-
-    #[inline]
-    pub fn unmap(&self, p: &Point) -> (f64, f64) {
-        self.h.unmap(p)
-    }
-
-    pub fn rotate(&mut self, pt: &Point, m: &Slope) {
-        let (top_left, _) = self
-            .corners
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, c)| (c.y - pt.y) * m.dx - (c.x - pt.x) * m.dy)
-            .expect("Corners cannot be empty");
-        self.corners.rotate_left(top_left);
-
-        self.h =
-            Homography::create(&self.corners, 7.0, 7.0).expect("rotating homography cant fail");
-    }
 }
 
 // Line scanner to detect finder line
@@ -62,36 +39,36 @@ impl Finder {
 struct LineScanner {
     buffer: [u32; 6],    // Run length of each transition
     prev: Option<Color>, // Last observed color
-    transitions: u32,    // Count of color changes
+    flips: u32,          // Count of color changes
     pos: u32,            // Current position
     y: u32,
 }
 
 impl LineScanner {
     pub fn new() -> Self {
-        Self { buffer: [0; 6], prev: None, transitions: 0, pos: 0, y: 0 }
+        Self { buffer: [0; 6], prev: None, flips: 0, pos: 0, y: 0 }
     }
 
     pub fn reset(&mut self, y: u32) {
         self.buffer[5] = 0;
         self.prev = None;
-        self.transitions = 0;
+        self.flips = 0;
         self.pos = 0;
         self.y = y;
     }
 
-    pub fn advance(&mut self, px: Option<Color>) -> Option<DatumLine> {
+    pub fn advance(&mut self, color: Option<Color>) -> Option<DatumLine> {
         self.pos += 1;
 
-        if self.prev == px {
+        if self.prev == color {
             self.buffer[5] += 1;
             return None;
         }
 
         self.buffer.rotate_left(1);
         self.buffer[5] = 1;
-        self.prev = px;
-        self.transitions += 1;
+        self.prev = color;
+        self.flips += 1;
 
         if self.is_finder_line() {
             Some(DatumLine {
@@ -105,9 +82,10 @@ impl LineScanner {
         }
     }
 
+    // Validates whether last 5 run lengths are in the 1:1:3:1:1 ratio
     fn is_finder_line(&self) -> bool {
         let white = Color::White;
-        if !(self.prev == Some(white) && self.transitions >= 5) {
+        if self.flips < 5 {
             return false;
         }
 
@@ -128,6 +106,7 @@ impl LineScanner {
 // Locate finders
 //------------------------------------------------------------------------------
 
+// ENTRY POINT FOR LOCATING FINDER
 pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
     let mut finders = Vec::with_capacity(100);
     let w = img.w;
@@ -142,13 +121,12 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
                 None => continue,
             };
 
-            if !is_finder(img, &datum) {
+            if !(crosscheck_vertical(img, &datum) && validate_regions(img, &datum)) {
                 continue;
             }
 
-            if let Some(f) = construct_finder(img, &datum, finders.len()) {
-                finders.push(f);
-            }
+            let f = construct_finder(img, &datum, finders.len());
+            finders.push(f);
         }
         scanner.reset(y + 1);
     }
@@ -156,11 +134,70 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
     finders
 }
 
-// Sweeps stone and ring regions from datum line and validates finder if:
-// Stone area is roughly 37.5% of ring area
-// Stone and ring areas arent connected
-// Left and right points of row lying inside the ring are connected
-fn is_finder(img: &mut BinaryImage, datum: &DatumLine) -> bool {
+/// Checks if the vertical run along finder line center satisfies the 1:1:3:1:1 ratio
+fn crosscheck_vertical(img: &BinaryImage, datum: &DatumLine) -> bool {
+    let h = img.h;
+    let cx = datum.right - (datum.stone - datum.left) * 5 / 4;
+    let cy = datum.y;
+    let max_run = (datum.right - datum.left) * 2; // Setting a loose max limit on each run
+    let mut run_len = [0; 5];
+    run_len[2] = 1;
+
+    // Count upwards
+    let mut pos = cy - 1;
+    let mut reg_idx = 2;
+    let mut initial = Color::from(img.get(cx, cy));
+    while pos > 0 && run_len[reg_idx] <= max_run {
+        let color = Color::from(img.get(cx, pos));
+        if initial == color {
+            run_len[reg_idx] += 1;
+        } else {
+            initial = color;
+            if reg_idx == 0 {
+                break;
+            }
+            reg_idx -= 1;
+        }
+        pos -= 1;
+    }
+
+    // Count downwards
+    let mut pos = cy + 1;
+    let mut flips = 2;
+    let mut initial = Color::from(img.get(cx, cy));
+    while pos < h && run_len[flips] <= max_run {
+        let color = Color::from(img.get(cx, pos));
+        if initial == color {
+            run_len[flips] += 1;
+        } else {
+            initial = color;
+            if flips == 4 {
+                break;
+            }
+            flips += 1;
+        }
+        pos -= 1;
+    }
+
+    // Verify 1:1:3:1:1 ratio
+    let avg = run_len.iter().sum::<u32>() / 7;
+    let tol = avg * 3 / 4;
+
+    let ratio: [u32; 5] = [1, 1, 3, 1, 1];
+    for (i, r) in ratio.iter().enumerate() {
+        if run_len[i] < r * avg - tol || run_len[i] > r * avg + tol {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Sweeps stone and ring regions from datum line and checks:
+/// Stone area is roughly 37.5% of ring area
+/// Stone and ring areas are not connected
+/// Left and right points, of the row, lying inside the ring are connected
+fn validate_regions(img: &mut BinaryImage, datum: &DatumLine) -> bool {
     let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
     let ring = img.get_region((r, y));
     let stone = img.get_region((s, y));
@@ -183,60 +220,23 @@ fn is_finder(img: &mut BinaryImage, datum: &DatumLine) -> bool {
     }
 }
 
-fn construct_finder(img: &mut BinaryImage, datum: &DatumLine, id: usize) -> Option<Finder> {
-    let (_left, right, y) = (datum.left, datum.right, datum.y);
-    let color = Color::from(img.get(right, y));
-    let refr_pt = Point { x: right as i32, y: y as i32 };
+fn construct_finder(img: &mut BinaryImage, datum: &DatumLine, id: usize) -> Finder {
+    let (stone, right, y) = (datum.stone, datum.right, datum.y);
+    let color = Color::from(img.get(stone, y));
+    let ref_pt = Point { x: stone as i32, y: y as i32 };
 
-    // Locating first corner
-    let fcf = FirstCornerFinder::new(refr_pt);
-    let to = Pixel::Temporary(color);
-    let fcf = img.fill_and_accumulate((right, y), to, fcf);
-
-    // Locating rest of the corners
+    // Locating center of finder
+    let cl = CenterLocator::new();
     let to = Pixel::Candidate(color);
-    let acf = AllCornerFinder::new(refr_pt, fcf.corner);
-    let acf = img.fill_and_accumulate((right, y), to, acf);
+    let cl = img.fill_and_accumulate((stone, y), to, cl);
+    let center = cl.get_center();
 
-    // Setting up homographic projection
-    let h = Homography::create(&acf.corners, 7.0, 7.0)?;
-    let corners = acf.corners;
-    let center = h.map(3.5, 3.5);
+    // Mark the ring as candidate
+    let color = Color::from(img.get(right, y));
+    let to = Pixel::Candidate(color);
+    let _ = img.fill_and_accumulate((right, y), to, |_| ());
 
-    Some(Finder { id, h, corners, center })
-}
-
-#[cfg(test)]
-mod finder_highlight {
-    use image::RgbImage;
-
-    use crate::reader::utils::{
-        geometry::{BresenhamLine, X, Y},
-        Highlight,
-    };
-
-    use super::Finder;
-
-    impl Highlight for Finder {
-        fn highlight(&self, img: &mut RgbImage) {
-            for (i, crn) in self.corners.iter().enumerate() {
-                let next = self.corners[(i + 1) % 4];
-                let dx = (next.x - crn.x).abs();
-                let dy = (next.y - crn.y).abs();
-                if dx > dy {
-                    let line = BresenhamLine::<X>::new(crn, &next);
-                    for pt in line {
-                        pt.highlight(img);
-                    }
-                } else {
-                    let line = BresenhamLine::<Y>::new(crn, &next);
-                    for pt in line {
-                        pt.highlight(img);
-                    }
-                }
-            }
-        }
-    }
+    Finder { id, center }
 }
 
 #[cfg(test)]
@@ -275,10 +275,6 @@ mod finder_tests {
         let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
         for (i, f) in finders.iter().enumerate() {
-            for crn in corners[i] {
-                let pt = Point { x: crn[0], y: crn[1] };
-                assert!(f.corners.contains(&pt), "Finder corners don't match");
-            }
             let cent_pt = Point { x: centers[i][0], y: centers[i][1] };
             assert_eq!(f.center, cent_pt, "Finder center doesn't match");
         }
@@ -288,76 +284,87 @@ mod finder_tests {
 // Groups finders in 3, which form potential symbols
 //------------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Orientation {
-    Horizontal,
-    Vertical,
-    None,
-}
-
-impl Orientation {
-    pub fn is_none(&self) -> bool {
-        matches!(self, Orientation::None)
-    }
-}
-
 pub struct FinderGroup {
-    pub finders: [Finder; 3],
-    pub score: f64,
+    pub finders: [Finder; 3], // [BL, TL, TR]
+    pub mids: [Point; 6],     // [BLR, BLU, TLB, TLR, TRL, TRD]. Mid pts of edges
+    pub size: u32,            // Grid size of potential qr
+    pub score: f64,           // Timing pattern score + Estimate mod count score
 }
 
-pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
+pub fn group_finders(img: &BinaryImage, finders: &[Finder]) -> Vec<FinderGroup> {
     let mut groups: Vec<FinderGroup> = Vec::new();
     let len = finders.len();
 
     for (i1, f1) in finders.iter().enumerate() {
-        // Indices of best horizontal and vertical neighbor
-        let mut ih: Option<usize> = None;
-        let mut iv: Option<usize> = None;
-        // Equidistance score of 2 finders from datum finder. Lower is better
-        let mut best_score = 2.5;
-
         for (i2, f2) in finders.iter().enumerate() {
             if i2 == i1 {
                 continue;
             }
 
-            let (o2, d2) = get_relative_position(f1, f2);
-            if o2.is_none() {
-                continue;
-            }
+            let m12 = match find_edge_mid(img, &f1.center, &f2.center) {
+                Some(pt) => pt,
+                None => continue,
+            };
+            let m21 = match find_edge_mid(img, &f2.center, &f1.center) {
+                Some(pt) => pt,
+                None => continue,
+            };
+            let s2 = Slope::new(&f1.center, &f2.center);
 
             for (i3, f3) in finders.iter().enumerate() {
                 if i3 == i2 || i3 == i1 {
                     continue;
                 }
 
-                let (o3, d3) = get_relative_position(f1, f3);
+                let m13 = match find_edge_mid(img, &f1.center, &f3.center) {
+                    Some(pt) => pt,
+                    None => continue,
+                };
+                let m31 = match find_edge_mid(img, &f3.center, &f1.center) {
+                    Some(pt) => pt,
+                    None => continue,
+                };
+                let s3 = Slope::new(&f1.center, &f3.center);
 
-                match (o2, o3) {
-                    (Orientation::Horizontal, Orientation::Vertical) => {
-                        let score = (1.0f64 - d2 / d3).abs();
-                        if score < best_score {
-                            (ih, iv) = (Some(i2), Some(i3));
-                            best_score = score;
-                        }
-                    }
-                    (Orientation::Vertical, Orientation::Horizontal) => {
-                        let score = (1.0f64 - d2 / d3).abs();
-                        if score < best_score {
-                            (ih, iv) = (Some(i3), Some(i2));
-                            best_score = score;
-                        }
-                    }
-                    _ => (),
-                }
+                let l24 = Line::from_point_slope(&f2.center, &s3);
+                let l34 = Line::from_point_slope(&f3.center, &s2);
+                let c4 = match l24.intersection(&l34) {
+                    Some(pt) => pt,
+                    None => continue,
+                };
+
+                let m24 = match find_edge_mid(img, &f2.center, &c4) {
+                    Some(pt) => pt,
+                    None => continue,
+                };
+                let m34 = match find_edge_mid(img, &f3.center, &c4) {
+                    Some(pt) => pt,
+                    None => continue,
+                };
+
+                let t12 = measure_timing_patterns(img, &m13, &m24);
+                let t13 = measure_timing_patterns(img, &m12, &m34);
+
+                // Calculate score
+                let symmetry_score = ((t12 as f64 / t13 as f64) - 1.0).abs();
+
+                let est_mod_count12 = estimate_mod_count(&f1.center, &m12, &f2.center, &m21);
+                let mod_score12 = ((est_mod_count12 / (t12 + 6) as f64) - 1.0).abs();
+
+                let est_mod_count13 = estimate_mod_count(&f1.center, &m13, &f3.center, &m31);
+                let mod_score13 = ((est_mod_count13 / (t13 + 6) as f64) - 1.0).abs();
+
+                let score = symmetry_score + mod_score12 + mod_score13;
+
+                // Create and push group into groups
+                let finders = [f3.clone(), f1.clone(), f2.clone()];
+                let mids = [m34, m31, m13, m12, m21, m24];
+                let size = std::cmp::max(t12, t13) + 13;
+                let ver = (size as f64 - 15.0).floor() as u32 / 4;
+                let size = ver * 4 + 17;
+                let group = FinderGroup { finders, mids, size, score };
+                groups.push(group);
             }
-        }
-
-        if let (Some(ih), Some(iv)) = (ih, iv) {
-            let finders = [finders[iv].clone(), f1.clone(), finders[ih].clone()];
-            let score = best_score;
-            groups.push(FinderGroup { finders, score });
         }
     }
 
@@ -366,19 +373,86 @@ pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
     groups
 }
 
-// Returns orientation of 2 finders and distance between their centers
-fn get_relative_position(f1: &Finder, f2: &Finder) -> (Orientation, f64) {
-    let (mut x, mut y) = f1.h.unmap(&f2.center);
-    x = (x - 3.5f64).abs();
-    y = (y - 3.5f64).abs();
-
-    if y < 0.2f64 * x {
-        (Orientation::Horizontal, x)
-    } else if x < 0.2f64 * y {
-        (Orientation::Vertical, y)
+fn find_edge_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point> {
+    let dx = (to.x - from.x).abs();
+    let dy = (to.y - from.y).abs();
+    if dx > dy {
+        mid_scan::<X>(img, from, to)
     } else {
-        (Orientation::None, 0.0)
+        mid_scan::<Y>(img, from, to)
     }
+}
+
+fn mid_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point>
+where
+    BresenhamLine<A>: Iterator<Item = Point>,
+{
+    let mut run_len = [0, 0, 0];
+    let mut flips = 0;
+    let px = img.get_at_point(from);
+    let mut last = Color::from(*px);
+    let line = BresenhamLine::<A>::new(from, to);
+
+    for p in line {
+        let px = img.get_at_point(&p);
+        let color = Color::from(*px);
+        if color == last {
+            run_len[flips] += 1;
+            if flips == 2 && run_len[flips] == run_len[flips - 1] / 2 {
+                return Some(p);
+            }
+        } else {
+            flips += 1;
+            last = color;
+            debug_assert!(flips > 2, "Flips shouldn't be more than 2: Flips {flips}");
+        }
+    }
+
+    None
+}
+
+pub fn measure_timing_patterns(img: &BinaryImage, from: &Point, to: &Point) -> u32 {
+    let dx = (to.x - from.x).abs();
+    let dy = (to.y - from.y).abs();
+
+    if dx > dy {
+        timing_scan::<X>(img, from, to)
+    } else {
+        timing_scan::<Y>(img, from, to)
+    }
+}
+
+fn timing_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> u32
+where
+    BresenhamLine<A>: Iterator<Item = Point>,
+{
+    let mut transitions = [0, 0, 0];
+    let px = img.get_at_point(from);
+    let mut last = Color::from(*px).to_bits();
+    let line = BresenhamLine::<A>::new(from, to);
+
+    for p in line {
+        let px = img.get_at_point(&p);
+        let color = Color::from(*px).to_bits();
+        for i in 0..3 {
+            if color[i] != last[i] {
+                transitions[i] += 1;
+                last[i] = color[i];
+            }
+        }
+    }
+
+    *transitions.iter().min().unwrap()
+}
+
+fn estimate_mod_count(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {
+    let d1 = c1.squared_distance(m1);
+    let d2 = c2.squared_distance(m2);
+
+    let avg_d = ((d1 + d2) / 2) as f64;
+    let d12 = c1.squared_distance(c2) as f64;
+
+    (d12 * 9.0 / avg_d).sqrt()
 }
 
 #[cfg(test)]
@@ -409,7 +483,7 @@ mod group_finders_tests {
 
         let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
-        let group = group_finders(&finders);
+        let group = group_finders(&img, &finders);
         assert_eq!(group.len(), 1, "No group found");
         for f in group[0].finders.iter() {
             let c = (f.center.x, f.center.y);

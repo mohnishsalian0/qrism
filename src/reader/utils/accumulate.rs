@@ -162,3 +162,40 @@ impl Accumulator for TopLeftCornerFinder {
         }
     }
 }
+
+// Center locator for finder
+// Uses the centroid formula:
+// CX = Sum of X / Total points
+// CY = Sum of Y / Total points
+//------------------------------------------------------------------------------
+
+pub struct CenterLocator {
+    sum_x: u32,
+    sum_y: u32,
+    area: u32,
+}
+
+impl CenterLocator {
+    pub fn new() -> Self {
+        Self { sum_x: 0, sum_y: 0, area: 0 }
+    }
+
+    pub fn get_center(&self) -> Point {
+        let x = self.sum_x as f64 / (2 * self.area) as f64;
+        let y = self.sum_y as f64 / (2 * self.area) as f64;
+        Point { x: x as i32, y: y as i32 }
+    }
+}
+
+impl Accumulator for CenterLocator {
+    fn accumulate(&mut self, row: Row) {
+        let Row { left, right, y } = row;
+        let width = right - left;
+        let mid = left + right; // Not divided by 2 to avoid FP arithmetic. This 2 is accounted for
+                                // when calculating x and y in get_center()
+
+        self.sum_x += (left + right) * width;
+        self.sum_y += y * width;
+        self.area += width;
+    }
+}

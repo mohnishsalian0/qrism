@@ -1,11 +1,11 @@
-use std::{cmp::max, path::Path};
+use std::path::Path;
 
 use super::{
     binarize::{BinaryImage, Pixel, Region},
-    finder::Finder,
+    finder::FinderGroup,
     utils::{
-        accumulate::TopLeftCornerFinder,
-        geometry::{Axis, BresenhamLine, Homography, Line, Point, Slope, X, Y},
+        accumulate::CenterLocator,
+        geometry::{Homography, Line, Point, Slope},
     },
 };
 use crate::{
@@ -30,54 +30,52 @@ pub struct SymbolLocation {
 }
 
 impl SymbolLocation {
-    pub fn locate(img: &mut BinaryImage, group: &mut [Finder; 3]) -> Option<SymbolLocation> {
-        let mut c0 = group[0].center;
-        let c1 = group[1].center;
-        let mut c2 = group[2].center;
+    pub fn locate(img: &mut BinaryImage, group: &mut FinderGroup) -> Option<SymbolLocation> {
+        let mut c0 = group.finders[0].center;
+        let c1 = group.finders[1].center;
+        let mut c2 = group.finders[2].center;
 
         // Hypotenuse slope
         let mut hm = Slope { dx: c2.x - c0.x, dy: c2.y - c0.y };
 
         // Make sure the middle(datum) finder is top-left and not bottom-right
         if (c1.y - c0.y) * hm.dx - (c1.x - c0.x) * hm.dy > 0 {
-            group.swap(0, 2);
+            group.finders.swap(0, 2);
             std::mem::swap(&mut c0, &mut c2);
+            group.mids.reverse();
             hm.dx = -hm.dx;
             hm.dy = -hm.dy;
         }
 
-        // Rotate finders so the top left corner is first in the list
-        group.iter_mut().for_each(|f| f.rotate(&c0, &hm));
+        let ver = Version::from_grid_size(group.size as usize)?;
 
-        let grid_size = measure_timing_patterns(img, group);
-        let ver = Version::from_grid_size(grid_size)?;
-
-        let hor_line = Line::new(&group[0].corners[0], &group[0].corners[1]);
-        let ver_line = Line::new(&group[2].corners[0], &group[2].corners[3]);
-        let mut align_pt = hor_line.intersection(&ver_line)?;
+        let hm = Slope::new(&c1, &c2);
+        let hor_line = Line::from_point_slope(&group.mids[1], &hm);
+        let vm = Slope::new(&c1, &c0);
+        let ver_line = Line::from_point_slope(&group.mids[4], &vm);
+        let mut align_seed = hor_line.intersection(&ver_line)?;
 
         // Exit if projected alignment pt is outside the image
-        let Point { x: ax, y: ay } = align_pt;
+        let Point { x: ax, y: ay } = align_seed;
         if ax < 0 || ax as u32 >= img.w || ay < 0 || ay as u32 > img.h {
             return None;
         }
 
-        if grid_size > 21 {
-            align_pt = locate_alignment_pattern(img, align_pt, &group[0], &group[2])?;
+        if let Version::Normal(2..=40) = ver {
+            align_seed = locate_alignment_pattern(img, &group, align_seed)?;
 
-            let tlcf = TopLeftCornerFinder::new(&align_pt, &hm);
-            let color = Color::from(*img.get_at_point(&align_pt));
-            let src = (align_pt.x as u32, align_pt.y as u32);
+            let cl = CenterLocator::new();
+            let color = Color::from(*img.get_at_point(&align_seed));
+            let src = (align_seed.x as u32, align_seed.y as u32);
             let to = Pixel::Reserved(color);
 
-            let tlcf = img.fill_and_accumulate(src, to, tlcf);
-
-            align_pt = tlcf.corner;
+            let cl = img.fill_and_accumulate(src, to, cl);
+            align_seed = cl.get_center();
         }
 
-        let h = setup_homography(img, group, &align_pt, ver)?;
+        let h = setup_homography(img, group, align_seed)?;
 
-        let w = grid_size as f64;
+        let w = group.size as f64;
         let bounds = [h.map(0.0, 0.0), h.map(w, 0.0), h.map(w, w), h.map(0.0, w)];
 
         Some(Self { h, bounds, ver })
@@ -133,84 +131,22 @@ impl Symbol {
     }
 
     #[inline]
-    pub fn unmap(&self, p: &Point) -> (f64, f64) {
-        self.h.unmap(p)
-    }
-
-    #[inline]
     pub fn save(&self, path: &Path) {
         self.img.save(path).unwrap()
     }
 }
 
-// Locates pt on the middle line of each finder's ring band
-// This pt is nearest to the center of symbol
-// Traces vert and hor lines along these middle pts to count modules
-pub fn measure_timing_patterns(img: &BinaryImage, fds: &[Finder; 3]) -> usize {
-    let p0 = fds[0].map(6.5, 0.5);
-    let p1 = fds[1].map(6.5, 6.5);
-    let p2 = fds[2].map(0.5, 6.5);
-
-    // Measuring horizontal timing pattern
-    let dx = (p2.x - p1.x).abs();
-    let dy = (p2.y - p1.y).abs();
-    let hscan =
-        if dx > dy { timing_scan::<X>(img, &p1, &p2) } else { timing_scan::<Y>(img, &p1, &p2) };
-
-    // Measuring vertical timing pattern
-    let dx = (p0.x - p1.x).abs();
-    let dy = (p0.y - p1.y).abs();
-    let vscan =
-        if dx > dy { timing_scan::<X>(img, &p1, &p0) } else { timing_scan::<Y>(img, &p1, &p0) };
-
-    let scan = max(hscan, vscan);
-
-    // Choose nearest valid grid size
-    let size = scan + 13;
-    let ver = (size as f64 - 15.0).floor() as usize / 4;
-    ver * 4 + 17
-}
-
-fn timing_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> usize
-where
-    BresenhamLine<A>: Iterator<Item = Point>,
-{
-    let mut transitions = [0, 0, 0];
-    let px = img.get_at_point(from);
-    let mut last = Color::from(*px).to_bits();
-    let line = BresenhamLine::<A>::new(from, to);
-
-    for p in line {
-        let px = img.get_at_point(&p);
-        let color = Color::from(*px).to_bits();
-        for i in 0..3 {
-            if color[i] != last[i] {
-                transitions[i] += 1;
-                last[i] = color[i];
-            }
-        }
-    }
-
-    *transitions.iter().min().unwrap()
-}
-
 fn locate_alignment_pattern(
     img: &mut BinaryImage,
+    group: &FinderGroup,
     mut seed: Point,
-    f0: &Finder,
-    f2: &Finder,
 ) -> Option<Point> {
-    // Get the 2 adjacent corners from seed of alignment pattern
-    let w = img.w;
-    let h = img.h;
-    let (x, y) = f0.unmap(&seed);
-    let a = f0.map(x, y + 1.0);
-    let (x, y) = f2.unmap(&seed);
-    let c = f2.map(x + 1.0, y);
+    let (w, h) = (img.w, img.h);
 
-    // Compute estimate size of alignment stone using area of parallelogram formula
-    let sz_est =
-        ((a.x - seed.x) * -(c.y - seed.y) + (a.y - seed.y) * (c.x - seed.x)).unsigned_abs();
+    // Calculate area of module
+    let m0 = Slope::new(&group.finders[0].center, &group.mids[0]);
+    let m1 = Slope::new(&group.finders[1].center, &group.mids[5]);
+    let mod_area = m0.cross(&m1).abs() as u32;
 
     // x & y increments w.r.t direction
     const DX: [i32; 4] = [1, 0, -1, 0];
@@ -222,7 +158,7 @@ fn locate_alignment_pattern(
 
     let invalid = Color::White;
     // WARN: 10 instead of 100 as multiplier for size estimate
-    while run_len * run_len < sz_est * 10 {
+    while run_len * run_len < mod_area * 10 {
         for _ in 0..run_len {
             let x = seed.x as u32;
             let y = seed.y as u32;
@@ -236,7 +172,7 @@ fn locate_alignment_pattern(
                 };
 
                 // Match with expected size of alignment stone
-                if sz_est / 2 <= sz && sz <= sz_est * 2 {
+                if mod_area / 2 <= sz && sz <= mod_area * 2 {
                     return Some(seed);
                 }
             }
@@ -256,14 +192,22 @@ fn locate_alignment_pattern(
 
 fn setup_homography(
     img: &BinaryImage,
-    fds: &[Finder; 3],
-    align_stone_tl: &Point,
-    ver: Version,
+    group: &FinderGroup,
+    align_center: Point,
 ) -> Option<Homography> {
-    let grid_size = ver.width();
-    let grid_size = (grid_size - 7) as f64;
-    let corners = [fds[1].corners[0], fds[2].corners[0], *align_stone_tl, fds[0].corners[0]];
-    let initial_h = Homography::create(&corners, grid_size, grid_size)?;
+    let size = group.size as f64;
+    let src = [(3.5, 3.5), (size - 3.5, 3.5), (size - 6.5, size - 6.5), (3.5, size - 3.5)];
+
+    let c0 = (group.finders[0].center.x as f64, group.finders[0].center.y as f64);
+    let c1 = (group.finders[1].center.x as f64, group.finders[1].center.y as f64);
+    let c2 = (group.finders[2].center.x as f64, group.finders[2].center.y as f64);
+    let ca = (align_center.x as f64, align_center.y as f64);
+    let dst = [c1, c2, ca, c0];
+
+    let initial_h = Homography::compute(src, dst)?;
+
+    let ver = Version::from_grid_size(group.size as usize)?;
+
     Some(jiggle_homography(img, initial_h, ver))
 }
 
@@ -446,7 +390,7 @@ mod symbol_tests {
 
         let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
+        let groups = group_finders(&img, &finders);
         let symbol = locate_symbol(img, groups).expect("No symbol found");
         for b in symbol.bounds {
             assert!(bounds.contains(&(b.x, b.y)), "Symbol not within bounds");
@@ -550,7 +494,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
+        let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
 
         let fmt_info = symbol.read_format_info().expect("Failed to read format info");
@@ -573,7 +517,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
+        let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
 
         let fmt_info = symbol.read_format_info().expect("Failed to read format info");
@@ -597,7 +541,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
+        let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
 
         let fmt_info = symbol.read_format_info().expect("Failed to read format info");
@@ -626,7 +570,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
+        let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
 
         let _ = symbol.read_format_info().expect("Failed to read format info");
@@ -643,7 +587,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
+        let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
 
         let scanned_ver = symbol.read_version_info().expect("Failed to read format info");
@@ -664,7 +608,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
+        let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
 
         let scanned_ver = symbol.read_version_info().expect("Failed to read format info");
@@ -686,7 +630,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
+        let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
 
         let scanned_ver = symbol.read_version_info().expect("Failed to read format info");
@@ -713,7 +657,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
+        let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
 
         let _ = symbol.read_version_info().expect("Failed to read format info");

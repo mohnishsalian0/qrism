@@ -3,6 +3,8 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+use nalgebra::{DMatrix, Matrix3, Vector3};
+
 // Point
 //------------------------------------------------------------------------------
 
@@ -10,6 +12,14 @@ use std::{
 pub struct Point {
     pub x: i32,
     pub y: i32,
+}
+
+impl Point {
+    pub fn squared_distance(&self, other: &Point) -> u32 {
+        let dx = other.x - self.x;
+        let dy = other.y - self.y;
+        (dx * dx + dy * dy) as _
+    }
 }
 
 #[cfg(test)]
@@ -42,11 +52,23 @@ pub struct Slope {
     pub dy: i32,
 }
 
+impl Slope {
+    pub fn new(start: &Point, end: &Point) -> Self {
+        let dx = end.x - start.x;
+        let dy = end.y - start.y;
+        Self { dx, dy }
+    }
+
+    pub fn cross(&self, other: &Self) -> i32 {
+        self.dx * other.dy - self.dy * other.dx
+    }
+}
+
 // Homographic projection matrix to map logical qr onto image qr
 //------------------------------------------------------------------------------
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Homography(pub [f64; 8]);
+pub struct Homography(pub Matrix3<f64>);
 
 impl Index<usize> for Homography {
     type Output = f64;
@@ -65,53 +87,39 @@ impl IndexMut<usize> for Homography {
 }
 
 impl Homography {
-    pub fn create(rect: &[Point; 4], w: f64, h: f64) -> Option<Self> {
-        let mut c = [0.0; 8];
-        let x0 = rect[0].x as f64;
-        let y0 = rect[0].y as f64;
-        let x1 = rect[1].x as f64;
-        let y1 = rect[1].y as f64;
-        let x2 = rect[2].x as f64;
-        let y2 = rect[2].y as f64;
-        let x3 = rect[3].x as f64;
-        let y3 = rect[3].y as f64;
-        let wden = w * (x2 * y3 - x3 * y2 + (x3 - x2) * y1 + x1 * (y2 - y3));
-        let hden = h * (x2 * y3 + x1 * (y2 - y3) - x3 * y2 + (x3 - x2) * y1);
+    pub fn compute(src: [(f64, f64); 4], dst: [(f64, f64); 4]) -> Option<Self> {
+        let mut a_data = Vec::with_capacity(8 * 9);
 
-        if wden < f64::EPSILON || hden < f64::EPSILON {
-            return None;
+        for i in 0..4 {
+            let (x, y) = src[i];
+            let (xp, yp) = dst[i];
+
+            #[rustfmt::skip]
+            a_data.extend_from_slice(&[
+                -x, -y, -1.0, 0.0, 0.0, 0.0, x * xp, y * xp, xp,
+                0.0, 0.0, 0.0, -x, -y, -1.0, x * yp, y * yp, yp,
+            ]);
         }
 
-        c[0] = (x1 * (x2 * y3 - x3 * y2)
-            + x0 * (-x2 * y3 + x3 * y2 + (x2 - x3) * y1)
-            + x1 * (x3 - x2) * y0)
-            / wden;
-        c[1] = -(x0 * (x2 * y3 + x1 * (y2 - y3) - x2 * y1) - x1 * x3 * y2
-            + x2 * x3 * y1
-            + (x1 * x3 - x2 * x3) * y0)
-            / hden;
-        c[2] = x0;
-        c[3] = (y0 * (x1 * (y3 - y2) - x2 * y3 + x3 * y2)
-            + y1 * (x2 * y3 - x3 * y2)
-            + x0 * y1 * (y2 - y3))
-            / wden;
-        c[4] = (x0 * (y1 * y3 - y2 * y3) + x1 * y2 * y3 - x2 * y1 * y3
-            + y0 * (x3 * y2 - x1 * y2 + (x2 - x3) * y1))
-            / hden;
-        c[5] = y0;
-        c[6] = (x1 * (y3 - y2) + x0 * (y2 - y3) + (x2 - x3) * y1 + (x3 - x2) * y0) / wden;
-        c[7] = (-x2 * y3 + x1 * y3 + x3 * y2 + x0 * (y1 - y2) - x3 * y1 + (x2 - x1) * y0) / hden;
+        let a_matrix = DMatrix::from_row_slice(8, 9, &a_data);
 
-        Some(Homography(c))
+        // Solve using Singular Value Decomposition to get the last column of V
+        // corresponding to smallest singular value
+        let svd = a_matrix.svd(true, true);
+        let v = svd.v_t?;
+        let h = v.row(8);
+
+        Some(Self(Matrix3::from_iterator(h.iter().cloned())))
     }
 
     pub fn map(&self, x: f64, y: f64) -> Point {
-        let den = self[6] * x + self[7] * y + 1.0f64;
-        let resx = (self[0] * x + self[1] * y + self[2]) / den;
-        let resy = (self[3] * x + self[4] * y + self[5]) / den;
+        let p = Vector3::new(x, y, 1.0);
+        let hp = self.0 * p;
 
-        let resx = resx.round();
-        let resy = resy.round();
+        debug_assert!(hp.z.abs() <= 1e-10, "Homography denominator is too small");
+
+        let resx = (hp.x / hp.z).round();
+        let resy = (hp.y / hp.z).round();
 
         assert!(resx <= i32::MAX as f64);
         assert!(resx >= i32::MIN as f64);
@@ -119,24 +127,6 @@ impl Homography {
         assert!(resy >= i32::MIN as f64);
 
         Point { x: resx as i32, y: resy as i32 }
-    }
-
-    pub fn unmap(&self, p: &Point) -> (f64, f64) {
-        let (x, y) = (p.x as f64, p.y as f64);
-        let den = (-self[0] * self[7] + self[1] * self[6]) * y
-            + (self[3] * self[7] - self[4] * self[6]) * x
-            + self[0] * self[4]
-            - self[1] * self[3];
-        let resx = -(self[1] * (y - self[5]) - self[2] * self[7] * y
-            + (self[5] * self[7] - self[4]) * x
-            + self[2] * self[4])
-            / den;
-        let resy = (self[0] * (y - self[5]) - self[2] * self[6] * y
-            + (self[5] * self[6] - self[3]) * x
-            + self[2] * self[3])
-            / den;
-
-        (resx, resy)
     }
 }
 
@@ -232,19 +222,24 @@ impl Iterator for BresenhamLine<Y> {
 
 #[derive(Debug, Clone)]
 pub struct Line {
-    s: Point, // Start point
-    e: Point, // End point
     a: i32,
     b: i32,
     c: i32,
 }
 
 impl Line {
-    pub fn new(s: &Point, e: &Point) -> Self {
+    pub fn from_points(s: &Point, e: &Point) -> Self {
         let a = -(e.y - s.y);
         let b = e.x - s.x;
         let c = s.x * e.y - s.y * e.x;
-        Self { s: *s, e: *e, a, b, c }
+        Self { a, b, c }
+    }
+
+    pub fn from_point_slope(p: &Point, m: &Slope) -> Self {
+        let a = m.dy;
+        let b = -m.dx;
+        let c = -(a * p.x + b * p.y);
+        Self { a, b, c }
     }
 
     pub fn intersection(&self, other: &Line) -> Option<Point> {
@@ -265,19 +260,37 @@ mod line_highlight {
 
     use crate::reader::utils::Highlight;
 
-    use super::{BresenhamLine, Line, X, Y};
+    use super::{BresenhamLine, Line, Point, X, Y};
 
     impl Highlight for Line {
         fn highlight(&self, img: &mut RgbImage) {
-            let dx = (self.e.x - self.s.x).abs();
-            let dy = (self.e.y - self.s.y).abs();
+            let dx = -self.b;
+            let dy = self.a;
+            let (w, h) = img.dimensions();
+            let mut isecs = Vec::new();
+            let corners = [(0, 0), (0, h), (w, h), (w, 0)];
+            for (x1, y1) in corners.iter() {
+                let p1 = Point { x: *x1 as i32, y: *y1 as i32 };
+                for (x2, y2) in corners.iter() {
+                    let p2 = Point { x: *x2 as i32, y: *y2 as i32 };
+                    if p1 != p2 {
+                        let line = Line::from_points(&p1, &p2);
+                        if let Some(pt) = self.intersection(&line) {
+                            isecs.push(pt);
+                            if isecs.len() == 2 {
+                                break;
+                            }
+                        };
+                    }
+                }
+            }
             if dx > dy {
-                let line = BresenhamLine::<X>::new(&self.s, &self.e);
+                let line = BresenhamLine::<X>::new(&isecs[0], &isecs[1]);
                 for pt in line {
                     pt.highlight(img);
                 }
             } else {
-                let line = BresenhamLine::<Y>::new(&self.s, &self.e);
+                let line = BresenhamLine::<Y>::new(&isecs[0], &isecs[1]);
                 for pt in line {
                     pt.highlight(img);
                 }
@@ -292,8 +305,8 @@ mod line_tests {
 
     #[test]
     fn test_line_intersection() {
-        let l1 = Line::new(&Point { x: 0, y: 0 }, &Point { x: 4, y: 4 });
-        let l2 = Line::new(&Point { x: 0, y: 4 }, &Point { x: 4, y: 0 });
+        let l1 = Line::from_points(&Point { x: 0, y: 0 }, &Point { x: 4, y: 4 });
+        let l2 = Line::from_points(&Point { x: 0, y: 4 }, &Point { x: 4, y: 0 });
 
         let inter = l1.intersection(&l2).unwrap();
         assert_eq!(inter.x, 2);
@@ -302,8 +315,8 @@ mod line_tests {
 
     #[test]
     fn test_parallel_lines() {
-        let l1 = Line::new(&Point { x: 0, y: 0 }, &Point { x: 4, y: 4 });
-        let l2 = Line::new(&Point { x: 0, y: 1 }, &Point { x: 4, y: 5 });
+        let l1 = Line::from_points(&Point { x: 0, y: 0 }, &Point { x: 4, y: 4 });
+        let l2 = Line::from_points(&Point { x: 0, y: 1 }, &Point { x: 4, y: 5 });
 
         assert!(l1.intersection(&l2).is_none());
     }

@@ -29,7 +29,7 @@ impl QRReader {
         let finders = locate_finders(&mut img);
 
         println!("Grouping finders...");
-        let groups = group_finders(&finders);
+        let groups = group_finders(&img, &finders);
 
         println!("Locating symbol...");
         let mut symbol = locate_symbol(img, groups).ok_or(QRError::SymbolNotFound)?;
@@ -81,7 +81,7 @@ impl QRReader {
 fn locate_symbol(mut img: BinaryImage, groups: Vec<FinderGroup>) -> Option<Symbol> {
     let mut sym_loc = None;
     for mut g in groups {
-        if let Some(sl) = SymbolLocation::locate(&mut img, &mut g.finders) {
+        if let Some(sl) = SymbolLocation::locate(&mut img, &mut g) {
             sym_loc = Some(sl);
             break;
         }
@@ -187,23 +187,23 @@ mod reader_tests {
         println!("Msg: {msg:?}");
     }
 
-    #[test]
-    fn reader_debugger() {
-        let path = std::path::Path::new("assets/test1.png");
-        let img = image::open(path).unwrap().to_rgb8();
-        let mut img = BinaryImage::prepare(img);
-        let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
-        // let symbol = locate_symbol(img, groups).unwrap();
-
-        let mut img = image::open(path).unwrap().to_rgb8();
-        for f in groups[0].finders.iter() {
-            println!("Finder {} center {:?}", f.id, f.center);
-            f.highlight(&mut img);
-        }
-        // symbol.highlight(&mut img);
-
-        let out = std::path::Path::new("assets/read.png");
-        img.save(out).unwrap();
-    }
+    // #[test]
+    // fn reader_debugger() {
+    //     let path = std::path::Path::new("assets/test1.png");
+    //     let img = image::open(path).unwrap().to_rgb8();
+    //     let mut img = BinaryImage::prepare(img);
+    //     let finders = locate_finders(&mut img);
+    //     let groups = group_finders(&img, &finders);
+    //     // let symbol = locate_symbol(img, groups).unwrap();
+    //
+    //     let mut img = image::open(path).unwrap().to_rgb8();
+    //     for f in groups[0].finders.iter() {
+    //         println!("Finder {} center {:?}", f.id, f.center);
+    //         // f.highlight(&mut img);
+    //     }
+    //     // symbol.highlight(&mut img);
+    //
+    //     let out = std::path::Path::new("assets/read.png");
+    //     img.save(out).unwrap();
+    // }
 }
