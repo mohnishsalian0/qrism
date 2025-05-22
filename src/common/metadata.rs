@@ -358,7 +358,6 @@ impl TryFrom<u8> for Color {
     }
 }
 
-// TODO: Figure out how to handle hue
 impl Not for Color {
     type Output = Self;
     fn not(self) -> Self::Output {
@@ -411,7 +410,6 @@ impl TryFrom<Rgb<u8>> for Color {
     }
 }
 
-// TODO: Figure out how to handle hue
 impl Color {
     pub fn to_bits(self) -> [bool; 3] {
         let byte = self as u8;

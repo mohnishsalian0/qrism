@@ -299,6 +299,53 @@ pub struct FinderGroup {
     pub score: f64,           // Timing pattern score + Estimate mod count score
 }
 
+impl FinderGroup {
+    #[cfg(test)]
+    pub fn highlight(&self, img: &mut RgbImage) {
+        for f in self.finders.iter() {
+            f.highlight(img);
+        }
+        for m in self.mids.iter() {
+            m.highlight(img);
+        }
+    }
+}
+
+// Below diagram shows the location of all centers and edge mid points
+// referenced in the group finder function
+// ****************************              ****************************
+// ****************************              ****************************
+// ****************************              ****************************
+// ****                   *****              *****                   ****
+// ****                   *****              *****                   ****
+// ****                   *****              *****                   ****
+// ****    ************   *****              *****   ************    ****
+// ****    *****c1*****   *m12*              *m21*   *****c2*****    ****
+// ****    ************   *****              *****   ************    ****
+// ****                   *****              *****                   ****
+// ****                   *****              *****                   ****
+// ****                   *****              *****                   ****
+// ****************************              ****************************
+// ************m13*************              ************m24*************
+// ****************************              ****************************
+//
+//
+//
+// ****************************
+// ************m31*************
+// ****************************
+// ****                   *****
+// ****                   *****
+// ****                   *****
+// ****    ************   *****
+// ****    *****c3*****   *m34*                           c4
+// ****    ************   *****
+// ****                   *****
+// ****                   *****
+// ****                   *****
+// ****************************
+// ****************************
+// ****************************
 pub fn group_finders(img: &BinaryImage, finders: &[Finder]) -> Vec<FinderGroup> {
     let mut groups: Vec<FinderGroup> = Vec::new();
     let len = finders.len();
@@ -341,11 +388,11 @@ pub fn group_finders(img: &BinaryImage, finders: &[Finder]) -> Vec<FinderGroup> 
                     None => continue,
                 };
 
-                // Continue if intersection pt is outside the image
-                // let Point { x: x4, y: y4 } = c4;
-                // if x4 < 0 || x4 as u32 >= img.w || y4 < 0 || y4 as u32 > img.h {
-                //     continue;
-                // }
+                // Skip if intersection pt is outside the image
+                let Point { x: x4, y: y4 } = c4;
+                if x4 < 0 || x4 as u32 >= img.w || y4 < 0 || y4 as u32 > img.h {
+                    continue;
+                }
 
                 let m24 = match find_edge_mid(img, &f2.center, &c4) {
                     Some(pt) => pt,
@@ -425,7 +472,6 @@ where
     None
 }
 
-// TODO: Perhaps also crosscheck if the run length of each mod matches mod size
 pub fn measure_timing_patterns(img: &BinaryImage, from: &Point, to: &Point) -> u32 {
     let dx = (to.x - from.x).abs();
     let dy = (to.y - from.y).abs();

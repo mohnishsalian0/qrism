@@ -10,10 +10,10 @@ use super::utils::{
     geometry::Point,
 };
 
-// #[cfg(test)]
+#[cfg(test)]
 use std::path::Path;
 
-// #[cfg(test)]
+#[cfg(test)]
 use image::ImageResult;
 
 // Pixel
@@ -22,17 +22,15 @@ use image::ImageResult;
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Pixel {
     Visited(u8, Color), // Contains id of associated region
-    Unvisited(Color),
-    Temporary(Color), // Temporary tag before converting to candidate
-    Candidate(Color), // Candidate for finder
-    Reserved(Color),  // Reserved pixels for functional patterns and infos
+    Unvisited(Color),   // Default tag
+    Candidate(Color),   // Candidate for finder
+    Reserved(Color),    // Reserved pixels for functional patterns and infos
 }
 impl From<Pixel> for Color {
     fn from(p: Pixel) -> Self {
         match p {
             Pixel::Visited(_, c) => c,
             Pixel::Unvisited(c) => c,
-            Pixel::Temporary(c) => c,
             Pixel::Candidate(c) => c,
             Pixel::Reserved(c) => c,
         }
@@ -51,7 +49,6 @@ impl From<Pixel> for Rgb<u8> {
         match p {
             Pixel::Visited(_, c)
             | Pixel::Unvisited(c)
-            | Pixel::Temporary(c)
             | Pixel::Reserved(c)
             | Pixel::Candidate(c) => c.into(),
         }
@@ -192,7 +189,7 @@ impl BinaryImage {
         *self.get_mut_at_point(pt) = px;
     }
 
-    // #[cfg(test)]
+    #[cfg(test)]
     pub fn save(&self, path: &Path) -> ImageResult<()> {
         let w = self.w;
         let mut img = RgbImage::new(w, self.h);

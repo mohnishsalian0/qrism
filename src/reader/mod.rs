@@ -19,7 +19,6 @@ use symbol::{Symbol, SymbolLocation};
 pub struct QRReader();
 
 impl QRReader {
-    // TODO: Rename to read
     pub fn read(img: RgbImage) -> QRResult<String> {
         debug_println!("Reading QR...");
 
@@ -172,9 +171,6 @@ mod reader_tests {
             .unwrap();
         let img = qr.to_image(3);
 
-        let path = std::path::Path::new("assets/inp.png");
-        img.save(path).unwrap();
-
         let extracted_data = QRReader::read(img).expect("Couldn't read data");
 
         assert_eq!(extracted_data, data, "Incorrect data read from qr image");
@@ -203,6 +199,16 @@ mod reader_tests {
     }
 
     #[test]
+    fn test_reader_2() {
+        let path = std::path::Path::new("assets/test0.png");
+        let img = image::open(path).unwrap().to_rgb8();
+
+        let extracted_data = QRReader::read(img).expect("Couldn't read data");
+
+        dbg!(extracted_data);
+    }
+
+    #[test]
     fn reader_debugger() {
         #[allow(unused_imports)]
         use super::{binarize::BinaryImage, finder::locate_finders, locate_symbol, QRReader};
@@ -212,15 +218,19 @@ mod reader_tests {
         let path = std::path::Path::new("assets/inp.png");
         let img = image::open(path).unwrap().to_rgb8();
         let mut img = BinaryImage::prepare(img);
+
+        // let path = std::path::Path::new("assets/inp.png");
+        // img.save(path).unwrap();
+
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let symbol = locate_symbol(img, groups).unwrap();
 
         let mut img = image::open(path).unwrap().to_rgb8();
-        // for f in groups[0].finders.iter() {
         // for f in finders.iter() {
         //     f.center.highlight(&mut img);
         // }
+        // groups[0].highlight(&mut img);
         symbol.highlight(&mut img);
 
         let out = std::path::Path::new("assets/out.png");

@@ -8,4 +8,3 @@ pub use bit_types::*;
 pub use cast::*;
 pub use error::*;
 pub use iter::*;
-pub use macros::*;

@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use super::{
     binarize::{BinaryImage, Pixel, Region},
     finder::FinderGroup,
@@ -23,13 +21,16 @@ use crate::{
 #[cfg(test)]
 use image::RgbImage;
 
+#[cfg(test)]
+use std::path::Path;
+
 // Locates symbol based on 3 finder centers, their edge points & provisional grid size
 //------------------------------------------------------------------------------
 
 #[derive(Debug)]
 pub struct SymbolLocation {
     h: Homography,
-    bounds: [Point; 4],
+    anchors: [Point; 4],
     ver: Version,
 }
 
@@ -79,14 +80,9 @@ impl SymbolLocation {
 
         let h = setup_homography(img, group, align_seed, ver)?;
 
-        let w = group.size as f64;
-        let tl = h.map(0.0, 0.0).ok()?;
-        let tr = h.map(w, 0.0).ok()?;
-        let br = h.map(w, w).ok()?;
-        let bl = h.map(0.0, w).ok()?;
-        let bounds = [tl, tr, br, bl];
+        let anchors = [c1, c2, align_seed, c0];
 
-        Some(Self { h, bounds, ver })
+        Some(Self { h, anchors, ver })
     }
 }
 
@@ -97,14 +93,14 @@ impl SymbolLocation {
 pub struct Symbol {
     img: BinaryImage,
     h: Homography,
-    bounds: [Point; 4],
+    anchors: [Point; 4],
     pub ver: Version,
 }
 
 impl Symbol {
     pub fn new(img: BinaryImage, sym_loc: SymbolLocation) -> Self {
-        let SymbolLocation { h, bounds, ver } = sym_loc;
-        Self { img, h, bounds, ver }
+        let SymbolLocation { h, anchors, ver } = sym_loc;
+        Self { img, h, anchors, ver }
     }
 
     pub fn get(&self, x: i32, y: i32) -> &Pixel {
@@ -138,6 +134,7 @@ impl Symbol {
         self.h.map(x, y)
     }
 
+    #[cfg(test)]
     #[inline]
     pub fn save(&self, path: &Path) {
         self.img.save(path).unwrap()
@@ -147,8 +144,19 @@ impl Symbol {
     pub fn highlight(&self, img: &mut RgbImage) {
         use super::utils::geometry::{BresenhamLine, X, Y};
 
-        for (i, crn) in self.bounds.iter().enumerate() {
-            let next = self.bounds[(i + 1) % 4];
+        for p in self.anchors.iter() {
+            p.highlight(img);
+        }
+
+        let w = self.ver.width() as f64;
+        let tl = self.h.map(0.0, 0.0).ok().unwrap();
+        let tr = self.h.map(w, 0.0).ok().unwrap();
+        let br = self.h.map(w, w).ok().unwrap();
+        let bl = self.h.map(0.0, w).ok().unwrap();
+        let bounds = [tl, tr, br, bl];
+
+        for (i, crn) in bounds.iter().enumerate() {
+            let next = bounds[(i + 1) % 4];
             let dx = (next.x - crn.x).abs();
             let dy = (next.y - crn.y).abs();
             if dx > dy {
@@ -187,7 +195,6 @@ fn locate_alignment_pattern(
     let mut run_len = 1;
 
     let invalid = Color::White;
-    // WARN: 10 instead of 100 as multiplier for size estimate
     while run_len * run_len < mod_area * 10 {
         for _ in 0..run_len {
             let x = seed.x as u32;
@@ -201,8 +208,8 @@ fn locate_alignment_pattern(
                     _ => continue,
                 };
 
-                // Match with expected size of alignment stone
-                if mod_area / 2 <= sz && sz <= mod_area * 2 {
+                // Check if region area is less than twice mod area
+                if sz <= mod_area * 2 {
                     return Some(seed);
                 }
             }
@@ -243,6 +250,7 @@ fn setup_homography(
 }
 
 // Adjust the homography slightly to refine viewport of qr
+// TODO: Add minimum threshold to reject invalid qr and consider next group of finders
 fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Homography {
     let mut best = symbol_fitness(img, &h, ver);
 
@@ -269,6 +277,10 @@ fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Homo
         adjustments = adjustments.map(|x| x * 0.5);
     }
     h
+}
+
+fn max_fitness_score(ver: Version) -> i32 {
+    todo!()
 }
 
 fn symbol_fitness(img: &BinaryImage, h: &Homography, ver: Version) -> i32 {
@@ -383,14 +395,14 @@ mod symbol_tests {
             .unwrap();
 
         let img = qr.to_image(10);
-        let bounds = [(40, 40), (370, 40), (370, 370), (40, 370)];
+        let exp_anchors = [(75, 75), (335, 75), (305, 305), (75, 335)];
 
         let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let symbol = locate_symbol(img, groups).expect("No symbol found");
-        for b in symbol.bounds {
-            assert!(bounds.contains(&(b.x, b.y)), "Symbol not within bounds");
+        for b in symbol.anchors {
+            assert!(exp_anchors.contains(&(b.x, b.y)), "Symbol not within bounds");
         }
     }
 }
