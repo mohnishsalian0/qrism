@@ -8,6 +8,9 @@ use super::{
     },
 };
 
+#[cfg(test)]
+use image::RgbImage;
+
 // Finder line
 //------------------------------------------------------------------------------
 
@@ -30,6 +33,13 @@ struct DatumLine {
 pub struct Finder {
     pub id: usize,
     pub center: Point,
+}
+
+impl Finder {
+    #[cfg(test)]
+    fn highlight(&self, img: &mut RgbImage) {
+        self.center.highlight(img);
+    }
 }
 
 // Line scanner to detect finder line
@@ -57,24 +67,24 @@ impl LineScanner {
         self.y = y;
     }
 
-    pub fn advance(&mut self, color: Option<Color>) -> Option<DatumLine> {
+    pub fn advance(&mut self, color: Color) -> Option<DatumLine> {
         self.pos += 1;
 
-        if self.prev == color {
+        if self.prev.is_some() && self.prev == Some(color) {
             self.buffer[5] += 1;
             return None;
         }
 
         self.buffer.rotate_left(1);
         self.buffer[5] = 1;
-        self.prev = color;
+        self.prev = Some(color);
         self.flips += 1;
 
         if self.is_finder_line() {
             Some(DatumLine {
-                left: self.pos - self.buffer[..5].iter().sum::<u32>(),
-                stone: self.pos - self.buffer[2..5].iter().sum::<u32>(),
-                right: self.pos - self.buffer[4],
+                left: self.pos - 1 - self.buffer[..5].iter().sum::<u32>(),
+                stone: self.pos - 1 - self.buffer[2..5].iter().sum::<u32>(),
+                right: self.pos - 1 - self.buffer[4],
                 y: self.y,
             })
         } else {
@@ -116,7 +126,7 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
     for y in 0..h {
         for x in 0..w {
             let color = Color::from(img.get(x, y));
-            let datum = match scanner.advance(Some(color)) {
+            let datum = match scanner.advance(color) {
                 Some(d) => d,
                 None => continue,
             };
@@ -149,15 +159,14 @@ fn crosscheck_vertical(img: &BinaryImage, datum: &DatumLine) -> bool {
     let mut initial = Color::from(img.get(cx, cy));
     while pos > 0 && run_len[reg_idx] <= max_run {
         let color = Color::from(img.get(cx, pos));
-        if initial == color {
-            run_len[reg_idx] += 1;
-        } else {
+        if initial != color {
             initial = color;
             if reg_idx == 0 {
                 break;
             }
             reg_idx -= 1;
         }
+        run_len[reg_idx] += 1;
         pos -= 1;
     }
 
@@ -167,16 +176,15 @@ fn crosscheck_vertical(img: &BinaryImage, datum: &DatumLine) -> bool {
     let mut initial = Color::from(img.get(cx, cy));
     while pos < h && run_len[flips] <= max_run {
         let color = Color::from(img.get(cx, pos));
-        if initial == color {
-            run_len[flips] += 1;
-        } else {
+        if initial != color {
             initial = color;
             if flips == 4 {
                 break;
             }
             flips += 1;
         }
-        pos -= 1;
+        run_len[flips] += 1;
+        pos += 1;
     }
 
     // Verify 1:1:3:1:1 ratio
@@ -274,7 +282,6 @@ mod finder_tests {
         let centers = [[75, 75], [335, 75], [75, 335]];
         let mut img = BinaryImage::prepare(img);
         let finders = locate_finders(&mut img);
-        println!("Finders length: {}", finders.len());
         for (i, f) in finders.iter().enumerate() {
             let cent_pt = Point { x: centers[i][0], y: centers[i][1] };
             assert_eq!(f.center, cent_pt, "Finder center doesn't match");
@@ -313,7 +320,7 @@ pub fn group_finders(img: &BinaryImage, finders: &[Finder]) -> Vec<FinderGroup> 
             let s2 = Slope::new(&f1.center, &f2.center);
 
             for (i3, f3) in finders.iter().enumerate() {
-                if i3 == i2 || i3 == i1 {
+                if i3 <= i2 || i3 == i1 {
                     continue;
                 }
 
@@ -333,6 +340,12 @@ pub fn group_finders(img: &BinaryImage, finders: &[Finder]) -> Vec<FinderGroup> 
                     Some(pt) => pt,
                     None => continue,
                 };
+
+                // Continue if intersection pt is outside the image
+                // let Point { x: x4, y: y4 } = c4;
+                // if x4 < 0 || x4 as u32 >= img.w || y4 < 0 || y4 as u32 > img.h {
+                //     continue;
+                // }
 
                 let m24 = match find_edge_mid(img, &f2.center, &c4) {
                     Some(pt) => pt,
@@ -399,7 +412,7 @@ where
         let color = Color::from(*px);
         if color == last {
             run_len[flips] += 1;
-            if flips == 2 && run_len[flips] == run_len[flips - 1] / 2 {
+            if flips == 2 && run_len[flips] == (run_len[flips - 1] + 1) / 2 {
                 return Some(p);
             }
         } else {
@@ -412,6 +425,7 @@ where
     None
 }
 
+// TODO: Perhaps also crosscheck if the run length of each mod matches mod size
 pub fn measure_timing_patterns(img: &BinaryImage, from: &Point, to: &Point) -> u32 {
     let dx = (to.x - from.x).abs();
     let dy = (to.y - from.y).abs();

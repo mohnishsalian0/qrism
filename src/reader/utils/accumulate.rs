@@ -1,3 +1,5 @@
+use crate::utils::f64_to_i32;
+
 use super::geometry::{Point, Slope};
 
 // Accumulator trait for flood fill
@@ -187,12 +189,10 @@ impl CenterLocator {
         let x = x.round();
         let y = y.round();
 
-        assert!(x <= i32::MAX as f64);
-        assert!(x >= i32::MIN as f64);
-        assert!(y <= i32::MAX as f64);
-        assert!(y >= i32::MIN as f64);
+        let x = f64_to_i32(&x);
+        let y = f64_to_i32(&y);
 
-        Point { x: x as i32, y: y as i32 }
+        Point { x, y }
     }
 }
 

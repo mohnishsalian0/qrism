@@ -8,6 +8,7 @@ use image::RgbImage;
 
 use crate::{
     codec::decode,
+    debug_println,
     ec::Block,
     metadata::{Metadata, Version},
     utils::{BitStream, QRError, QRResult},
@@ -20,39 +21,36 @@ pub struct QRReader();
 impl QRReader {
     // TODO: Rename to read
     pub fn read(img: RgbImage) -> QRResult<String> {
-        println!("Reading QR...");
+        debug_println!("Reading QR...");
 
-        println!("Preparing image...");
+        debug_println!("Preparing image...");
         let mut img = BinaryImage::prepare(img);
 
-        println!("Locating finders...");
+        debug_println!("Locating finders...");
         let finders = locate_finders(&mut img);
 
-        println!("Grouping finders...");
+        debug_println!("Grouping finders...");
         let groups = group_finders(&img, &finders);
 
-        println!("Locating symbol...");
+        debug_println!("Locating symbol...");
         let mut symbol = locate_symbol(img, groups).ok_or(QRError::SymbolNotFound)?;
 
-        println!("Reading format info...");
+        debug_println!("Reading format info...");
         let (ecl, mask) = symbol.read_format_info()?;
 
-        println!("Reading version info...");
+        debug_println!("Reading version info...");
         if matches!(symbol.ver, Version::Normal(7..=40)) {
             symbol.ver = symbol.read_version_info()?;
         }
         let ver = symbol.ver;
 
-        println!("Reading palette info...");
+        debug_println!("Reading palette info...");
         let pal = symbol.read_palette_info();
 
-        // FIXME:
-        println!("\n{}\n", Metadata::new(Some(ver), Some(ecl), Some(mask)));
-
-        println!("Marking all function patterns...");
+        debug_println!("Marking all function patterns...");
         symbol.mark_all_function_patterns();
 
-        println!("Extracting payload...");
+        debug_println!("Extracting payload...");
         let pld = symbol.extract_payload(&mask);
 
         let blk_info = ver.data_codewords_per_block(ecl);
@@ -62,17 +60,17 @@ impl QRReader {
         let mut enc = BitStream::new(pld.len() << 3);
         let chan_cap = ver.channel_codewords();
 
-        println!("Separating channels, deinterleaving & rectifying payload...");
+        debug_println!("Separating channels, deinterleaving & rectifying payload...");
         pld.data().chunks_exact(chan_cap).for_each(|c| {
             let mut blocks = deinterleave(c, blk_info, ec_len);
             let _ = blocks.iter_mut().filter_map(Option::as_mut).map(Block::rectify);
             blocks.iter().filter_map(Option::as_ref).for_each(|b| enc.extend(b.data()));
         });
 
-        println!("Decoding data blocks...");
+        debug_println!("Decoding data blocks...");
         let msg = decode(&mut enc, ver, ecl, pal);
 
-        println!("\n{}\n", Metadata::new(Some(ver), Some(ecl), Some(mask)));
+        debug_println!("\n{}\n", Metadata::new(Some(ver), Some(ecl), Some(mask)));
 
         String::from_utf8(msg).or(Err(QRError::InvalidUTF8Sequence))
     }
@@ -129,12 +127,12 @@ fn deinterleave(
 #[cfg(test)]
 mod reader_tests {
 
-    use super::{binarize::BinaryImage, finder::locate_finders, locate_symbol, QRReader};
+    use super::QRReader;
 
     use crate::{
         builder::QRBuilder,
         metadata::{ECLevel, Palette, Version},
-        reader::{deinterleave, finder::group_finders, utils::Highlight},
+        reader::deinterleave,
         utils::BitStream,
         MaskPattern,
     };
@@ -159,11 +157,11 @@ mod reader_tests {
 
     #[test]
     fn test_reader_0() {
-        let data = "Hello, world!🌎";
-        let ver = Version::Normal(2);
+        let data = "Hello, world!";
+        let ver = Version::Normal(1);
         let ecl = ECLevel::L;
         let mask = MaskPattern::new(1);
-        let pal = Palette::Poly;
+        let pal = Palette::Mono;
 
         let qr = QRBuilder::new(data.as_bytes())
             .version(ver)
@@ -172,7 +170,10 @@ mod reader_tests {
             .mask(mask)
             .build()
             .unwrap();
-        let img = qr.to_image(10);
+        let img = qr.to_image(3);
+
+        let path = std::path::Path::new("assets/inp.png");
+        img.save(path).unwrap();
 
         let extracted_data = QRReader::read(img).expect("Couldn't read data");
 
@@ -181,29 +182,48 @@ mod reader_tests {
 
     #[test]
     fn test_reader_1() {
-        let path = std::path::Path::new("assets/test1.png");
-        let img = image::open(path).unwrap().to_rgb8();
-        let msg = QRReader::read(img).unwrap();
-        println!("Msg: {msg:?}");
+        let data = "Hello, world!🌎";
+        let ver = Version::Normal(2);
+        let ecl = ECLevel::L;
+        let mask = MaskPattern::new(1);
+        let pal = Palette::Mono;
+
+        let qr = QRBuilder::new(data.as_bytes())
+            .version(ver)
+            .ec_level(ecl)
+            .palette(pal)
+            .mask(mask)
+            .build()
+            .unwrap();
+        let img = qr.to_image(4);
+
+        let extracted_data = QRReader::read(img).expect("Couldn't read data");
+
+        assert_eq!(extracted_data, data, "Incorrect data read from qr image");
     }
 
-    // #[test]
-    // fn reader_debugger() {
-    //     let path = std::path::Path::new("assets/test1.png");
-    //     let img = image::open(path).unwrap().to_rgb8();
-    //     let mut img = BinaryImage::prepare(img);
-    //     let finders = locate_finders(&mut img);
-    //     let groups = group_finders(&img, &finders);
-    //     // let symbol = locate_symbol(img, groups).unwrap();
-    //
-    //     let mut img = image::open(path).unwrap().to_rgb8();
-    //     for f in groups[0].finders.iter() {
-    //         println!("Finder {} center {:?}", f.id, f.center);
-    //         // f.highlight(&mut img);
-    //     }
-    //     // symbol.highlight(&mut img);
-    //
-    //     let out = std::path::Path::new("assets/read.png");
-    //     img.save(out).unwrap();
-    // }
+    #[test]
+    fn reader_debugger() {
+        #[allow(unused_imports)]
+        use super::{binarize::BinaryImage, finder::locate_finders, locate_symbol, QRReader};
+        #[allow(unused_imports)]
+        use crate::reader::finder::group_finders;
+
+        let path = std::path::Path::new("assets/inp.png");
+        let img = image::open(path).unwrap().to_rgb8();
+        let mut img = BinaryImage::prepare(img);
+        let finders = locate_finders(&mut img);
+        let groups = group_finders(&img, &finders);
+        let symbol = locate_symbol(img, groups).unwrap();
+
+        let mut img = image::open(path).unwrap().to_rgb8();
+        // for f in groups[0].finders.iter() {
+        // for f in finders.iter() {
+        //     f.center.highlight(&mut img);
+        // }
+        symbol.highlight(&mut img);
+
+        let out = std::path::Path::new("assets/out.png");
+        img.save(out).unwrap();
+    }
 }

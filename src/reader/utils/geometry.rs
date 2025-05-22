@@ -1,9 +1,7 @@
-use std::{
-    marker::PhantomData,
-    ops::{Index, IndexMut},
-};
+use std::marker::PhantomData;
 
-use nalgebra::{DMatrix, Matrix3, Vector3};
+#[cfg(test)]
+use image::{Rgb, RgbImage};
 
 // Point
 //------------------------------------------------------------------------------
@@ -20,24 +18,14 @@ impl Point {
         let dy = other.y - self.y;
         (dx * dx + dy * dy) as _
     }
-}
 
-#[cfg(test)]
-mod point_highlight {
-    use image::{Rgb, RgbImage};
-
-    use crate::reader::utils::Highlight;
-
-    use super::Point;
-
-    impl Highlight for Point {
-        fn highlight(&self, img: &mut RgbImage) {
-            for i in [-1, 0, 1] {
-                for j in [-1, 0, 1] {
-                    let nx = (self.x - i).max(0) as u32;
-                    let ny = (self.y - j).max(0) as u32;
-                    img.put_pixel(nx, ny, Rgb([255, 0, 0]));
-                }
+    #[cfg(test)]
+    pub fn highlight(&self, img: &mut RgbImage) {
+        for i in [-1, 0, 1] {
+            for j in [-1, 0, 1] {
+                let nx = (self.x - i).max(0) as u32;
+                let ny = (self.y - j).max(0) as u32;
+                img.put_pixel(nx, ny, Rgb([255, 0, 0]));
             }
         }
     }
@@ -61,72 +49,6 @@ impl Slope {
 
     pub fn cross(&self, other: &Self) -> i32 {
         self.dx * other.dy - self.dy * other.dx
-    }
-}
-
-// Homographic projection matrix to map logical qr onto image qr
-//------------------------------------------------------------------------------
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Homography(pub Matrix3<f64>);
-
-impl Index<usize> for Homography {
-    type Output = f64;
-
-    #[inline]
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
-    }
-}
-
-impl IndexMut<usize> for Homography {
-    #[inline]
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.0[index]
-    }
-}
-
-impl Homography {
-    pub fn compute(src: [(f64, f64); 4], dst: [(f64, f64); 4]) -> Option<Self> {
-        let mut a_data = Vec::with_capacity(8 * 9);
-
-        for i in 0..4 {
-            let (x, y) = src[i];
-            let (xp, yp) = dst[i];
-
-            #[rustfmt::skip]
-            a_data.extend_from_slice(&[
-                -x, -y, -1.0, 0.0, 0.0, 0.0, x * xp, y * xp, xp,
-                0.0, 0.0, 0.0, -x, -y, -1.0, x * yp, y * yp, yp,
-            ]);
-        }
-
-        let a_matrix = DMatrix::from_row_slice(8, 9, &a_data);
-
-        // Solve using Singular Value Decomposition to get the last column of V
-        // corresponding to smallest singular value
-        let svd = a_matrix.svd(true, true);
-        let v = svd.v_t?;
-        let h = v.row(8);
-
-        Some(Self(Matrix3::from_iterator(h.iter().cloned())))
-    }
-
-    pub fn map(&self, x: f64, y: f64) -> Point {
-        let p = Vector3::new(x, y, 1.0);
-        let hp = self.0 * p;
-
-        debug_assert!(hp.z.abs() <= 1e-10, "Homography denominator is too small");
-
-        let resx = (hp.x / hp.z).round();
-        let resy = (hp.y / hp.z).round();
-
-        assert!(resx <= i32::MAX as f64);
-        assert!(resx >= i32::MIN as f64);
-        assert!(resy <= i32::MAX as f64);
-        assert!(resy >= i32::MIN as f64);
-
-        Point { x: resx as i32, y: resy as i32 }
     }
 }
 
@@ -243,57 +165,53 @@ impl Line {
     }
 
     pub fn intersection(&self, other: &Line) -> Option<Point> {
-        let den = self.a * other.b - self.b * other.a;
+        let (a, b, c) = (self.a as i64, self.b as i64, self.c as i64);
+        let (ao, bo, co) = (other.a as i64, other.b as i64, other.c as i64);
+
+        let den = a * bo - b * ao;
         if den == 0 {
             return None;
         }
-        let x = (self.b * other.c - self.c * other.b) / den;
-        let y = (self.c * other.a - self.a * other.c) / den;
 
+        let x = (b * co - c * bo) / den;
+        let y = (c * ao - a * co) / den;
+
+        let x = x.try_into().expect("Value out of i32 bounds");
+        let y = y.try_into().expect("Value out of i32 bounds");
         Some(Point { x, y })
     }
-}
 
-#[cfg(test)]
-mod line_highlight {
-    use image::RgbImage;
-
-    use crate::reader::utils::Highlight;
-
-    use super::{BresenhamLine, Line, Point, X, Y};
-
-    impl Highlight for Line {
-        fn highlight(&self, img: &mut RgbImage) {
-            let dx = -self.b;
-            let dy = self.a;
-            let (w, h) = img.dimensions();
-            let mut isecs = Vec::new();
-            let corners = [(0, 0), (0, h), (w, h), (w, 0)];
-            for (x1, y1) in corners.iter() {
-                let p1 = Point { x: *x1 as i32, y: *y1 as i32 };
-                for (x2, y2) in corners.iter() {
-                    let p2 = Point { x: *x2 as i32, y: *y2 as i32 };
-                    if p1 != p2 {
-                        let line = Line::from_points(&p1, &p2);
-                        if let Some(pt) = self.intersection(&line) {
-                            isecs.push(pt);
-                            if isecs.len() == 2 {
-                                break;
-                            }
-                        };
-                    }
+    #[cfg(test)]
+    pub fn highlight(&self, img: &mut RgbImage) {
+        let dx = -self.b;
+        let dy = self.a;
+        let (w, h) = img.dimensions();
+        let mut isecs = Vec::new();
+        let corners = [(0, 0), (0, h), (w, h), (w, 0)];
+        for (x1, y1) in corners.iter() {
+            let p1 = Point { x: *x1 as i32, y: *y1 as i32 };
+            for (x2, y2) in corners.iter() {
+                let p2 = Point { x: *x2 as i32, y: *y2 as i32 };
+                if p1 != p2 {
+                    let line = Line::from_points(&p1, &p2);
+                    if let Some(pt) = self.intersection(&line) {
+                        isecs.push(pt);
+                        if isecs.len() == 2 {
+                            break;
+                        }
+                    };
                 }
             }
-            if dx > dy {
-                let line = BresenhamLine::<X>::new(&isecs[0], &isecs[1]);
-                for pt in line {
-                    pt.highlight(img);
-                }
-            } else {
-                let line = BresenhamLine::<Y>::new(&isecs[0], &isecs[1]);
-                for pt in line {
-                    pt.highlight(img);
-                }
+        }
+        if dx > dy {
+            let line = BresenhamLine::<X>::new(&isecs[0], &isecs[1]);
+            for pt in line {
+                pt.highlight(img);
+            }
+        } else {
+            let line = BresenhamLine::<Y>::new(&isecs[0], &isecs[1]);
+            for pt in line {
+                pt.highlight(img);
             }
         }
     }

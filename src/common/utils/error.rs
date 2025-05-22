@@ -17,6 +17,8 @@ pub enum QRError {
     InvalidMaskingPattern,
 
     // QR reader
+    SingularMatrix,
+    PointAtInfinity,
     SymbolNotFound,
     TooManyError,
     InvalidInfo,
@@ -31,6 +33,7 @@ pub enum QRError {
 impl Display for QRError {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
         let msg = match *self {
+            // QR builder
             Self::EmptyData => "Empty data",
             Self::DataTooLong => "Data too long",
             Self::CapacityOverflow => "Capacity overflow",
@@ -40,6 +43,10 @@ impl Display for QRError {
             Self::InvalidColor => "Invalid color",
             Self::InvalidChar => "Invalid character",
             Self::InvalidMaskingPattern => "Invalid masking pattern",
+
+            // QR reader
+            Self::SingularMatrix => "Cannot compute homography",
+            Self::PointAtInfinity => "Projected point is at infinity",
             Self::SymbolNotFound => "Symbol not found",
             Self::TooManyError => "Too many errors to correct successfully",
             Self::InvalidInfo => "Invalid info",

@@ -148,10 +148,10 @@ impl BinaryImage {
     }
 
     pub fn get(&self, x: u32, y: u32) -> Pixel {
-        assert!(x <= i32::MAX as u32);
-        assert!(y <= i32::MAX as u32);
+        let x = i32::try_from(x).expect("x coordinate exceeds i32::MAX");
+        let y = i32::try_from(y).expect("y coordinate exceeds i32::MAX");
 
-        let idx = self.coord_to_index(x as i32, y as i32);
+        let idx = self.coord_to_index(x, y);
         self.buffer[idx]
     }
 
@@ -172,10 +172,10 @@ impl BinaryImage {
     }
 
     pub fn get_mut(&mut self, x: u32, y: u32) -> &mut Pixel {
-        debug_assert!(x <= i32::MAX as u32);
-        debug_assert!(y <= i32::MAX as u32);
+        let x = i32::try_from(x).expect("x coordinate exceeds i32::MAX");
+        let y = i32::try_from(y).expect("y coordinate exceeds i32::MAX");
 
-        let idx = self.coord_to_index(x as i32, y as i32);
+        let idx = self.coord_to_index(x, y);
         &mut self.buffer[idx]
     }
 

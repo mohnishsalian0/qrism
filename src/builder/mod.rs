@@ -2,12 +2,15 @@ mod qr;
 
 pub(crate) use qr::QR;
 
-use crate::common::{
-    codec::{encode, encode_with_version},
-    ec::Block,
-    mask::{apply_best_mask, MaskPattern},
-    metadata::{ECLevel, Palette, Version},
-    utils::{BitStream, QRError, QRResult},
+use crate::{
+    common::{
+        codec::{encode, encode_with_version},
+        ec::Block,
+        mask::{apply_best_mask, MaskPattern},
+        metadata::{ECLevel, Palette, Version},
+        utils::{BitStream, QRError, QRResult},
+    },
+    debug_println,
 };
 
 #[cfg(test)]
@@ -90,17 +93,17 @@ mod qrbuilder_util_tests {
 
 impl QRBuilder<'_> {
     pub fn build(&mut self) -> QRResult<QR> {
-        println!("\nConstructing QR {}...", self.metadata());
+        debug_println!("\nConstructing QR {}...", self.metadata());
         if self.data.is_empty() {
             return Err(QRError::EmptyData);
         }
 
         // Encode data optimally
-        println!("Encoding data...");
+        debug_println!("Encoding data...");
         let (enc, ver) = match self.ver {
             Some(v) => (encode_with_version(self.data, v, self.ecl, self.pal)?, v),
             None => {
-                println!("Finding best version...");
+                debug_println!("Finding best version...");
                 encode(self.data, self.ecl, self.pal)?
             }
         };
@@ -110,7 +113,7 @@ impl QRBuilder<'_> {
         let data_cap = ver.data_capacity(self.ecl, self.pal);
         let ec_cap = Self::ec_capacity(ver, self.ecl);
 
-        println!("Constructing payload with ecc & interleaving...");
+        debug_println!("Constructing payload with ecc & interleaving...");
         let mut pld = BitStream::new(tot_cwds << 3);
         let chan_data_cap = ver.channel_data_capacity(self.ecl);
 
@@ -129,44 +132,44 @@ impl QRBuilder<'_> {
         });
 
         // Construct QR
-        println!("Constructing QR...");
+        debug_println!("Constructing QR...");
         let mut qr = QR::new(ver, self.ecl, self.pal);
 
-        println!("Drawing functional patterns...");
+        debug_println!("Drawing functional patterns...");
         qr.draw_all_function_patterns();
 
-        println!("Drawing encoding region...");
+        debug_println!("Drawing encoding region...");
         qr.draw_encoding_region(pld);
 
         let mask = match self.mask {
             Some(m) => {
-                println!("Apply mask {m:?}...");
+                debug_println!("Apply mask {m:?}...");
                 qr.apply_mask(m);
                 m
             }
             None => {
-                println!("Finding & applying best mask...");
+                debug_println!("Finding & applying best mask...");
                 apply_best_mask(&mut qr)
             }
         };
         self.mask(mask);
 
-        println!("\x1b[1;32mQR generated successfully!\n \x1b[0m");
+        debug_println!("\x1b[1;32mQR generated successfully!\n \x1b[0m");
 
         let tot_mods = ver.width() * ver.width();
         let dark_mods = qr.count_dark_modules();
         let lt_mods = tot_mods - dark_mods;
 
-        println!("Report:");
-        println!("{}", qr.metadata());
-        println!("Data capacity: {}, Error Capacity: {}", data_cap, ec_cap);
-        println!(
+        debug_println!("Report:");
+        debug_println!("{}", qr.metadata());
+        debug_println!("Data capacity: {}, Error Capacity: {}", data_cap, ec_cap);
+        debug_println!(
             "Data size: {}, Encoded size: {}, Compression: {}%",
             data_len,
             enc.len() >> 3,
             (enc.len() >> 3) * 100 / data_len
         );
-        println!(
+        debug_println!(
             "Dark Cells: {}, Light Cells: {}, Balance: {}\n",
             dark_mods,
             lt_mods,

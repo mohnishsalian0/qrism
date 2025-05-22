@@ -5,7 +5,8 @@ use super::{
     finder::FinderGroup,
     utils::{
         accumulate::CenterLocator,
-        geometry::{Homography, Line, Point, Slope},
+        geometry::{Line, Point, Slope},
+        homography::Homography,
     },
 };
 use crate::{
@@ -19,7 +20,10 @@ use crate::{
     ECLevel, MaskPattern, Palette, Version,
 };
 
-// Locates symbol based on 3 finders
+#[cfg(test)]
+use image::RgbImage;
+
+// Locates symbol based on 3 finder centers, their edge points & provisional grid size
 //------------------------------------------------------------------------------
 
 #[derive(Debug)]
@@ -61,7 +65,7 @@ impl SymbolLocation {
             return None;
         }
 
-        if let Version::Normal(2..=40) = ver {
+        if (2..=40).contains(&*ver) {
             align_seed = locate_alignment_pattern(img, group, align_seed)?;
 
             let cl = CenterLocator::new();
@@ -73,10 +77,14 @@ impl SymbolLocation {
             align_seed = cl.get_center();
         }
 
-        let h = setup_homography(img, group, align_seed)?;
+        let h = setup_homography(img, group, align_seed, ver)?;
 
         let w = group.size as f64;
-        let bounds = [h.map(0.0, 0.0), h.map(w, 0.0), h.map(w, w), h.map(0.0, w)];
+        let tl = h.map(0.0, 0.0).ok()?;
+        let tr = h.map(w, 0.0).ok()?;
+        let br = h.map(w, w).ok()?;
+        let bl = h.map(0.0, w).ok()?;
+        let bounds = [tl, tr, br, bl];
 
         Some(Self { h, bounds, ver })
     }
@@ -101,13 +109,13 @@ impl Symbol {
 
     pub fn get(&self, x: i32, y: i32) -> &Pixel {
         let (x, y) = self.wrap_coord(x, y);
-        let pt = self.map(x as f64 + 0.5, y as f64 + 0.5);
+        let pt = self.map(x as f64 + 0.5, y as f64 + 0.5).unwrap();
         self.img.get_at_point(&pt)
     }
 
     pub fn get_mut(&mut self, x: i32, y: i32) -> &mut Pixel {
         let (x, y) = self.wrap_coord(x, y);
-        let pt = self.map(x as f64 + 0.5, y as f64 + 0.5);
+        let pt = self.map(x as f64 + 0.5, y as f64 + 0.5).unwrap();
         self.img.get_mut_at_point(&pt)
     }
 
@@ -126,13 +134,35 @@ impl Symbol {
     }
 
     #[inline]
-    pub fn map(&self, x: f64, y: f64) -> Point {
+    pub fn map(&self, x: f64, y: f64) -> QRResult<Point> {
         self.h.map(x, y)
     }
 
     #[inline]
     pub fn save(&self, path: &Path) {
         self.img.save(path).unwrap()
+    }
+
+    #[cfg(test)]
+    pub fn highlight(&self, img: &mut RgbImage) {
+        use super::utils::geometry::{BresenhamLine, X, Y};
+
+        for (i, crn) in self.bounds.iter().enumerate() {
+            let next = self.bounds[(i + 1) % 4];
+            let dx = (next.x - crn.x).abs();
+            let dy = (next.y - crn.y).abs();
+            if dx > dy {
+                let line = BresenhamLine::<X>::new(crn, &next);
+                for pt in line {
+                    pt.highlight(img);
+                }
+            } else {
+                let line = BresenhamLine::<Y>::new(crn, &next);
+                for pt in line {
+                    pt.highlight(img);
+                }
+            }
+        }
     }
 }
 
@@ -146,7 +176,7 @@ fn locate_alignment_pattern(
     // Calculate area of module
     let m0 = Slope::new(&group.finders[0].center, &group.mids[0]);
     let m1 = Slope::new(&group.finders[1].center, &group.mids[5]);
-    let mod_area = m0.cross(&m1).unsigned_abs();
+    let mod_area = m0.cross(&m1).unsigned_abs() / 9;
 
     // x & y increments w.r.t direction
     const DX: [i32; 4] = [1, 0, -1, 0];
@@ -194,6 +224,7 @@ fn setup_homography(
     img: &BinaryImage,
     group: &FinderGroup,
     align_center: Point,
+    ver: Version,
 ) -> Option<Homography> {
     let size = group.size as f64;
     let src = [(3.5, 3.5), (size - 3.5, 3.5), (size - 6.5, size - 6.5), (3.5, size - 3.5)];
@@ -204,7 +235,7 @@ fn setup_homography(
     let ca = (align_center.x as f64, align_center.y as f64);
     let dst = [c1, c2, ca, c0];
 
-    let initial_h = Homography::compute(src, dst)?;
+    let initial_h = Homography::compute(src, dst).ok()?;
 
     let ver = Version::from_grid_size(group.size as usize)?;
 
@@ -214,8 +245,9 @@ fn setup_homography(
 // Adjust the homography slightly to refine viewport of qr
 fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Homography {
     let mut best = symbol_fitness(img, &h, ver);
-    let mut adjustments = [0.0; 8];
-    h.0.iter().enumerate().for_each(|(i, v)| adjustments[i] = v * 0.02f64);
+
+    // Create an adjustment matrix by scaling the homography
+    let mut adjustments = h.0.map(|x| x * 0.02);
 
     for _pass in 0..5 {
         for i in 0..16 {
@@ -223,9 +255,8 @@ fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Homo
             let old = h[j];
             let step = adjustments[j];
 
-            let new = if i & 1 == 0 { old - step } else { old + step };
+            h[j] = if i & 1 == 0 { old - step } else { old + step };
 
-            h[j] = new;
             let test = symbol_fitness(img, &h, ver);
             if test > best {
                 best = test
@@ -234,9 +265,8 @@ fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Homo
             }
         }
 
-        for i in adjustments.iter_mut() {
-            *i *= 0.5f64;
-        }
+        // Halve all adjustment steps
+        adjustments = adjustments.map(|x| x * 0.5);
     }
     h
 }
@@ -310,7 +340,7 @@ fn cell_fitness(img: &BinaryImage, hm: &Homography, x: i32, y: i32) -> i32 {
 
     for dy in OFFSETS.iter() {
         for dx in OFFSETS.iter() {
-            let pt = hm.map(x as f64 + dx, y as f64 + dy);
+            let pt = hm.map(x as f64 + dx, y as f64 + dy).unwrap();
             if !(pt.x < 0 || w <= pt.x as u32 || pt.y < 0 || h <= pt.y as u32) {
                 let color = Color::from(*img.get_at_point(&pt));
                 if color == white {
@@ -322,39 +352,6 @@ fn cell_fitness(img: &BinaryImage, hm: &Homography, x: i32, y: i32) -> i32 {
         }
     }
     score
-}
-
-#[cfg(test)]
-mod symbol_highlight {
-    use image::RgbImage;
-
-    use crate::reader::utils::{
-        geometry::{BresenhamLine, X, Y},
-        Highlight,
-    };
-
-    use super::Symbol;
-
-    impl Highlight for Symbol {
-        fn highlight(&self, img: &mut RgbImage) {
-            for (i, crn) in self.bounds.iter().enumerate() {
-                let next = self.bounds[(i + 1) % 4];
-                let dx = (next.x - crn.x).abs();
-                let dy = (next.y - crn.y).abs();
-                if dx > dy {
-                    let line = BresenhamLine::<X>::new(crn, &next);
-                    for pt in line {
-                        pt.highlight(img);
-                    }
-                } else {
-                    let line = BresenhamLine::<Y>::new(crn, &next);
-                    for pt in line {
-                        pt.highlight(img);
-                    }
-                }
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -482,7 +479,7 @@ mod symbol_infos_tests {
     };
 
     #[test]
-    fn test_read_format_info() {
+    fn test_read_format_info_clean() {
         let data = "Hello, world! 🌎";
         let ver = Version::Normal(2);
         let ecl = ECLevel::L;
