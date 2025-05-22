@@ -195,7 +195,7 @@ fn locate_alignment_pattern(
     let mut run_len = 1;
 
     let invalid = Color::White;
-    while run_len * run_len < mod_area * 10 {
+    while run_len * run_len < mod_area * 64 {
         for _ in 0..run_len {
             let x = seed.x as u32;
             let y = seed.y as u32;
@@ -397,7 +397,7 @@ mod symbol_tests {
         let img = qr.to_image(10);
         let exp_anchors = [(75, 75), (335, 75), (305, 305), (75, 335)];
 
-        let mut img = BinaryImage::prepare(img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let symbol = locate_symbol(img, groups).expect("No symbol found");
@@ -501,7 +501,7 @@ mod symbol_infos_tests {
             QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
@@ -524,7 +524,7 @@ mod symbol_infos_tests {
         qr.set(8, 4, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
@@ -548,7 +548,7 @@ mod symbol_infos_tests {
         qr.set(8, 4, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
@@ -577,7 +577,7 @@ mod symbol_infos_tests {
         qr.set(-5, 8, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
@@ -594,7 +594,7 @@ mod symbol_infos_tests {
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
@@ -615,7 +615,7 @@ mod symbol_infos_tests {
         qr.set(-11, 5, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
@@ -637,7 +637,7 @@ mod symbol_infos_tests {
         qr.set(-9, 4, Module::Format(Color::White));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
@@ -664,7 +664,7 @@ mod symbol_infos_tests {
         qr.set(4, -9, Module::Format(Color::White));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let mut symbol = locate_symbol(img, groups).expect("Symbol not found");

@@ -3,7 +3,7 @@ use std::cmp::PartialOrd;
 use std::fmt::{Debug, Display};
 use std::ops::{Deref, Not};
 
-use image::Rgb;
+use image::{Luma, Rgb};
 
 use super::{codec::Mode, mask::MaskPattern};
 
@@ -405,6 +405,18 @@ impl TryFrom<Rgb<u8>> for Color {
             [255, 0, 255] => Ok(Color::Magenta),
             [0, 255, 255] => Ok(Color::Cyan),
             [255, 255, 255] => Ok(Color::White),
+            _ => Err(()), // Not an exact match for any known Color
+        }
+    }
+}
+
+impl TryFrom<Luma<u8>> for Color {
+    type Error = ();
+
+    fn try_from(value: Luma<u8>) -> Result<Self, Self::Error> {
+        match value[0] {
+            0 => Ok(Color::Black),
+            255 => Ok(Color::White),
             _ => Err(()), // Not an exact match for any known Color
         }
     }

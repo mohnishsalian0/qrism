@@ -1,6 +1,7 @@
 use std::{cmp, collections::VecDeque, num::NonZeroUsize};
 
-use image::{Rgb, RgbImage};
+use image::Pixel as ImgPixel;
+use image::{GenericImageView, GrayImage, Luma, Rgb, RgbImage};
 use lru::LruCache;
 
 use crate::metadata::Color;
@@ -44,6 +45,13 @@ impl From<Rgb<u8>> for Pixel {
     }
 }
 
+impl From<Luma<u8>> for Pixel {
+    fn from(p: Luma<u8>) -> Self {
+        let color = Color::try_from(p).unwrap();
+        Pixel::Unvisited(color)
+    }
+}
+
 impl From<Pixel> for Rgb<u8> {
     fn from(p: Pixel) -> Self {
         match p {
@@ -65,31 +73,16 @@ pub struct Region {
     pub area: u32,
 }
 
-// QR type for reader
+// Binarize trait for rgb & grayscale image
 //------------------------------------------------------------------------------
 
-#[derive(Debug)]
-pub struct BinaryImage {
-    pub buffer: Vec<Pixel>,
-    regions: LruCache<u8, Region>, // Areas of visited regions. Index is id
-    pub w: u32,
-    pub h: u32,
+pub trait Binarize {
+    fn binarize(&self) -> Vec<Pixel>;
 }
 
-impl BinaryImage {
-    pub fn new(img: RgbImage) -> Self {
-        let (w, h) = img.dimensions();
-        let mut buffer = Vec::with_capacity((w * h) as usize);
-        for &px in img.pixels() {
-            buffer.push(px.into());
-        }
-        Self { buffer, regions: LruCache::new(NonZeroUsize::new(250).unwrap()), w, h }
-    }
-
-    /// Performs adaptive binarization on an RGB image using a sliding window
-    /// and per-channel average filtering.
-    pub fn prepare(img: RgbImage) -> Self {
-        let (w, h) = img.dimensions();
+impl Binarize for RgbImage {
+    fn binarize(&self) -> Vec<Pixel> {
+        let (w, h) = self.dimensions();
         let win_sz = cmp::max(w / 8, 1);
         let mut u_avg = [0, 0, 0];
         let mut v_avg = [0, 0, 0];
@@ -100,7 +93,7 @@ impl BinaryImage {
             for x in 0..w {
                 let (u, v) = if y & 1 == 0 { (x, w - 1 - x) } else { (w - 1 - x, x) };
                 let (u_usize, v_usize) = (u as usize, v as usize);
-                let (pu, pv) = (img.get_pixel(u, y), img.get_pixel(v, y));
+                let (pu, pv) = (self.get_pixel(u, y), self.get_pixel(v, y));
 
                 for i in 0..3 {
                     u_avg[i] = u_avg[i] * (win_sz - 1) / win_sz + pu[i] as u32;
@@ -112,7 +105,7 @@ impl BinaryImage {
 
             let den = 200 * win_sz;
             for x in 0..w {
-                let mut px = *img.get_pixel(x, y);
+                let mut px = *self.get_pixel(x, y);
                 for (i, p) in px.0.iter_mut().enumerate() {
                     let thresh = row_avg[x as usize][i] * (100 - 5) / den;
                     if *p as u32 >= thresh {
@@ -126,11 +119,75 @@ impl BinaryImage {
 
             row_avg.fill([0, 0, 0]);
         }
+        buffer
+    }
+}
+
+impl Binarize for GrayImage {
+    fn binarize(&self) -> Vec<Pixel> {
+        let (w, h) = self.dimensions();
+        let win_sz = cmp::max(w / 8, 1);
+        let mut u_avg = 0;
+        let mut v_avg = 0;
+        let mut row_avg = vec![0; w as usize];
+        let mut buffer = Vec::with_capacity((w * h) as usize);
+
+        for y in 0..h {
+            for x in 0..w {
+                let (u, v) = if y & 1 == 0 { (x, w - 1 - x) } else { (w - 1 - x, x) };
+                let (u_usize, v_usize) = (u as usize, v as usize);
+                let (pu, pv) = (self.get_pixel(u, y), self.get_pixel(v, y));
+
+                u_avg = u_avg * (win_sz - 1) / win_sz + pu[0] as u32;
+                v_avg = v_avg * (win_sz - 1) / win_sz + pv[0] as u32;
+                row_avg[u_usize] += u_avg;
+                row_avg[v_usize] += v_avg;
+            }
+
+            let den = 200 * win_sz;
+            for x in 0..w {
+                let mut px = *self.get_pixel(x, y);
+                let thresh = row_avg[x as usize] * (100 - 5) / den;
+                if px[0] as u32 >= thresh {
+                    px[0] = 255;
+                } else {
+                    px[0] = 0;
+                }
+                buffer.push(px.into());
+            }
+
+            row_avg.fill(0);
+        }
+        buffer
+    }
+}
+
+// QR type for reader
+//------------------------------------------------------------------------------
+
+#[derive(Debug)]
+pub struct BinaryImage {
+    pub buffer: Vec<Pixel>,
+    regions: LruCache<u8, Region>, // Areas of visited regions. Index is id
+    pub w: u32,
+    pub h: u32,
+}
+
+impl BinaryImage {
+    /// Performs adaptive binarization on an RGB image using a sliding window
+    /// and per-channel average filtering.
+    pub fn prepare<I>(img: &I) -> Self
+    where
+        I: GenericImageView + Binarize,
+        I::Pixel: ImgPixel<Subpixel = u8>,
+    {
+        let (w, h) = img.dimensions();
+        let buffer = img.binarize();
         Self { buffer, regions: LruCache::new(NonZeroUsize::new(250).unwrap()), w, h }
     }
 
-    /// Performs absolute binarization
-    pub fn binarize(img: RgbImage) -> Self {
+    /// Performs absolute/naive binarization
+    pub fn simple_thresholding(img: RgbImage) -> Self {
         let (w, h) = img.dimensions();
         let mut buffer = Vec::with_capacity((w * h) as usize);
 
@@ -280,12 +337,12 @@ impl BinaryImage {
                         let px = self.get(x, ny);
                         if px == from {
                             seg_len += 1;
-                        } else if seg_len > 1 {
+                        } else if seg_len > 0 {
                             queue.push_back((x - 1, ny));
                             seg_len = 0;
                         }
                     }
-                    if seg_len > 1 {
+                    if seg_len > 0 {
                         queue.push_back((right, ny));
                     }
                 }

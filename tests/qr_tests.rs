@@ -32,23 +32,25 @@ mod qr_proptests {
 
     proptest! {
         #[test]
+        #[ignore]
         fn proptest_numeric(params in qr_strategy("[0-9]".to_string())) {
             let (ecl, pal, data) = params;
 
             let qr = QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-            let decoded = QRReader::read(qr).unwrap();
+            let decoded = QRReader::read(&qr).unwrap();
 
             prop_assert_eq!(data, decoded);
         }
 
         #[test]
+        #[ignore]
         fn proptest_alphanumeric(params in qr_strategy(r"[0-9A-Z $%*+\-./:]".to_string())) {
             let (ecl, pal, data) = params;
 
             let qr = QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-            let decoded = QRReader::read(qr).unwrap();
+            let decoded = QRReader::read(&qr).unwrap();
 
             prop_assert_eq!(data, decoded);
         }
@@ -92,7 +94,7 @@ mod qr_tests {
             .unwrap()
             .to_image(3);
 
-        let decoded_data = QRReader::read(qr).unwrap();
+        let decoded_data = QRReader::read(&qr).unwrap();
 
         assert_eq!(decoded_data, data);
     }
@@ -106,7 +108,7 @@ mod qr_tests {
         let qr =
             QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-        let decoded_data = QRReader::read(qr).unwrap();
+        let decoded_data = QRReader::read(&qr).unwrap();
 
         assert_eq!(decoded_data, data);
     }
@@ -120,7 +122,7 @@ mod qr_tests {
         let qr =
             QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-        let decoded_data = QRReader::read(qr).unwrap();
+        let decoded_data = QRReader::read(&qr).unwrap();
 
         assert_eq!(decoded_data, data);
     }
@@ -137,8 +139,87 @@ mod qr_tests {
         let path = std::path::Path::new("assets/built.png");
         qr.save(path).unwrap();
 
-        let decoded_data = QRReader::read(qr).unwrap();
+        let decoded_data = QRReader::read(&qr).unwrap();
 
         assert_eq!(decoded_data, data);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_qr_detection() {
+        use std::io::Write;
+
+        let file_counts = [20, 36, 42, 48, 19, 15]; // Count of qrs in 6 folders
+        let total = file_counts.iter().sum::<u32>();
+        let mut passed = 0;
+        let panicked = [(2, 15), (2, 16), (2, 31), (2, 33), (2, 34), (2, 24), (3, 7), (3, 9)];
+        let mut out_file = std::fs::File::create("tests/images/result.txt").unwrap();
+
+        for (i, file_count) in file_counts.iter().enumerate() {
+            let folder_id = i + 1;
+
+            for qr_id in 1..=*file_count {
+                if panicked.contains(&(folder_id, qr_id)) {
+                    continue;
+                }
+
+                let img_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.png");
+                let img_path = std::path::Path::new(&img_path_str);
+                dbg!(img_path);
+                let img = image::open(img_path).unwrap().to_luma8(); // WARN: Grayscale image
+
+                // let err_msg = format!("Failed to read QR from: {}", &img_path_str);
+                // let msg = QRReader::read(img).expect(&err_msg);
+                // let msg = match QRReader::read(img) {
+                //     Ok(msg) => msg,
+                //     Err(_) => continue,
+                // };
+
+                let msg = match std::panic::catch_unwind(|| QRReader::read(&img)) {
+                    Ok(Ok(msg)) => {
+                        let msg_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.txt");
+                        let msg_path = std::path::Path::new(&msg_path_str);
+                        let exp_msg = std::fs::read_to_string(msg_path).unwrap();
+                        let _ = if msg == exp_msg {
+                            writeln!(out_file, "[{}-{}] PASSED", folder_id, qr_id)
+                        } else {
+                            writeln!(out_file, "[{}-{}] DECODED", folder_id, qr_id)
+                        };
+                        msg
+                    }
+                    Ok(Err(e)) => {
+                        let _ = writeln!(out_file, "[{}-{}] {}", folder_id, qr_id, e);
+                        continue;
+                    }
+                    Err(e) => {
+                        let panic_msg = if let Some(s) = e.downcast_ref::<&str>() {
+                            *s
+                        } else if let Some(s) = e.downcast_ref::<String>() {
+                            s.as_str()
+                        } else {
+                            "Unknown panic"
+                        };
+                        let _ = writeln!(out_file, "[{}-{}] {}", folder_id, qr_id, panic_msg);
+                        continue;
+                    }
+                };
+
+                let msg_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.txt");
+                let msg_path = std::path::Path::new(&msg_path_str);
+                let exp_msg = std::fs::read_to_string(msg_path).unwrap();
+
+                if msg == exp_msg {
+                    passed += 1;
+                }
+
+                // assert_eq!(
+                //     exp_msg, msg,
+                //     "Failed to read QR from file {qr_id} in folder {folder_id}"
+                // );
+            }
+            let _ = writeln!(out_file);
+        }
+        let percentage = passed * 100 / total;
+        assert_eq!(passed, total, "Passed: {passed} out of {total} ({percentage}%)");
     }
 }

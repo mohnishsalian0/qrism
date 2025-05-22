@@ -4,7 +4,7 @@ mod symbol;
 mod utils;
 
 use finder::{group_finders, locate_finders, FinderGroup};
-use image::RgbImage;
+use image::Pixel as ImgPixel;
 
 use crate::{
     codec::decode,
@@ -13,13 +13,17 @@ use crate::{
     metadata::{Metadata, Version},
     utils::{BitStream, QRError, QRResult},
 };
-use binarize::BinaryImage;
+use binarize::{Binarize, BinaryImage};
 use symbol::{Symbol, SymbolLocation};
 
 pub struct QRReader();
 
 impl QRReader {
-    pub fn read(img: RgbImage) -> QRResult<String> {
+    pub fn read<I>(img: &I) -> QRResult<String>
+    where
+        I: image::GenericImageView + Binarize,
+        I::Pixel: ImgPixel<Subpixel = u8>,
+    {
         debug_println!("Reading QR...");
 
         debug_println!("Preparing image...");
@@ -171,7 +175,7 @@ mod reader_tests {
             .unwrap();
         let img = qr.to_image(3);
 
-        let extracted_data = QRReader::read(img).expect("Couldn't read data");
+        let extracted_data = QRReader::read(&img).expect("Couldn't read data");
 
         assert_eq!(extracted_data, data, "Incorrect data read from qr image");
     }
@@ -193,17 +197,17 @@ mod reader_tests {
             .unwrap();
         let img = qr.to_image(4);
 
-        let extracted_data = QRReader::read(img).expect("Couldn't read data");
+        let extracted_data = QRReader::read(&img).expect("Couldn't read data");
 
         assert_eq!(extracted_data, data, "Incorrect data read from qr image");
     }
 
     #[test]
     fn test_reader_2() {
-        let path = std::path::Path::new("assets/test0.png");
-        let img = image::open(path).unwrap().to_rgb8();
+        let path = std::path::Path::new("tests/qrcode-1/9.png");
+        let img = image::open(path).unwrap().to_luma8();
 
-        let extracted_data = QRReader::read(img).expect("Couldn't read data");
+        let extracted_data = QRReader::read(&img).expect("Couldn't read data");
 
         dbg!(extracted_data);
     }
@@ -215,11 +219,10 @@ mod reader_tests {
         #[allow(unused_imports)]
         use crate::reader::finder::group_finders;
 
+        let path = std::path::Path::new("tests/qrcode-1/9.png");
+        let img = image::open(path).unwrap().to_luma8();
+        let mut img = BinaryImage::prepare(&img);
         let path = std::path::Path::new("assets/inp.png");
-        let img = image::open(path).unwrap().to_rgb8();
-        let mut img = BinaryImage::prepare(img);
-
-        // let path = std::path::Path::new("assets/inp.png");
         // img.save(path).unwrap();
 
         let finders = locate_finders(&mut img);
@@ -227,9 +230,7 @@ mod reader_tests {
         let symbol = locate_symbol(img, groups).unwrap();
 
         let mut img = image::open(path).unwrap().to_rgb8();
-        // for f in finders.iter() {
-        //     f.center.highlight(&mut img);
-        // }
+        // finders.iter().for_each(|f| f.center.highlight(&mut img));
         // groups[0].highlight(&mut img);
         symbol.highlight(&mut img);
 

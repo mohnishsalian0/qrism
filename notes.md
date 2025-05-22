@@ -13,6 +13,9 @@ Utils
     Bresenham's line ✅
     Flood fill ✅
     Homography ✅
+Deal with shadow:
+    Make the finder locator ignore quietzone
+    Or finetune the binarize to certain gray areas
 
 OUT OF SCOPE:
 Detecting branded (custom colors) traditional QR

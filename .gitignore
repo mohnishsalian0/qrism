@@ -1,5 +1,6 @@
 /assets
 /target
+/tests/images
 Cargo.lock
 *.swp
 *.swo

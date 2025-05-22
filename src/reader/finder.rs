@@ -99,12 +99,14 @@ impl LineScanner {
             return false;
         }
 
-        let avg = self.buffer[..5].iter().sum::<u32>() / 7;
-        let tol = avg * 3 / 4;
+        // Verify 1:1:3:1:1 ratio
+        let avg = (self.buffer[..5].iter().sum::<u32>() as f64) / 7.0;
+        let tol = avg * 3.0 / 4.0;
 
-        let ratio: [u32; 5] = [1, 1, 3, 1, 1];
+        let ratio: [f64; 5] = [1.0, 1.0, 3.0, 1.0, 1.0];
         for (i, r) in ratio.iter().enumerate() {
-            if self.buffer[i] < r * avg - tol || self.buffer[i] > r * avg + tol {
+            let rl = self.buffer[i] as f64;
+            if rl < r * avg - tol || rl > r * avg + tol {
                 return false;
             }
         }
@@ -149,24 +151,29 @@ fn crosscheck_vertical(img: &BinaryImage, datum: &DatumLine) -> bool {
     let h = img.h;
     let cx = datum.right - (datum.stone - datum.left) * 5 / 4;
     let cy = datum.y;
+
+    if cy == 0 {
+        return false;
+    }
+
     let max_run = (datum.right - datum.left) * 2; // Setting a loose max limit on each run
     let mut run_len = [0; 5];
     run_len[2] = 1;
 
     // Count upwards
     let mut pos = cy - 1;
-    let mut reg_idx = 2;
+    let mut flips = 2;
     let mut initial = Color::from(img.get(cx, cy));
-    while pos > 0 && run_len[reg_idx] <= max_run {
+    while pos > 0 && run_len[flips] <= max_run {
         let color = Color::from(img.get(cx, pos));
         if initial != color {
             initial = color;
-            if reg_idx == 0 {
+            if flips == 0 {
                 break;
             }
-            reg_idx -= 1;
+            flips -= 1;
         }
-        run_len[reg_idx] += 1;
+        run_len[flips] += 1;
         pos -= 1;
     }
 
@@ -188,12 +195,13 @@ fn crosscheck_vertical(img: &BinaryImage, datum: &DatumLine) -> bool {
     }
 
     // Verify 1:1:3:1:1 ratio
-    let avg = run_len.iter().sum::<u32>() / 7;
-    let tol = avg * 3 / 4;
+    let avg = (run_len.iter().sum::<u32>() as f64) / 7.0;
+    let tol = avg * 3.0 / 4.0;
 
-    let ratio: [u32; 5] = [1, 1, 3, 1, 1];
+    let ratio: [f64; 5] = [1.0, 1.0, 3.0, 1.0, 1.0];
     for (i, r) in ratio.iter().enumerate() {
-        if run_len[i] < r * avg - tol || run_len[i] > r * avg + tol {
+        let rl = run_len[i] as f64;
+        if rl < r * avg - tol || rl > r * avg + tol {
             return false;
         }
     }
@@ -222,7 +230,8 @@ fn validate_regions(img: &mut BinaryImage, datum: &DatumLine) -> bool {
         let ratio = s_area * 100 / r_area;
         let r_color = img.get(r_src.0, r_src.1);
         let s_color = img.get(s_src.0, s_src.1);
-        r_color != s_color && (20 < ratio && ratio < 50)
+        // r_color != s_color && (20 < ratio && ratio < 50)
+        r_color != s_color && (10 < ratio && ratio < 70)
     } else {
         false
     }
@@ -280,7 +289,7 @@ mod finder_tests {
             [[40, 369], [40, 300], [109, 300], [109, 369]],
         ];
         let centers = [[75, 75], [335, 75], [75, 335]];
-        let mut img = BinaryImage::prepare(img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         for (i, f) in finders.iter().enumerate() {
             let cent_pt = Point { x: centers[i][0], y: centers[i][1] };
@@ -292,6 +301,7 @@ mod finder_tests {
 // Groups finders in 3, which form potential symbols
 //------------------------------------------------------------------------------
 
+#[derive(Debug)]
 pub struct FinderGroup {
     pub finders: [Finder; 3], // [BL, TL, TR]
     pub mids: [Point; 6],     // [BLR, BLU, TLB, TLR, TRL, TRD]. Mid pts of edges
@@ -349,6 +359,7 @@ impl FinderGroup {
 pub fn group_finders(img: &BinaryImage, finders: &[Finder]) -> Vec<FinderGroup> {
     let mut groups: Vec<FinderGroup> = Vec::new();
     let len = finders.len();
+    let angle_threshold = 50f64.to_radians();
 
     for (i1, f1) in finders.iter().enumerate() {
         for (i2, f2) in finders.iter().enumerate() {
@@ -368,6 +379,10 @@ pub fn group_finders(img: &BinaryImage, finders: &[Finder]) -> Vec<FinderGroup> 
 
             for (i3, f3) in finders.iter().enumerate() {
                 if i3 <= i2 || i3 == i1 {
+                    continue;
+                }
+
+                if angle(f2.center, f1.center, f3.center) < angle_threshold {
                     continue;
                 }
 
@@ -434,6 +449,24 @@ pub fn group_finders(img: &BinaryImage, finders: &[Finder]) -> Vec<FinderGroup> 
     groups
 }
 
+// Angle between AB & BC in radians
+fn angle(a: Point, b: Point, c: Point) -> f64 {
+    let ab = ((a.x - b.x) as f64, (a.y - b.y) as f64);
+    let cb = ((c.x - b.x) as f64, (c.y - b.y) as f64);
+
+    let dot = ab.0 * cb.0 + ab.1 * cb.1;
+    let mag_ab = (ab.0.powi(2) + ab.1.powi(2)).sqrt();
+    let mag_cb = (cb.0.powi(2) + cb.1.powi(2)).sqrt();
+
+    if mag_ab == 0.0 || mag_cb == 0.0 {
+        return 0.0;
+    }
+
+    let cos_theta = (dot / (mag_ab * mag_cb)).clamp(-1.0, 1.0);
+
+    cos_theta.acos()
+}
+
 fn find_edge_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point> {
     let dx = (to.x - from.x).abs();
     let dy = (to.y - from.y).abs();
@@ -448,8 +481,8 @@ fn mid_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> Option<Poin
 where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
-    let mut run_len = [0, 0, 0];
     let mut flips = 0;
+    let mut buffer = Vec::with_capacity(100);
     let px = img.get_at_point(from);
     let mut last = Color::from(*px);
     let line = BresenhamLine::<A>::new(from, to);
@@ -457,16 +490,19 @@ where
     for p in line {
         let px = img.get_at_point(&p);
         let color = Color::from(*px);
-        if color == last {
-            run_len[flips] += 1;
-            if flips == 2 && run_len[flips] == (run_len[flips - 1] + 1) / 2 {
-                return Some(p);
-            }
-        } else {
+
+        if color != last {
             flips += 1;
             last = color;
-            debug_assert!(flips <= 2, "Flips shouldn't be more than 2: Flips {flips}");
+            if flips == 3 {
+                let idx = buffer.len() * 6 / 7;
+                let mid = buffer[idx];
+                // let mid = buffer[buffer.len() / 2];
+                return Some(mid);
+            }
         }
+
+        buffer.push(p);
     }
 
     None
@@ -542,7 +578,7 @@ mod group_finders_tests {
 
         let centers = [(75, 75), (335, 75), (75, 335)];
 
-        let mut img = BinaryImage::prepare(img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let group = group_finders(&img, &finders);
         assert!(!group.is_empty(), "No group found");

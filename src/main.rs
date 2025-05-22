@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // QR Reader
     let path = Path::new("assets/test7.png");
     let img = image::open(path).unwrap().to_rgb8();
-    let msg = QRReader::read(img).unwrap();
+    let msg = QRReader::read(&img).unwrap();
     println!("\x1b[1;32mMessage:\x1b[0m");
     println!("{msg}");
 
