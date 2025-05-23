@@ -13,9 +13,9 @@ mod reader {
     pub fn take_segment(inp: &mut BitStream, ver: Version) -> QRResult<(Vec<u8>, usize)> {
         let (mode, char_cnt) = take_header(inp, ver)?;
         let byte_data = match mode {
-            Mode::Numeric => take_numeric_data(inp, char_cnt),
-            Mode::Alphanumeric => take_alphanumeric_data(inp, char_cnt),
-            Mode::Byte => take_byte_data(inp, char_cnt),
+            Mode::Numeric => take_numeric_data(inp, char_cnt)?,
+            Mode::Alphanumeric => take_alphanumeric_data(inp, char_cnt)?,
+            Mode::Byte => take_byte_data(inp, char_cnt)?,
             Mode::Terminator => return Ok((vec![], 0)),
         };
         let encoded_len = mode.encoded_len(byte_data.len());
@@ -37,39 +37,39 @@ mod reader {
         Ok((mode, char_cnt.into()))
     }
 
-    fn take_numeric_data(inp: &mut BitStream, mut char_cnt: usize) -> Vec<u8> {
+    fn take_numeric_data(inp: &mut BitStream, mut char_cnt: usize) -> QRResult<Vec<u8>> {
         let mut res = Vec::with_capacity(char_cnt);
         while char_cnt > 0 {
             let bit_len = if char_cnt > 2 { 10 } else { (char_cnt % 3) * 3 + 1 };
-            let chunk = inp.take_bits(bit_len).unwrap();
+            let chunk = inp.take_bits(bit_len).ok_or(QRError::CorruptDataSegment)?;
             let bytes = Mode::Numeric.decode_chunk(chunk, bit_len);
             res.extend(bytes);
             char_cnt -= min(3, char_cnt);
         }
-        res
+        Ok(res)
     }
 
-    fn take_alphanumeric_data(inp: &mut BitStream, mut char_cnt: usize) -> Vec<u8> {
+    fn take_alphanumeric_data(inp: &mut BitStream, mut char_cnt: usize) -> QRResult<Vec<u8>> {
         let mut res = Vec::with_capacity(char_cnt);
         while char_cnt > 0 {
             let bit_len = if char_cnt > 1 { 11 } else { 6 };
-            let chunk = inp.take_bits(bit_len).unwrap();
+            let chunk = inp.take_bits(bit_len).ok_or(QRError::CorruptDataSegment)?;
             let bytes = Mode::Alphanumeric.decode_chunk(chunk, bit_len);
             res.extend(bytes);
             char_cnt -= min(2, char_cnt);
         }
-        res
+        Ok(res)
     }
 
-    fn take_byte_data(inp: &mut BitStream, mut char_cnt: usize) -> Vec<u8> {
+    fn take_byte_data(inp: &mut BitStream, mut char_cnt: usize) -> QRResult<Vec<u8>> {
         let mut res = Vec::with_capacity(char_cnt);
         while char_cnt > 0 {
-            let chunk = inp.take_bits(8).unwrap();
+            let chunk = inp.take_bits(8).ok_or(QRError::CorruptDataSegment)?;
             let bytes = Mode::Byte.decode_chunk(chunk, 8);
             res.extend(bytes);
             char_cnt -= 1;
         }
-        res
+        Ok(res)
     }
 
     #[cfg(test)]
@@ -141,14 +141,14 @@ mod reader {
             let pal = Palette::Mono;
             let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
             take_header(&mut bs, ver).unwrap();
-            let numeric_data = take_numeric_data(&mut bs, 3);
+            let numeric_data = take_numeric_data(&mut bs, 3).unwrap();
             assert_eq!(numeric_data, "123".as_bytes().to_vec());
-            let numeric_data = take_numeric_data(&mut bs, 2);
+            let numeric_data = take_numeric_data(&mut bs, 2).unwrap();
             assert_eq!(numeric_data, "45".as_bytes().to_vec());
             let data = "6".as_bytes();
             let mut bs = encode_with_version(data, ver, ECLevel::L, pal).unwrap();
             take_header(&mut bs, ver).unwrap();
-            let numeric_data = take_numeric_data(&mut bs, 1);
+            let numeric_data = take_numeric_data(&mut bs, 1).unwrap();
             assert_eq!(numeric_data, "6".as_bytes().to_vec());
         }
 
@@ -160,14 +160,14 @@ mod reader {
             let pal = Palette::Mono;
             let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
             take_header(&mut bs, ver).unwrap();
-            let alphanumeric_data = take_alphanumeric_data(&mut bs, 2);
+            let alphanumeric_data = take_alphanumeric_data(&mut bs, 2).unwrap();
             assert_eq!(alphanumeric_data, "AC".as_bytes().to_vec());
-            let alphanumeric_data = take_alphanumeric_data(&mut bs, 1);
+            let alphanumeric_data = take_alphanumeric_data(&mut bs, 1).unwrap();
             assert_eq!(alphanumeric_data, "-".as_bytes().to_vec());
             let data = "%".as_bytes();
             let mut bs = encode_with_version(data, ver, ECLevel::L, pal).unwrap();
             take_header(&mut bs, ver).unwrap();
-            let alphanumeric_data = take_alphanumeric_data(&mut bs, 1);
+            let alphanumeric_data = take_alphanumeric_data(&mut bs, 1).unwrap();
             assert_eq!(alphanumeric_data, "%".as_bytes().to_vec());
         }
 
@@ -179,9 +179,9 @@ mod reader {
             let pal = Palette::Mono;
             let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
             take_header(&mut bs, ver).unwrap();
-            let byte_data = take_byte_data(&mut bs, 2);
+            let byte_data = take_byte_data(&mut bs, 2).unwrap();
             assert_eq!(byte_data, "ab".as_bytes().to_vec());
-            let byte_data = take_byte_data(&mut bs, 1);
+            let byte_data = take_byte_data(&mut bs, 1).unwrap();
             assert_eq!(byte_data, "c".as_bytes().to_vec());
         }
 

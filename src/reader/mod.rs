@@ -204,7 +204,7 @@ mod reader_tests {
 
     #[test]
     fn test_reader_2() {
-        let path = std::path::Path::new("tests/images/qrcode-3/18.png");
+        let path = std::path::Path::new("tests/images/qrcode-3/17.png");
         let img = image::open(path).unwrap().to_luma8();
 
         let extracted_data = QRReader::read(&img).expect("Couldn't read data");
@@ -219,11 +219,11 @@ mod reader_tests {
         #[allow(unused_imports)]
         use crate::reader::finder::group_finders;
 
-        let path = std::path::Path::new("tests/images/qrcode-3/18.png");
+        let path = std::path::Path::new("tests/images/qrcode-3/23.png");
         let img = image::open(path).unwrap().to_luma8();
         let mut img = BinaryImage::prepare(&img);
         let path = std::path::Path::new("assets/inp.png");
-        // img.save(path).unwrap();
+        img.save(path).unwrap();
 
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);

@@ -69,6 +69,8 @@ impl SymbolLocation {
         if (2..=40).contains(&*ver) {
             align_seed = locate_alignment_pattern(img, group, align_seed)?;
 
+            dbg!(align_seed);
+
             let cl = CenterLocator::new();
             let color = Color::from(*img.get_at_point(&align_seed).unwrap());
             let src = (align_seed.x as u32, align_seed.y as u32);

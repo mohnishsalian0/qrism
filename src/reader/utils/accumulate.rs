@@ -186,6 +186,8 @@ impl CenterLocator {
         let x = self.sum_x as f64 / (2 * self.area) as f64;
         let y = self.sum_y as f64 / self.area as f64;
 
+        dbg!(self.sum_y, self.sum_x, self.area);
+
         let x = x.round();
         let y = y.round();
 
@@ -199,11 +201,11 @@ impl CenterLocator {
 impl Accumulator for CenterLocator {
     fn accumulate(&mut self, row: Row) {
         let Row { left, right, y } = row;
-        let width = right - left;
+        let width = right - left + 1;
         let mid = left + right; // Not divided by 2 to avoid FP arithmetic. This 2 is accounted for
                                 // when calculating x and y in get_center()
 
-        self.sum_x += (left + right) * width;
+        self.sum_x += mid * width;
         self.sum_y += y * width;
         self.area += width;
     }

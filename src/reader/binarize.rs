@@ -205,53 +205,40 @@ impl BinaryImage {
         let x = i32::try_from(x).expect("x coordinate exceeds i32::MAX");
         let y = i32::try_from(y).expect("y coordinate exceeds i32::MAX");
 
-        let idx = self.coord_to_index(x, y);
-        if idx < self.buffer.len() {
-            Some(self.buffer[idx])
-        } else {
-            None
-        }
+        let idx = self.coord_to_index(x, y)?;
+        Some(self.buffer[idx])
     }
 
-    fn coord_to_index(&self, x: i32, y: i32) -> usize {
+    fn coord_to_index(&self, x: i32, y: i32) -> Option<usize> {
         let w = self.w as i32;
         let h = self.h as i32;
-        debug_assert!(-w <= x && x < w, "row shouldn't be greater than or equal to w");
-        debug_assert!(-h <= y && y < h, "column shouldn't be greater than or equal to h");
+
+        if x < -w || w <= x || y < -h || h <= y {
+            return None;
+        }
 
         let x = if x < 0 { x + w } else { x };
         let y = if y < 0 { y + h } else { y };
-        (y * w + x) as _
+
+        Some((y * w + x) as _)
     }
 
     pub fn get_at_point(&self, pt: &Point) -> Option<&Pixel> {
-        let idx = self.coord_to_index(pt.x, pt.y);
-        if idx < self.buffer.len() {
-            Some(&self.buffer[idx])
-        } else {
-            None
-        }
+        let idx = self.coord_to_index(pt.x, pt.y)?;
+        Some(&self.buffer[idx])
     }
 
     pub fn get_mut(&mut self, x: u32, y: u32) -> Option<&mut Pixel> {
         let x = i32::try_from(x).expect("x coordinate exceeds i32::MAX");
         let y = i32::try_from(y).expect("y coordinate exceeds i32::MAX");
 
-        let idx = self.coord_to_index(x, y);
-        if idx < self.buffer.len() {
-            Some(&mut self.buffer[idx])
-        } else {
-            None
-        }
+        let idx = self.coord_to_index(x, y)?;
+        Some(&mut self.buffer[idx])
     }
 
     pub fn get_mut_at_point(&mut self, pt: &Point) -> Option<&mut Pixel> {
-        let idx = self.coord_to_index(pt.x, pt.y);
-        if idx < self.buffer.len() {
-            Some(&mut self.buffer[idx])
-        } else {
-            None
-        }
+        let idx = self.coord_to_index(pt.x, pt.y)?;
+        Some(&mut self.buffer[idx])
     }
 
     pub fn set(&mut self, x: u32, y: u32, px: Pixel) {
