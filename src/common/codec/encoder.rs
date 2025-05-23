@@ -101,6 +101,9 @@ pub mod encode {
                     Mode::Numeric => 20,
                     Mode::Alphanumeric => 33,
                     Mode::Byte => 48,
+                    Mode::Terminator => {
+                        unreachable!("Optimal segments should never have terminator mode")
+                    }
                 };
 
                 for (k, from_mode) in MODES.iter().enumerate() {
@@ -338,6 +341,7 @@ pub(super) mod writer {
             Mode::Numeric => push_numeric_data(seg.data, out),
             Mode::Alphanumeric => push_alphanumeric_data(seg.data, out),
             Mode::Byte => push_byte_data(seg.data, out),
+            Mode::Terminator => unreachable!("Cannot push segment in terminator mode"),
         }
     }
 

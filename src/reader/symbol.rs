@@ -815,7 +815,7 @@ impl Symbol {
 
         for i in 0..chan_bits {
             for (y, x) in rgn_iter.by_ref() {
-                let px = self.get(x, y).ok_or(QRError::ExtractionFailed)?;
+                let px = self.get(x, y).ok_or(QRError::PixelOutOfBounds)?;
                 if !matches!(px, Pixel::Reserved(_)) {
                     let color = Color::from(*px);
                     let [mut r, mut g, mut b] = color.to_bits();

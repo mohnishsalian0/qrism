@@ -41,7 +41,7 @@ mod codec_proptests {
         fn proptest_codec(params in codec_strategy()) {
             let (ver, ecl, pal, data) = params;
             let mut encoded = encode_with_version(&data, ver, ecl, pal).unwrap();
-            let decoded = decode(&mut encoded, ver, ecl, pal);
+            let decoded = decode(&mut encoded, ver, ecl, pal).unwrap();
             prop_assert_eq!(data, decoded);
         }
     }

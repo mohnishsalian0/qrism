@@ -29,7 +29,8 @@ pub enum QRError {
     FinderMismatch,
     TimingMismatch,
     AlignmentMismatch,
-    ExtractionFailed,
+    InvalidMode,
+    CorruptDataSegment,
     InvalidUTF8Sequence,
 }
 
@@ -60,7 +61,8 @@ impl Display for QRError {
             Self::FinderMismatch => "Finder color mismatch",
             Self::TimingMismatch => "Timing color mismatch",
             Self::AlignmentMismatch => "Alignment color mismatch",
-            Self::ExtractionFailed => "Extraction failed because point is out of bounds",
+            Self::InvalidMode => "Unexpected mode bits",
+            Self::CorruptDataSegment => "Truncated data segment",
             Self::InvalidUTF8Sequence => "Invalid UTF8 sequence",
         };
         f.write_str(msg)

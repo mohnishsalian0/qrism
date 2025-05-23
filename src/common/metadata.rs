@@ -102,21 +102,25 @@ impl Version {
                 Mode::Numeric => v + 2,
                 Mode::Alphanumeric => v + 1,
                 Mode::Byte => v + 1,
+                Mode::Terminator => 0,
             },
             Version::Normal(1..=9) => match mode {
                 Mode::Numeric => 10,
                 Mode::Alphanumeric => 9,
                 Mode::Byte => 8,
+                Mode::Terminator => 0,
             },
             Version::Normal(10..=26) => match mode {
                 Mode::Numeric => 12,
                 Mode::Alphanumeric => 11,
                 Mode::Byte => 16,
+                Mode::Terminator => 0,
             },
             Version::Normal(_) => match mode {
                 Mode::Numeric => 14,
                 Mode::Alphanumeric => 13,
                 Mode::Byte => 16,
+                Mode::Terminator => 0,
             },
         }
     }

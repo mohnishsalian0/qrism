@@ -71,7 +71,7 @@ impl QRReader {
         });
 
         debug_println!("Decoding data blocks...");
-        let msg = decode(&mut enc, ver, ecl, pal);
+        let msg = decode(&mut enc, ver, ecl, pal)?;
 
         debug_println!("\n{}\n", Metadata::new(Some(ver), Some(ecl), Some(mask)));
 

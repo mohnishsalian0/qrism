@@ -8,32 +8,33 @@ mod reader {
 
     use crate::codec::Mode;
     use crate::metadata::Version;
-    use crate::utils::BitStream;
+    use crate::utils::{BitStream, QRError, QRResult};
 
-    pub fn take_segment(inp: &mut BitStream, ver: Version) -> Option<(Vec<u8>, usize)> {
+    pub fn take_segment(inp: &mut BitStream, ver: Version) -> QRResult<(Vec<u8>, usize)> {
         let (mode, char_cnt) = take_header(inp, ver)?;
         let byte_data = match mode {
             Mode::Numeric => take_numeric_data(inp, char_cnt),
             Mode::Alphanumeric => take_alphanumeric_data(inp, char_cnt),
             Mode::Byte => take_byte_data(inp, char_cnt),
+            Mode::Terminator => return Ok((vec![], 0)),
         };
         let encoded_len = mode.encoded_len(byte_data.len());
         let bit_len = ver.mode_bits() + ver.char_cnt_bits(mode) + encoded_len;
-        Some((byte_data, bit_len))
+        Ok((byte_data, bit_len))
     }
 
-    fn take_header(inp: &mut BitStream, ver: Version) -> Option<(Mode, usize)> {
-        let mode_bits = inp.take_bits(4)?;
+    fn take_header(inp: &mut BitStream, ver: Version) -> QRResult<(Mode, usize)> {
+        let mode_bits = inp.take_bits(4).ok_or(QRError::CorruptDataSegment)?;
         let mode = match mode_bits {
-            0 => return None,
+            0 => Mode::Terminator,
             1 => Mode::Numeric,
             2 => Mode::Alphanumeric,
             4 => Mode::Byte,
-            _ => unreachable!("Unsupported Mode: {mode_bits}"),
+            _ => return Err(QRError::InvalidMode),
         };
         let len_bits = ver.char_cnt_bits(mode);
-        let char_cnt = inp.take_bits(len_bits)?;
-        Some((mode, char_cnt.into()))
+        let char_cnt = inp.take_bits(len_bits).ok_or(QRError::CorruptDataSegment)?;
+        Ok((mode, char_cnt.into()))
     }
 
     fn take_numeric_data(inp: &mut BitStream, mut char_cnt: usize) -> Vec<u8> {
@@ -210,14 +211,24 @@ mod reader {
 
 pub mod decode {
     use super::reader::take_segment;
-    use crate::utils::BitStream;
+    use crate::utils::{BitStream, QRResult};
     use crate::{ECLevel, Palette, Version};
 
-    pub fn decode(encoded: &mut BitStream, ver: Version, ecl: ECLevel, pal: Palette) -> Vec<u8> {
+    pub fn decode(
+        encoded: &mut BitStream,
+        ver: Version,
+        ecl: ECLevel,
+        pal: Palette,
+    ) -> QRResult<Vec<u8>> {
         let data_bit_cap = ver.data_bit_capacity(ecl, Palette::Mono);
         let mut res = Vec::with_capacity(encoded.len());
         let mut total_bit_len = 0;
-        while let Some((decoded_seg, bit_len)) = take_segment(encoded, ver) {
+        loop {
+            let (decoded_seg, bit_len) = take_segment(encoded, ver)?;
+            if bit_len == 0 {
+                break;
+            }
+
             res.extend(decoded_seg);
             total_bit_len += bit_len;
 
@@ -231,7 +242,7 @@ pub mod decode {
                 break;
             }
         }
-        res
+        Ok(res)
     }
 
     #[cfg(test)]
@@ -247,7 +258,7 @@ pub mod decode {
             let ecl = ECLevel::L;
             let pal = Palette::Mono;
             let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
-            let decoded_data = decode(&mut bs, ver, ecl, pal);
+            let decoded_data = decode(&mut bs, ver, ecl, pal).unwrap();
             assert_eq!(decoded_data, data);
         }
     }

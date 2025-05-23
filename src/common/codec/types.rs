@@ -8,6 +8,7 @@ pub enum Mode {
     Numeric = 0b0001,
     Alphanumeric = 0b0010,
     Byte = 0b0100,
+    Terminator = 0b0000,
 }
 
 impl PartialOrd for Mode {
@@ -75,6 +76,7 @@ impl Mode {
                 _ => unreachable!("Invalid alphanumeric digit {mode_digit}"),
             },
             Self::Byte => mode_digit,
+            Self::Terminator => unreachable!("Terminator mode doesn't have characters"),
         }
     }
 
@@ -93,6 +95,7 @@ impl Mode {
                 debug_assert!(len == 1, "Data is too long for byte conver: {len}");
                 data[0] as u16
             }
+            Self::Terminator => unreachable!("Cannot encode in terminator mode"),
         }
     }
 
@@ -135,6 +138,7 @@ impl Mode {
 
                 vec![data as u8]
             }
+            Self::Terminator => unreachable!("Cannot decode in terminator mode"),
         }
     }
 
@@ -145,6 +149,7 @@ impl Mode {
                 matches!(byte, b'0'..=b'9' | b'A'..=b'Z' | b' ' | b'$' | b'%' | b'*' | b'+' | b'-' | b'.' | b'/' | b':')
             }
             Self::Byte => true,
+            Self::Terminator => false,
         }
     }
 
@@ -153,6 +158,7 @@ impl Mode {
             Self::Numeric => (len * 10 + 2) / 3,
             Self::Alphanumeric => (len * 11 + 1) / 2,
             Self::Byte => len * 8,
+            Self::Terminator => unreachable!("Cannot encode in terminator mode"),
         }
     }
 }
