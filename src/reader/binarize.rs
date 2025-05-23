@@ -201,49 +201,69 @@ impl BinaryImage {
         Self { buffer, regions: LruCache::new(NonZeroUsize::new(250).unwrap()), w, h }
     }
 
-    pub fn get(&self, x: u32, y: u32) -> Pixel {
+    pub fn get(&self, x: u32, y: u32) -> Option<Pixel> {
         let x = i32::try_from(x).expect("x coordinate exceeds i32::MAX");
         let y = i32::try_from(y).expect("y coordinate exceeds i32::MAX");
 
         let idx = self.coord_to_index(x, y);
-        self.buffer[idx]
+        if idx < self.buffer.len() {
+            Some(self.buffer[idx])
+        } else {
+            None
+        }
     }
 
     fn coord_to_index(&self, x: i32, y: i32) -> usize {
         let w = self.w as i32;
         let h = self.h as i32;
         debug_assert!(-w <= x && x < w, "row shouldn't be greater than or equal to w");
-        debug_assert!(-h <= y && y < h, "column shouldn't be greater than or equal to w");
+        debug_assert!(-h <= y && y < h, "column shouldn't be greater than or equal to h");
 
         let x = if x < 0 { x + w } else { x };
         let y = if y < 0 { y + h } else { y };
         (y * w + x) as _
     }
 
-    pub fn get_at_point(&self, pt: &Point) -> &Pixel {
+    pub fn get_at_point(&self, pt: &Point) -> Option<&Pixel> {
         let idx = self.coord_to_index(pt.x, pt.y);
-        &self.buffer[idx]
+        if idx < self.buffer.len() {
+            Some(&self.buffer[idx])
+        } else {
+            None
+        }
     }
 
-    pub fn get_mut(&mut self, x: u32, y: u32) -> &mut Pixel {
+    pub fn get_mut(&mut self, x: u32, y: u32) -> Option<&mut Pixel> {
         let x = i32::try_from(x).expect("x coordinate exceeds i32::MAX");
         let y = i32::try_from(y).expect("y coordinate exceeds i32::MAX");
 
         let idx = self.coord_to_index(x, y);
-        &mut self.buffer[idx]
+        if idx < self.buffer.len() {
+            Some(&mut self.buffer[idx])
+        } else {
+            None
+        }
     }
 
-    pub fn get_mut_at_point(&mut self, pt: &Point) -> &mut Pixel {
+    pub fn get_mut_at_point(&mut self, pt: &Point) -> Option<&mut Pixel> {
         let idx = self.coord_to_index(pt.x, pt.y);
-        &mut self.buffer[idx]
+        if idx < self.buffer.len() {
+            Some(&mut self.buffer[idx])
+        } else {
+            None
+        }
     }
 
     pub fn set(&mut self, x: u32, y: u32, px: Pixel) {
-        *self.get_mut(x, y) = px;
+        if let Some(pt) = self.get_mut(x, y) {
+            *pt = px;
+        }
     }
 
     pub fn set_at_point(&mut self, pt: &Point, px: Pixel) {
-        *self.get_mut_at_point(pt) = px;
+        if let Some(pt) = self.get_mut_at_point(pt) {
+            *pt = px;
+        }
     }
 
     #[cfg(test)]
@@ -260,7 +280,7 @@ impl BinaryImage {
     }
 
     pub(crate) fn get_region(&mut self, src: (u32, u32)) -> Option<Region> {
-        let px = self.get(src.0, src.1);
+        let px = self.get(src.0, src.1).unwrap();
 
         match px {
             Pixel::Unvisited(color) => {
@@ -300,7 +320,7 @@ impl BinaryImage {
         target: Pixel,
         mut acc: A,
     ) -> A {
-        let from = self.get(src.0, src.1);
+        let from = self.get(src.0, src.1).unwrap();
 
         debug_assert!(from != target, "Cannot fill same color: From {from:?}, To {target:?}");
 
@@ -317,13 +337,13 @@ impl BinaryImage {
             self.set(x, y, target);
 
             // Traverse left till boundary
-            while left > 0 && self.get(left - 1, y) == from {
+            while left > 0 && self.get(left - 1, y).unwrap() == from {
                 left -= 1;
                 self.set(left, y, target);
             }
 
             // Traverse right till boundary
-            while right < w - 1 && self.get(right + 1, y) == from {
+            while right < w - 1 && self.get(right + 1, y).unwrap() == from {
                 right += 1;
                 self.set(right, y, target);
             }
@@ -334,7 +354,7 @@ impl BinaryImage {
                 if ny != y && ny < h {
                     let mut seg_len = 0;
                     for x in left..=right {
-                        let px = self.get(x, ny);
+                        let px = self.get(x, ny).unwrap();
                         if px == from {
                             seg_len += 1;
                         } else if seg_len > 0 {

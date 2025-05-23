@@ -127,7 +127,7 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
 
     for y in 0..h {
         for x in 0..w {
-            let color = Color::from(img.get(x, y));
+            let color = Color::from(img.get(x, y).unwrap());
             let datum = match scanner.advance(color) {
                 Some(d) => d,
                 None => continue,
@@ -163,9 +163,9 @@ fn crosscheck_vertical(img: &BinaryImage, datum: &DatumLine) -> bool {
     // Count upwards
     let mut pos = cy - 1;
     let mut flips = 2;
-    let mut initial = Color::from(img.get(cx, cy));
+    let mut initial = Color::from(img.get(cx, cy).unwrap());
     while pos > 0 && run_len[flips] <= max_run {
-        let color = Color::from(img.get(cx, pos));
+        let color = Color::from(img.get(cx, pos).unwrap());
         if initial != color {
             initial = color;
             if flips == 0 {
@@ -180,9 +180,9 @@ fn crosscheck_vertical(img: &BinaryImage, datum: &DatumLine) -> bool {
     // Count downwards
     let mut pos = cy + 1;
     let mut flips = 2;
-    let mut initial = Color::from(img.get(cx, cy));
+    let mut initial = Color::from(img.get(cx, cy).unwrap());
     while pos < h && run_len[flips] <= max_run {
-        let color = Color::from(img.get(cx, pos));
+        let color = Color::from(img.get(cx, pos).unwrap());
         if initial != color {
             initial = color;
             if flips == 4 {
@@ -239,7 +239,7 @@ fn validate_regions(img: &mut BinaryImage, datum: &DatumLine) -> bool {
 
 fn construct_finder(img: &mut BinaryImage, datum: &DatumLine, id: usize) -> Finder {
     let (stone, right, y) = (datum.stone, datum.right, datum.y);
-    let color = Color::from(img.get(stone, y));
+    let color = Color::from(img.get(stone, y).unwrap());
     let ref_pt = Point { x: stone as i32, y: y as i32 };
 
     // Locating center of finder
@@ -249,7 +249,7 @@ fn construct_finder(img: &mut BinaryImage, datum: &DatumLine, id: usize) -> Find
     let center = cl.get_center();
 
     // Mark the ring as candidate
-    let color = Color::from(img.get(right, y));
+    let color = Color::from(img.get(right, y).unwrap());
     let to = Pixel::Candidate(color);
     let _ = img.fill_and_accumulate((right, y), to, |_| ());
 
@@ -483,12 +483,12 @@ where
 {
     let mut flips = 0;
     let mut buffer = Vec::with_capacity(100);
-    let px = img.get_at_point(from);
+    let px = img.get_at_point(from).unwrap();
     let mut last = Color::from(*px);
     let line = BresenhamLine::<A>::new(from, to);
 
     for p in line {
-        let px = img.get_at_point(&p);
+        let px = img.get_at_point(&p).unwrap();
         let color = Color::from(*px);
 
         if color != last {
@@ -524,12 +524,12 @@ where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
     let mut transitions = [0, 0, 0];
-    let px = img.get_at_point(from);
+    let px = img.get_at_point(from).unwrap();
     let mut last = Color::from(*px).to_bits();
     let line = BresenhamLine::<A>::new(from, to);
 
     for p in line {
-        let px = img.get_at_point(&p);
+        let px = img.get_at_point(&p).unwrap();
         let color = Color::from(*px).to_bits();
         for i in 0..3 {
             if color[i] != last[i] {

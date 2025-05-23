@@ -165,7 +165,6 @@ mod qr_tests {
 
                 let img_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.png");
                 let img_path = std::path::Path::new(&img_path_str);
-                dbg!(img_path);
                 let img = image::open(img_path).unwrap().to_luma8(); // WARN: Grayscale image
 
                 // let err_msg = format!("Failed to read QR from: {}", &img_path_str);

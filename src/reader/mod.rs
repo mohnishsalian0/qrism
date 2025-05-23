@@ -48,13 +48,13 @@ impl QRReader {
         let ver = symbol.ver;
 
         debug_println!("Reading palette info...");
-        let pal = symbol.read_palette_info();
+        let pal = symbol.read_palette_info()?;
 
         debug_println!("Marking all function patterns...");
         symbol.mark_all_function_patterns();
 
         debug_println!("Extracting payload...");
-        let pld = symbol.extract_payload(&mask);
+        let pld = symbol.extract_payload(&mask)?;
 
         let blk_info = ver.data_codewords_per_block(ecl);
         let ec_len = ver.ecc_per_block(ecl);
@@ -204,12 +204,12 @@ mod reader_tests {
 
     #[test]
     fn test_reader_2() {
-        let path = std::path::Path::new("tests/qrcode-1/9.png");
+        let path = std::path::Path::new("tests/images/qrcode-3/18.png");
         let img = image::open(path).unwrap().to_luma8();
 
         let extracted_data = QRReader::read(&img).expect("Couldn't read data");
 
-        dbg!(extracted_data);
+        println!("{}", extracted_data);
     }
 
     #[test]
@@ -219,7 +219,7 @@ mod reader_tests {
         #[allow(unused_imports)]
         use crate::reader::finder::group_finders;
 
-        let path = std::path::Path::new("tests/qrcode-1/9.png");
+        let path = std::path::Path::new("tests/images/qrcode-3/18.png");
         let img = image::open(path).unwrap().to_luma8();
         let mut img = BinaryImage::prepare(&img);
         let path = std::path::Path::new("assets/inp.png");

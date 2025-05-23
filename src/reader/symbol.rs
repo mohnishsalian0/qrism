@@ -70,7 +70,7 @@ impl SymbolLocation {
             align_seed = locate_alignment_pattern(img, group, align_seed)?;
 
             let cl = CenterLocator::new();
-            let color = Color::from(*img.get_at_point(&align_seed));
+            let color = Color::from(*img.get_at_point(&align_seed).unwrap());
             let src = (align_seed.x as u32, align_seed.y as u32);
             let to = Pixel::Reserved(color);
 
@@ -103,20 +103,22 @@ impl Symbol {
         Self { img, h, anchors, ver }
     }
 
-    pub fn get(&self, x: i32, y: i32) -> &Pixel {
-        let (x, y) = self.wrap_coord(x, y);
-        let pt = self.map(x as f64 + 0.5, y as f64 + 0.5).unwrap();
+    pub fn get(&self, x: i32, y: i32) -> Option<&Pixel> {
+        let (xp, yp) = self.wrap_coord(x, y);
+        let pt = self.map(xp as f64 + 0.5, yp as f64 + 0.5).unwrap();
         self.img.get_at_point(&pt)
     }
 
-    pub fn get_mut(&mut self, x: i32, y: i32) -> &mut Pixel {
+    pub fn get_mut(&mut self, x: i32, y: i32) -> Option<&mut Pixel> {
         let (x, y) = self.wrap_coord(x, y);
         let pt = self.map(x as f64 + 0.5, y as f64 + 0.5).unwrap();
         self.img.get_mut_at_point(&pt)
     }
 
     pub fn set(&mut self, x: i32, y: i32, px: Pixel) {
-        *self.get_mut(x, y) = px
+        if let Some(pt) = self.get_mut(x, y) {
+            *pt = px;
+        }
     }
 
     fn wrap_coord(&self, x: i32, y: i32) -> (i32, i32) {
@@ -200,7 +202,7 @@ fn locate_alignment_pattern(
             let x = seed.x as u32;
             let y = seed.y as u32;
 
-            let color = Color::from(*img.get_at_point(&seed));
+            let color = Color::from(*img.get_at_point(&seed).unwrap());
             if x < w && y < h && color != invalid {
                 let reg = img.get_region((x, y));
                 let sz = match reg {
@@ -353,8 +355,8 @@ fn cell_fitness(img: &BinaryImage, hm: &Homography, x: i32, y: i32) -> i32 {
     for dy in OFFSETS.iter() {
         for dx in OFFSETS.iter() {
             let pt = hm.map(x as f64 + dx, y as f64 + dy).unwrap();
-            if !(pt.x < 0 || w <= pt.x as u32 || pt.y < 0 || h <= pt.y as u32) {
-                let color = Color::from(*img.get_at_point(&pt));
+            if let Some(px) = img.get_at_point(&pt) {
+                let color = Color::from(*px);
                 if color == white {
                     score -= 1;
                 } else {
@@ -412,67 +414,88 @@ mod symbol_tests {
 
 impl Symbol {
     pub fn read_format_info(&mut self) -> QRResult<(ECLevel, MaskPattern)> {
-        let main = self.get_number(&FORMAT_INFO_COORDS_QR_MAIN);
-        let mut format = rectify_info(main, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY)
-            .or_else(|_| {
-                let side = self.get_number(&FORMAT_INFO_COORDS_QR_SIDE);
-                rectify_info(side, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY)
-            })
-            .or(Err(QRError::InvalidFormatInfo))?;
+        // Parse main format area
+        if let Some(main) = self.get_number(&FORMAT_INFO_COORDS_QR_MAIN) {
+            if let Ok(format) = rectify_info(main, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY) {
+                self.mark_coords(&FORMAT_INFO_COORDS_QR_MAIN);
+                self.mark_coords(&FORMAT_INFO_COORDS_QR_SIDE);
 
-        self.mark_coords(&FORMAT_INFO_COORDS_QR_MAIN);
-        self.mark_coords(&FORMAT_INFO_COORDS_QR_SIDE);
+                let format = format ^ FORMAT_MASK;
+                let (ecl, mask) = parse_format_info_qr(format);
+                return Ok((ecl, mask));
+            }
+        }
 
-        format ^= FORMAT_MASK;
-        let (ecl, mask) = parse_format_info_qr(format);
-        Ok((ecl, mask))
+        // Parse side format area
+        if let Some(side) = self.get_number(&FORMAT_INFO_COORDS_QR_SIDE) {
+            if let Ok(format) = rectify_info(side, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY) {
+                self.mark_coords(&FORMAT_INFO_COORDS_QR_MAIN);
+                self.mark_coords(&FORMAT_INFO_COORDS_QR_SIDE);
+
+                let format = format ^ FORMAT_MASK;
+                let (ecl, mask) = parse_format_info_qr(format);
+                return Ok((ecl, mask));
+            }
+        }
+
+        Err(QRError::InvalidFormatInfo)
     }
 
     pub fn read_version_info(&mut self) -> QRResult<Version> {
-        debug_assert!(
-            !matches!(self.ver, Version::Micro(_) | Version::Normal(1..=6)),
-            "Version is too small to read version info"
-        );
+        // Parse bottom left version area
+        if let Some(bl) = self.get_number(&VERSION_INFO_COORDS_BL) {
+            if let Ok(v) = rectify_info(bl, &VERSION_INFOS, VERSION_ERROR_CAPACITY) {
+                self.mark_coords(&VERSION_INFO_COORDS_BL);
+                self.mark_coords(&VERSION_INFO_COORDS_TR);
 
-        let bl = self.get_number(&VERSION_INFO_COORDS_BL);
-        let v = rectify_info(bl, &VERSION_INFOS, VERSION_ERROR_CAPACITY)
-            .or_else(|_| {
-                let tr = self.get_number(&VERSION_INFO_COORDS_TR);
-                rectify_info(tr, &VERSION_INFOS, VERSION_ERROR_CAPACITY)
-            })
-            .or(Err(QRError::InvalidVersionInfo))?;
-
-        self.mark_coords(&VERSION_INFO_COORDS_BL);
-        self.mark_coords(&VERSION_INFO_COORDS_TR);
-
-        Ok(Version::Normal(v as usize >> VERSION_ERROR_BIT_LEN))
-    }
-
-    pub fn read_palette_info(&mut self) -> Palette {
-        let color = Color::from(*self.get(8, -8));
-        self.set(8, -8, Pixel::Reserved(color));
-
-        if color == Color::Black {
-            Palette::Mono
-        } else {
-            Palette::Poly
+                return Ok(Version::Normal(v as usize >> VERSION_ERROR_BIT_LEN));
+            }
         }
+
+        // Parse top right version area
+        if let Some(tr) = self.get_number(&VERSION_INFO_COORDS_TR) {
+            if let Ok(v) = rectify_info(tr, &VERSION_INFOS, VERSION_ERROR_CAPACITY) {
+                self.mark_coords(&VERSION_INFO_COORDS_BL);
+                self.mark_coords(&VERSION_INFO_COORDS_TR);
+
+                return Ok(Version::Normal(v as usize >> VERSION_ERROR_BIT_LEN));
+            }
+        }
+
+        Err(QRError::InvalidVersionInfo)
     }
 
-    pub fn get_number(&mut self, coords: &[(i32, i32)]) -> u32 {
+    pub fn read_palette_info(&mut self) -> QRResult<Palette> {
+        if let Some(px) = self.get(8, -8) {
+            let color = Color::from(*px);
+            self.set(8, -8, Pixel::Reserved(color));
+
+            if color == Color::Black {
+                return Ok(Palette::Mono);
+            } else {
+                return Ok(Palette::Poly);
+            }
+        }
+
+        Err(QRError::InvalidPaletteInfo)
+    }
+
+    pub fn get_number(&mut self, coords: &[(i32, i32)]) -> Option<u32> {
         let mut num = 0;
         for (y, x) in coords {
-            let color = Color::from(*self.get(*x, *y));
+            let color = Color::from(*self.get(*x, *y)?);
             let bit = (color != Color::White) as u32;
             num = (num << 1) | bit;
         }
-        num
+        Some(num)
     }
 
     pub fn mark_coords(&mut self, coords: &[(i32, i32)]) {
         for (y, x) in coords {
-            let color = Color::from(*self.get(*x, *y));
-            self.set(*x, *y, Pixel::Reserved(color));
+            if let Some(px) = self.get_mut(*x, *y) {
+                let color = Color::from(*px);
+                self.set(*x, *y, Pixel::Reserved(color));
+            }
         }
     }
 }
@@ -705,8 +728,10 @@ impl Symbol {
         let (dx_t, dx_b) = if x > 0 { (-3, 4) } else { (-4, 3) };
         for i in dy_l..=dy_r {
             for j in dx_t..=dx_b {
-                let color = Color::from(*self.get(x + j, y + i));
-                self.set(x + j, y + i, Pixel::Reserved(color));
+                if let Some(px) = self.get(x + j, y + i) {
+                    let color = Color::from(*px);
+                    self.set(x + j, y + i, Pixel::Reserved(color));
+                }
             }
         }
     }
@@ -731,13 +756,17 @@ impl Symbol {
 
         if x1 == x2 {
             for j in y1..=y2 {
-                let color = Color::from(*self.get(x1, j));
-                self.set(x1, j, Pixel::Reserved(color));
+                if let Some(px) = self.get(x1, j) {
+                    let color = Color::from(*px);
+                    self.set(x1, j, Pixel::Reserved(color));
+                }
             }
         } else {
             for i in x1..=x2 {
-                let color = Color::from(*self.get(i, y1));
-                self.set(i, y1, Pixel::Reserved(color));
+                if let Some(px) = self.get(i, y1) {
+                    let color = Color::from(*px);
+                    self.set(i, y1, Pixel::Reserved(color));
+                }
             }
         }
     }
@@ -763,8 +792,10 @@ impl Symbol {
         }
         for i in -2..=2 {
             for j in -2..=2 {
-                let color = Color::from(*self.get(x + i, y + j));
-                self.set(x + i, y + j, Pixel::Reserved(color));
+                if let Some(px) = self.get(x + i, y + j) {
+                    let color = Color::from(*px);
+                    self.set(x + i, y + j, Pixel::Reserved(color));
+                }
             }
         }
     }
@@ -774,7 +805,7 @@ impl Symbol {
 //------------------------------------------------------------------------------
 
 impl Symbol {
-    pub fn extract_payload(&mut self, mask: &MaskPattern) -> BitArray {
+    pub fn extract_payload(&mut self, mask: &MaskPattern) -> QRResult<BitArray> {
         let ver = self.ver;
         let mask_fn = mask.mask_functions();
         let chan_bits = ver.channel_codewords() << 3;
@@ -784,7 +815,7 @@ impl Symbol {
 
         for i in 0..chan_bits {
             for (y, x) in rgn_iter.by_ref() {
-                let px = self.get(x, y);
+                let px = self.get(x, y).ok_or(QRError::ExtractionFailed)?;
                 if !matches!(px, Pixel::Reserved(_)) {
                     let color = Color::from(*px);
                     let [mut r, mut g, mut b] = color.to_bits();
@@ -800,6 +831,6 @@ impl Symbol {
                 }
             }
         }
-        pyld
+        Ok(pyld)
     }
 }

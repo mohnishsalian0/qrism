@@ -20,13 +20,16 @@ pub enum QRError {
     SingularMatrix,
     PointAtInfinity,
     SymbolNotFound,
+    PixelOutOfBounds,
     TooManyError,
     InvalidInfo,
     InvalidFormatInfo,
     InvalidVersionInfo,
+    InvalidPaletteInfo,
     FinderMismatch,
     TimingMismatch,
     AlignmentMismatch,
+    ExtractionFailed,
     InvalidUTF8Sequence,
 }
 
@@ -48,13 +51,16 @@ impl Display for QRError {
             Self::SingularMatrix => "Cannot compute homography",
             Self::PointAtInfinity => "Projected point is at infinity",
             Self::SymbolNotFound => "Symbol not found",
+            Self::PixelOutOfBounds => "Pixel is out of bounds",
             Self::TooManyError => "Too many errors to correct successfully",
             Self::InvalidInfo => "Invalid info",
             Self::InvalidFormatInfo => "Invalid format info detected",
             Self::InvalidVersionInfo => "Invalid version info detected",
+            Self::InvalidPaletteInfo => "Invalid palette info detected",
             Self::FinderMismatch => "Finder color mismatch",
             Self::TimingMismatch => "Timing color mismatch",
             Self::AlignmentMismatch => "Alignment color mismatch",
+            Self::ExtractionFailed => "Extraction failed because point is out of bounds",
             Self::InvalidUTF8Sequence => "Invalid UTF8 sequence",
         };
         f.write_str(msg)
