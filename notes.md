@@ -16,6 +16,9 @@ Utils
 Deal with shadow:
     Make the finder locator ignore quietzone
     Or finetune the binarize to certain gray areas
+    Implement zxing binarization
+Deal with warped qr like on a tshirt:
+    Implement zxing detector
 
 OUT OF SCOPE:
 Detecting branded (custom colors) traditional QR

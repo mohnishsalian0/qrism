@@ -51,9 +51,9 @@ impl Display for QRError {
             // QR reader
             Self::SingularMatrix => "Cannot compute homography",
             Self::PointAtInfinity => "Projected point is at infinity",
-            Self::SymbolNotFound => "Symbol not found",
+            Self::SymbolNotFound => "QR not found",
             Self::PixelOutOfBounds => "Pixel is out of bounds",
-            Self::TooManyError => "Too many errors to correct successfully",
+            Self::TooManyError => "Too many errors",
             Self::InvalidInfo => "Invalid info",
             Self::InvalidFormatInfo => "Invalid format info detected",
             Self::InvalidVersionInfo => "Invalid version info detected",

@@ -64,11 +64,13 @@ impl QRReader {
         let chan_cap = ver.channel_codewords();
 
         debug_println!("Separating channels, deinterleaving & rectifying payload...");
-        pld.data().chunks_exact(chan_cap).for_each(|c| {
+        for c in pld.data().chunks_exact(chan_cap) {
             let mut blocks = deinterleave(c, blk_info, ec_len);
-            let _ = blocks.iter_mut().filter_map(Option::as_mut).map(Block::rectify);
-            blocks.iter().filter_map(Option::as_ref).for_each(|b| enc.extend(b.data()));
-        });
+            for b in blocks.iter_mut().flatten() {
+                let rectified = b.rectify()?;
+                enc.extend(rectified);
+            }
+        }
 
         debug_println!("Decoding data blocks...");
         let msg = decode(&mut enc, ver, ecl, pal)?;
@@ -203,38 +205,49 @@ mod reader_tests {
     }
 
     #[test]
+    #[ignore]
     fn test_reader_2() {
-        let path = std::path::Path::new("tests/images/qrcode-3/17.png");
-        let img = image::open(path).unwrap().to_luma8();
+        let (folder_id, qr_id) = (4, 1);
 
+        let qr_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.png");
+        let qr_path = std::path::Path::new(&qr_path_str);
+        let img = image::open(qr_path).unwrap().to_luma8();
         let extracted_data = QRReader::read(&img).expect("Couldn't read data");
 
-        println!("{}", extracted_data);
+        let msg_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.txt");
+        let msg_path = std::path::Path::new(&msg_path_str);
+        let exp_msg = std::fs::read_to_string(msg_path).unwrap();
+        let exp_msg = exp_msg.replace("\r\n", "\n");
+
+        assert_eq!(extracted_data, exp_msg);
     }
 
     #[test]
+    #[ignore]
     fn reader_debugger() {
         #[allow(unused_imports)]
         use super::{binarize::BinaryImage, finder::locate_finders, locate_symbol, QRReader};
         #[allow(unused_imports)]
         use crate::reader::finder::group_finders;
 
-        let path = std::path::Path::new("tests/images/qrcode-3/23.png");
-        let img = image::open(path).unwrap().to_luma8();
-        let mut img = BinaryImage::prepare(&img);
+        let inp = std::path::Path::new("tests/images/qrcode-5/2.png");
+        let img = image::open(inp).unwrap().to_luma8();
+        let mut bin_img = BinaryImage::prepare(&img);
         let path = std::path::Path::new("assets/inp.png");
-        img.save(path).unwrap();
+        bin_img.save(path).unwrap();
 
-        let finders = locate_finders(&mut img);
-        let groups = group_finders(&img, &finders);
-        let symbol = locate_symbol(img, groups).unwrap();
+        let mut out_img = image::open(path).unwrap().to_rgb8();
 
-        let mut img = image::open(path).unwrap().to_rgb8();
-        // finders.iter().for_each(|f| f.center.highlight(&mut img));
-        // groups[0].highlight(&mut img);
-        symbol.highlight(&mut img);
+        let finders = locate_finders(&mut bin_img);
+        finders.iter().for_each(|f| f.center.highlight(&mut out_img));
+
+        // let groups = group_finders(&bin_img, &finders);
+        // groups[0].highlight(&mut out_img);
+
+        // let symbol = locate_symbol(bin_img, groups).unwrap();
+        // symbol.highlight(&mut out_img);
 
         let out = std::path::Path::new("assets/out.png");
-        img.save(out).unwrap();
+        out_img.save(out).unwrap();
     }
 }

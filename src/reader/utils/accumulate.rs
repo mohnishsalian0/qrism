@@ -186,8 +186,6 @@ impl CenterLocator {
         let x = self.sum_x as f64 / (2 * self.area) as f64;
         let y = self.sum_y as f64 / self.area as f64;
 
-        dbg!(self.sum_y, self.sum_x, self.area);
-
         let x = x.round();
         let y = y.round();
 

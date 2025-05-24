@@ -52,13 +52,24 @@ impl SymbolLocation {
             hm.dy = -hm.dy;
         }
 
+        // Getting provisional version
         let ver = Version::from_grid_size(group.size as usize)?;
 
-        let hm = Slope::new(&c1, &c2);
-        let hor_line = Line::from_point_slope(&group.mids[1], &hm);
-        let vm = Slope::new(&c1, &c0);
-        let ver_line = Line::from_point_slope(&group.mids[4], &vm);
-        let mut align_seed = hor_line.intersection(&ver_line)?;
+        // Locating provisional alignment center
+        let hm = Slope::new(&c1, &c2); // Horizontal slope from c1 to c2
+        let vm = Slope::new(&c1, &c0); // Vertical slope from c1 to c0
+        let (hl, vl) = if *ver == 1 {
+            // If version 1, then lines are drawn from c0 and c2
+            let hl = Line::from_point_slope(&c0, &hm);
+            let vl = Line::from_point_slope(&c2, &vm);
+            (hl, vl)
+        } else {
+            // For any other version, lines are from m1 (m31) & m4 (m21)
+            let hl = Line::from_point_slope(&group.mids[1], &hm);
+            let vl = Line::from_point_slope(&group.mids[4], &vm);
+            (hl, vl)
+        };
+        let mut align_seed = hl.intersection(&vl)?;
 
         // Exit if projected alignment pt is outside the image
         let Point { x: ax, y: ay } = align_seed;
@@ -66,10 +77,12 @@ impl SymbolLocation {
             return None;
         }
 
-        if (2..=40).contains(&*ver) {
+        // For versions above 1 a more robust algorithm to locate align center.
+        // Spiral out of provisional align pt to identify potential pt. Then compare the area of
+        // black region with estimate module size to confirm alignment stone. Finally, locate the
+        // center of the stone.
+        if *ver != 1 {
             align_seed = locate_alignment_pattern(img, group, align_seed)?;
-
-            dbg!(align_seed);
 
             let cl = CenterLocator::new();
             let color = Color::from(*img.get_at_point(&align_seed).unwrap());
@@ -238,7 +251,8 @@ fn setup_homography(
     ver: Version,
 ) -> Option<Homography> {
     let size = group.size as f64;
-    let src = [(3.5, 3.5), (size - 3.5, 3.5), (size - 6.5, size - 6.5), (3.5, size - 3.5)];
+    let br_off = if *ver == 1 { 3.5 } else { 6.5 };
+    let src = [(3.5, 3.5), (size - 3.5, 3.5), (size - br_off, size - br_off), (3.5, size - 3.5)];
 
     let c0 = (group.finders[0].center.x as f64, group.finders[0].center.y as f64);
     let c1 = (group.finders[1].center.x as f64, group.finders[1].center.y as f64);
@@ -292,7 +306,6 @@ fn symbol_fitness(img: &BinaryImage, h: &Homography, ver: Version) -> i32 {
     let grid_size = ver.width() as i32;
 
     // Score timing patterns
-    // WARN: Using usize instead of i32 for i
     for i in 7..grid_size - 7 {
         let flip = if i & 1 == 0 { -1 } else { 1 };
         score += cell_fitness(img, h, i, 6) * flip;
