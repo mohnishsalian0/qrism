@@ -1,4 +1,4 @@
-use std::{cmp, collections::VecDeque, num::NonZeroUsize};
+use std::{collections::VecDeque, num::NonZeroUsize};
 
 use image::Pixel as ImgPixel;
 use image::{GenericImageView, GrayImage, Luma, Rgb, RgbImage};
@@ -76,160 +76,188 @@ pub struct Region {
 
 // Binarize trait for rgb & grayscale image
 // Steps:
-// 1. Divides image into blocks of 8x8 pixels. Note: The last fractional block average is
-//    calculated based on average of last 8 pixels. So few pixels might overlap into 2 blocks
+// 1. Divides image into blocks of 8x8 pixels. Note: For the last fractional block is, the
+//    last 8 pixels are considered. So few pixels might overlap with last 2 blocks
 // 2. Calculates average of each block
-// 3. Calculates the threshold for each block by averaging 5x5 block around the current block
-// 4. Sets binary pixel as false if pixel value less than or equal to threshold, else true
+// 3. Calculates the threshold for each block by averaging 5x5 block around the current block if
+//    the block is near an edge or a corner, the window is shifted accordingly.
+// 4. Sets pixel value as false if less than or equal to threshold, else true
 // Note: If the pixel value is equal to threshold, it is set as false for the edge case when
 // threshold is 0 in which case the pixel should be false/black
 //------------------------------------------------------------------------------
 
 pub trait Binarize {
     fn binarize(&self) -> Vec<Pixel>;
-    fn calculate_block_average(&self) -> Vec<usize>;
-    fn calculate_threshold(&self, avg: &[usize]) -> Vec<u8>;
 }
 
 impl Binarize for RgbImage {
     fn binarize(&self) -> Vec<Pixel> {
         let (w, h) = self.dimensions();
-        let win_sz = cmp::max(w / 8, 1);
-        let mut u_avg = [0, 0, 0];
-        let mut v_avg = [0, 0, 0];
-        let mut row_avg = vec![[0, 0, 0]; w as usize];
-        let mut buffer = Vec::with_capacity((w * h) as usize);
 
-        for y in 0..h {
-            for x in 0..w {
-                let (u, v) = if y & 1 == 0 { (x, w - 1 - x) } else { (w - 1 - x, x) };
-                let (u_usize, v_usize) = (u as usize, v as usize);
-                let (pu, pv) = (self.get_pixel(u, y), self.get_pixel(v, y));
+        let wsteps = (w + 7) >> 3;
+        let hsteps = (h + 7) >> 3;
+        let len = (wsteps * hsteps) as usize;
 
-                for i in 0..3 {
-                    u_avg[i] = u_avg[i] * (win_sz - 1) / win_sz + pu[i] as u32;
-                    v_avg[i] = v_avg[i] * (win_sz - 1) / win_sz + pv[i] as u32;
-                    row_avg[u_usize][i] += u_avg[i];
-                    row_avg[v_usize][i] += v_avg[i];
+        let mut avg = vec![[0usize; 3]; len];
+        let mut min = vec![[u8::MAX; 3]; len];
+        let mut max = vec![[u8::MIN; 3]; len];
+
+        // Calculate sum of 8x8 pixels for each block
+        // Skip last few pixels which form fractional blocks. The last block will be computed later
+        // Round w and h to skips these pixels
+        let (wr, hr) = (w & !0b111, h & !0b111);
+        for y in 0..hr {
+            let row_off = (y >> 3) * wsteps;
+            for x in 0..wr {
+                let idx = (row_off + (x >> 3)) as usize;
+                let px = self.get_pixel(x, y);
+                for c in 0..3 {
+                    avg[idx][c] += px[c] as usize;
+                    min[idx][c] = std::cmp::min(min[idx][c], px[c]);
+                    max[idx][c] = std::cmp::max(max[idx][c], px[c]);
                 }
             }
+        }
 
-            let den = 200 * win_sz;
-            for x in 0..w {
-                let mut px = *self.get_pixel(x, y);
-                for (i, p) in px.0.iter_mut().enumerate() {
-                    let thresh = row_avg[x as usize][i] * (100 - 5) / den;
-                    if *p as u32 >= thresh {
-                        *p = 255;
-                    } else {
-                        *p = 0;
+        // Sum of 8x8 pixels for fractional blocks (if exists) on the right edge
+        if w & 0b111 != 0 {
+            for y in 0..h {
+                let idx = (((y >> 3) + 1) * wsteps - 1) as usize;
+                for x in w - 8..w {
+                    let px = self.get_pixel(x, y);
+                    for c in 0..3 {
+                        avg[idx][c] += px[c] as usize;
+                        min[idx][c] = std::cmp::min(min[idx][c], px[c]);
+                        max[idx][c] = std::cmp::max(max[idx][c], px[c]);
                     }
                 }
-                buffer.push(px.into());
             }
-
-            row_avg.fill([0, 0, 0]);
         }
-        buffer
-    }
 
-    fn calculate_block_average(&self) -> Vec<usize> {
-        todo!()
-    }
+        // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom edge
+        if h & 0b111 != 0 {
+            let last_row = wsteps * (hsteps - 1);
+            for y in h - 8..h {
+                for x in 0..w - 8 {
+                    let idx = (last_row + (x >> 3)) as usize;
+                    let px = self.get_pixel(x, y);
+                    for c in 0..3 {
+                        avg[idx][c] += px[c] as usize;
+                        min[idx][c] = std::cmp::min(min[idx][c], px[c]);
+                        max[idx][c] = std::cmp::max(max[idx][c], px[c]);
+                    }
+                }
+            }
+        }
 
-    fn calculate_threshold(&self, avg: &[usize]) -> Vec<u8> {
-        todo!()
-    }
-}
+        // Take average from the sum calculated for each block
+        // If variance is low (<= 24), assume the block is white. Because there is a high chance
+        // that the block is outside the qr. Unless the block has top/left neighbors, in which
+        // case take average of them.
+        let wsteps = wsteps as usize;
+        let hsteps = hsteps as usize;
+        for i in 0..len {
+            let (mn, mx) = (min[i], max[i]);
+            for c in 0..3 {
+                if mx[c] - mn[c] <= 24 {
+                    avg[i][c] = (mn[c] as usize) / 2;
+                    if i > wsteps && i % wsteps > 0 {
+                        // Average of neighbors 2 * (x-1, y), (x, y-1), (x-1, y-1)
+                        let ng_avg =
+                            (2 * avg[i - 1][c] + avg[i - wsteps][c] + avg[i - wsteps - 1][c]) / 4;
+                        if mn[c] < ng_avg as u8 {
+                            avg[i][c] = ng_avg;
+                        }
+                    }
+                } else {
+                    // Convert 8×8 sum to average (divide by 64)
+                    avg[i][c] >>= 6;
+                }
+            }
+        }
 
-impl Binarize for GrayImage {
-    // fn binarize(&self) -> Vec<Pixel> {
-    //     let (w, h) = self.dimensions();
-    //     let win_sz = cmp::max(w / 8, 1);
-    //     let mut u_avg = 0;
-    //     let mut v_avg = 0;
-    //     let mut row_avg = vec![0; w as usize];
-    //     let mut buffer = Vec::with_capacity((w * h) as usize);
-    //
-    //     for y in 0..h {
-    //         for x in 0..w {
-    //             let (u, v) = if y & 1 == 0 { (x, w - 1 - x) } else { (w - 1 - x, x) };
-    //             let (u_usize, v_usize) = (u as usize, v as usize);
-    //             let (pu, pv) = (self.get_pixel(u, y), self.get_pixel(v, y));
-    //
-    //             u_avg = u_avg * (win_sz - 1) / win_sz + pu[0] as u32;
-    //             v_avg = v_avg * (win_sz - 1) / win_sz + pv[0] as u32;
-    //             row_avg[u_usize] += u_avg;
-    //             row_avg[v_usize] += v_avg;
-    //         }
-    //
-    //         let den = 200 * win_sz;
-    //         for x in 0..w {
-    //             let mut px = *self.get_pixel(x, y);
-    //             let thresh = row_avg[x as usize] * (100 - 5) / den;
-    //             if px[0] as u32 >= thresh {
-    //                 px[0] = 255;
-    //             } else {
-    //                 px[0] = 0;
-    //             }
-    //             buffer.push(px.into());
-    //         }
-    //
-    //         row_avg.fill(0);
-    //     }
-    //     buffer
-    // }
+        // Calculates threshold for blocks
+        let (maxx, maxy) = (wsteps - 2, hsteps - 2);
+        let mut threshold = vec![[0u8; 3]; wsteps * hsteps];
 
-    fn binarize(&self) -> Vec<Pixel> {
-        let (w, h) = self.dimensions();
+        for y in 0..hsteps {
+            let row_off = y * wsteps;
+            for x in 0..wsteps {
+                let i = row_off + x;
 
-        let mut wsteps = w >> 3;
-        if w & 0b111 != 0 {
-            wsteps += 1;
+                // If y is near any boundary then copy the threshold above
+                if y > 0 && (y <= 2 || y >= maxy) {
+                    threshold[i] = threshold[i - wsteps];
+                    continue;
+                }
+
+                // If x is near any boundary then copy the left threshold
+                if x > 0 && (x <= 2 || x >= maxx) {
+                    threshold[i] = threshold[i - 1];
+                    continue;
+                }
+
+                let cx = std::cmp::max(x, 2);
+                let cy = std::cmp::max(y, 2);
+                let mut sum = [0usize; 3];
+                for ny in cy - 2..=cy + 2 {
+                    let ni = ny * wsteps + cx;
+                    for a in &avg[ni - 2..=ni + 2] {
+                        for c in 0..3 {
+                            sum[c] += a[c];
+                        }
+                    }
+                }
+
+                for (c, t) in threshold[i].iter_mut().enumerate() {
+                    *t = (sum[c] / 25) as u8;
+                }
+            }
         }
 
         // Initially mark all pixels as unvisited; will be used for flood fill later.
-        let mut res = vec![Pixel::Unvisited(Color::White); (w * h) as usize];
-
-        let blk_avg = self.calculate_block_average();
-
-        let thresh = self.calculate_threshold(&blk_avg);
+        let mut res = vec![Pixel::Unvisited(Color::Black); (w * h) as usize];
 
         for y in 0..h {
             let row_off = y * w;
-            let thresh_row_off = (y >> 3) * wsteps;
+            let thresh_row_off = (y as usize >> 3) * wsteps;
             for x in 0..w {
-                let p = self.get_pixel(x, y)[0];
+                let p = self.get_pixel(x, y);
 
                 let idx = (row_off + x) as usize;
 
-                let xsteps = x >> 3;
-                let thresh_idx = (thresh_row_off + xsteps) as usize;
+                let xsteps = x as usize >> 3;
+                let thresh_idx = thresh_row_off + xsteps;
 
-                if p <= thresh[thresh_idx] {
-                    res[idx] = Pixel::Unvisited(Color::Black);
+                let mut color = Color::Black;
+                for c in 0..3 {
+                    if p[c] > threshold[thresh_idx][c] {
+                        let byte = color as u8 | 1 << (2 - c);
+                        color = Color::try_from(byte).unwrap();
+                    }
+                }
+
+                if color != Color::Black {
+                    res[idx] = Pixel::Unvisited(color);
                 }
             }
         }
 
         res
     }
+}
 
-    fn calculate_block_average(&self) -> Vec<usize> {
+impl Binarize for GrayImage {
+    fn binarize(&self) -> Vec<Pixel> {
         let (w, h) = self.dimensions();
 
-        let mut wsteps = w >> 3;
-        if w & 0b111 != 0 {
-            wsteps += 1;
-        }
-        let mut hsteps = h >> 3;
-        if h & 0b111 != 0 {
-            hsteps += 1;
-        }
+        let wsteps = (w + 7) >> 3;
+        let hsteps = (h + 7) >> 3;
         let len = (wsteps * hsteps) as usize;
 
+        // Calculates block average
         let mut avg = vec![0usize; len];
-        let mut min_max = vec![(0u8, 0u8); len];
+        let mut min_max = vec![(u8::MAX, u8::MIN); len];
 
         // Calculate sum of 8x8 pixels for each block
         // Skip last few pixels which form fractional blocks. The last block will be computed later
@@ -249,44 +277,50 @@ impl Binarize for GrayImage {
             }
         }
 
-        // Calculate sum of 8x8 pixels for fractional blocks on the right edge
-        for y in 0..h {
-            let idx = (((y >> 3) + 1) * wsteps - 1) as usize;
-            for x in w - 8..w {
-                let p = self.get_pixel(x, y)[0];
+        // Sum of 8x8 pixels for fractional blocks (if exists) on the right edge
+        if w & 0b111 != 0 {
+            for y in 0..h {
+                let idx = (((y >> 3) + 1) * wsteps - 1) as usize;
+                for x in w - 8..w {
+                    let p = self.get_pixel(x, y)[0];
 
-                avg[idx] += p as usize;
-                min_max[idx].0 = std::cmp::min(min_max[idx].0, p);
-                min_max[idx].1 = std::cmp::max(min_max[idx].1, p);
+                    avg[idx] += p as usize;
+                    min_max[idx].0 = std::cmp::min(min_max[idx].0, p);
+                    min_max[idx].1 = std::cmp::max(min_max[idx].1, p);
+                }
             }
         }
 
-        // Calculate sum of 8x8 pixels for fractional blocks on the bottom edge
-        let last_row = wsteps * (hsteps - 1);
-        for y in h - 8..h {
-            for x in 0..w - 8 {
-                let p = self.get_pixel(x, y)[0];
+        // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom edge
+        if h & 0b111 != 0 {
+            let last_row = wsteps * (hsteps - 1);
+            for y in h - 8..h {
+                for x in 0..w - 8 {
+                    let p = self.get_pixel(x, y)[0];
 
-                let xsteps = x >> 3;
-                let idx = (last_row + xsteps) as usize;
+                    let xsteps = x >> 3;
+                    let idx = (last_row + xsteps) as usize;
 
-                avg[idx] += p as usize;
-                min_max[idx].0 = std::cmp::min(min_max[idx].0, p);
-                min_max[idx].1 = std::cmp::max(min_max[idx].1, p);
+                    avg[idx] += p as usize;
+                    min_max[idx].0 = std::cmp::min(min_max[idx].0, p);
+                    min_max[idx].1 = std::cmp::max(min_max[idx].1, p);
+                }
             }
         }
 
         // Take average from the sum calculated for each block
-        // If variance is low (<= 24), assume the block is white. Unless the block has top/left
-        // neighbor, in which case take average of them.
-        let w = w as usize;
+        // If variance is low (<= 24), assume the block is white. Because there is a high chance
+        // that the block is outside the qr. Unless the block has top/left neighbors, in which
+        // case take average of them.
+        let wsteps = wsteps as usize;
+        let hsteps = hsteps as usize;
         for i in 0..len {
             let (mn, mx) = min_max[i];
             if mx - mn <= 24 {
                 avg[i] = (mn as usize) / 2;
-                if i > w {
-                    // Average of neighbors (x-1, y), (x, y-1), (x-1, y-1)
-                    let ng_avg = (2 * avg[i - 1] + avg[i - w] + avg[i - w - 1]) / 4;
+                if i > wsteps && i % wsteps > 0 {
+                    // Average of neighbors 2 * (x-1, y), (x, y-1), (x-1, y-1)
+                    let ng_avg = (2 * avg[i - 1] + avg[i - wsteps] + avg[i - wsteps - 1]) / 4;
                     if mn < ng_avg as u8 {
                         avg[i] = ng_avg;
                     }
@@ -297,40 +331,58 @@ impl Binarize for GrayImage {
             }
         }
 
-        avg
-    }
-
-    fn calculate_threshold(&self, avg: &[usize]) -> Vec<u8> {
-        let (w, h) = self.dimensions();
-
-        let mut wsteps = (w >> 3) as usize;
-        if w & 0b111 != 0 {
-            wsteps += 1;
-        }
-        let mut hsteps = (h >> 3) as usize;
-        if h & 0b111 != 0 {
-            hsteps += 1;
-        }
-
-        let (maxx, maxy) = (wsteps - 3, hsteps - 3);
-        let mut res = vec![0u8; wsteps * hsteps];
+        // Calculates threshold for each block
+        let (maxx, maxy) = (wsteps - 2, hsteps - 2);
+        let mut threshold = vec![0u8; wsteps * hsteps];
 
         for y in 0..hsteps {
             let row_off = y * wsteps;
-            let cy = y.clamp(2, maxy);
             for x in 0..wsteps {
                 let i = row_off + x;
-                let cx = x.clamp(2, maxx);
-                let mut sum = 0usize;
 
+                // If y is near any boundary then copy the threshold above
+                if y > 0 && (y <= 2 || y >= maxy) {
+                    threshold[i] = threshold[i - wsteps];
+                    continue;
+                }
+
+                // If x is near any boundary then copy the left threshold
+                if x > 0 && (x <= 2 || x >= maxx) {
+                    threshold[i] = threshold[i - 1];
+                    continue;
+                }
+
+                let cx = std::cmp::max(x, 2);
+                let cy = std::cmp::max(y, 2);
+                let mut sum = 0usize;
                 for ny in cy - 2..=cy + 2 {
                     let ni = ny * wsteps + cx;
                     sum += avg[ni - 2..=ni + 2].iter().sum::<usize>();
                 }
 
-                res[i] = (sum / 25) as u8;
+                threshold[i] = (sum / 25) as u8;
             }
         }
+
+        // Initially mark all pixels as unvisited; will be used for flood fill later.
+        let mut res = vec![Pixel::Unvisited(Color::White); (w * h) as usize];
+        for y in 0..h {
+            let row_off = y * w;
+            let thresh_row_off = (y as usize >> 3) * wsteps;
+            for x in 0..w {
+                let p = self.get_pixel(x, y)[0];
+
+                let idx = (row_off + x) as usize;
+
+                let xsteps = x as usize >> 3;
+                let thresh_idx = thresh_row_off + xsteps;
+
+                if p <= threshold[thresh_idx] {
+                    res[idx] = Pixel::Unvisited(Color::Black);
+                }
+            }
+        }
+
         res
     }
 }
@@ -338,10 +390,11 @@ impl Binarize for GrayImage {
 // Image type for reader
 //------------------------------------------------------------------------------
 
+// FIXME: Remove pub from regions
 #[derive(Debug)]
 pub struct BinaryImage {
     pub buffer: Vec<Pixel>,
-    regions: LruCache<u8, Region>, // Areas of visited regions. Index is id
+    pub regions: LruCache<u8, Region>, // Areas of visited regions. Index is id
     pub w: u32,
     pub h: u32,
 }

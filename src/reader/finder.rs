@@ -133,13 +133,20 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
                 None => continue,
             };
 
-            if !(crosscheck_vertical(img, &datum) && validate_regions(img, &datum)) {
-                continue;
+            if crosscheck_vertical(img, &datum) && validate_regions(img, &datum) {
+                let f = construct_finder(img, &datum, finders.len());
+                finders.push(f);
             }
-
-            let f = construct_finder(img, &datum, finders.len());
-            finders.push(f);
         }
+
+        // Covers an edge case where a qr is at the right side edge of the image
+        if let Some(datum) = scanner.advance(Color::White) {
+            if crosscheck_vertical(img, &datum) && validate_regions(img, &datum) {
+                let f = construct_finder(img, &datum, finders.len());
+                finders.push(f);
+            }
+        }
+
         scanner.reset(y + 1);
     }
 
@@ -164,7 +171,7 @@ fn crosscheck_vertical(img: &BinaryImage, datum: &DatumLine) -> bool {
     let mut pos = cy - 1;
     let mut flips = 2;
     let mut initial = Color::from(img.get(cx, cy).unwrap());
-    while pos > 0 && run_len[flips] <= max_run {
+    while run_len[flips] <= max_run {
         let color = Color::from(img.get(cx, pos).unwrap());
         if initial != color {
             initial = color;
@@ -174,6 +181,10 @@ fn crosscheck_vertical(img: &BinaryImage, datum: &DatumLine) -> bool {
             flips -= 1;
         }
         run_len[flips] += 1;
+
+        if pos == 0 {
+            break;
+        }
         pos -= 1;
     }
 

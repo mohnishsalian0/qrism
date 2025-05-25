@@ -165,24 +165,32 @@ impl Symbol {
             p.highlight(img);
         }
 
-        let w = self.ver.width() as f64;
+        let (w, h) = img.dimensions();
+        let sz = self.ver.width() as f64;
         let tl = self.h.map(0.0, 0.0).ok().unwrap();
-        let tr = self.h.map(w, 0.0).ok().unwrap();
-        let br = self.h.map(w, w).ok().unwrap();
-        let bl = self.h.map(0.0, w).ok().unwrap();
+        let tr = self.h.map(sz, 0.0).ok().unwrap();
+        let br = self.h.map(sz, sz).ok().unwrap();
+        let bl = self.h.map(0.0, sz).ok().unwrap();
         let bounds = [tl, tr, br, bl];
 
-        for (i, crn) in bounds.iter().enumerate() {
-            let next = bounds[(i + 1) % 4];
-            let dx = (next.x - crn.x).abs();
-            let dy = (next.y - crn.y).abs();
+        for i in 0..4 {
+            let mut a = bounds[i % 4];
+            let mut b = bounds[(i + 1) % 4];
+            let dx = (b.x - a.x).abs();
+            let dy = (b.y - a.y).abs();
+
+            a.x = (a.x.max(0) as u32).min(w - 1) as i32;
+            a.y = (a.y.max(0) as u32).min(h - 1) as i32;
+            b.x = (b.x.max(0) as u32).min(w - 1) as i32;
+            b.y = (b.y.max(0) as u32).min(h - 1) as i32;
+
             if dx > dy {
-                let line = BresenhamLine::<X>::new(crn, &next);
+                let line = BresenhamLine::<X>::new(&a, &b);
                 for pt in line {
                     pt.highlight(img);
                 }
             } else {
-                let line = BresenhamLine::<Y>::new(crn, &next);
+                let line = BresenhamLine::<Y>::new(&a, &b);
                 for pt in line {
                     pt.highlight(img);
                 }

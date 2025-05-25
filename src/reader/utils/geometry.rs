@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{cmp::Ordering, marker::PhantomData};
 
 #[cfg(test)]
 use image::{Rgb, RgbImage};
@@ -21,10 +21,11 @@ impl Point {
 
     #[cfg(test)]
     pub fn highlight(&self, img: &mut RgbImage) {
+        let (w, h) = img.dimensions();
         for i in [-1, 0, 1] {
             for j in [-1, 0, 1] {
-                let nx = (self.x - i).max(0) as u32;
-                let ny = (self.y - j).max(0) as u32;
+                let nx = ((self.x - i) as u32).min(w - 1);
+                let ny = ((self.y - j) as u32).min(h - 1);
                 img.put_pixel(nx, ny, Rgb([255, 0, 0]));
             }
         }
@@ -84,8 +85,16 @@ impl<A: Axis> BresenhamLine<A> {
         let m = Slope { dx: 2 * dx, dy: 2 * dy };
 
         // Computing increment
-        let xi = if to.x > from.x { 1 } else { -1 };
-        let yi = if to.y > from.y { 1 } else { -1 };
+        let xi = match to.x.cmp(&from.x) {
+            Ordering::Greater => 1,
+            Ordering::Equal => 0,
+            Ordering::Less => -1,
+        };
+        let yi = match to.y.cmp(&from.y) {
+            Ordering::Greater => 1,
+            Ordering::Equal => 0,
+            Ordering::Less => -1,
+        };
         let inc = (xi, yi);
 
         // Computing error
