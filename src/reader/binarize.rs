@@ -390,11 +390,10 @@ impl Binarize for GrayImage {
 // Image type for reader
 //------------------------------------------------------------------------------
 
-// FIXME: Remove pub from regions
 #[derive(Debug)]
 pub struct BinaryImage {
     pub buffer: Vec<Pixel>,
-    pub regions: LruCache<u8, Region>, // Areas of visited regions. Index is id
+    regions: LruCache<u8, Region>, // Areas of visited regions. Index is id
     pub w: u32,
     pub h: u32,
 }

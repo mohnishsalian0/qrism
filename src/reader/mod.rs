@@ -3,9 +3,6 @@ mod finder;
 mod symbol;
 mod utils;
 
-//FIXME: Remove
-mod temp;
-
 use finder::{group_finders, locate_finders, FinderGroup};
 use image::Pixel as ImgPixel;
 
@@ -233,25 +230,24 @@ mod reader_tests {
         #[allow(unused_imports)]
         use crate::reader::finder::group_finders;
 
-        // let inp = std::path::Path::new("tests/images/qrcode-5/16.png");
-        let inp = std::path::Path::new("assets/test6.png");
+        let inp = std::path::Path::new("tests/images/qrcode-5/16.png");
         let img = image::open(inp).unwrap().to_rgb8();
         let mut bin_img = BinaryImage::prepare(&img);
         let path = std::path::Path::new("assets/inp.png");
         bin_img.save(path).unwrap();
 
-        // let mut out_img = image::open(path).unwrap().to_rgb8();
-        //
-        // let finders = locate_finders(&mut bin_img);
-        // // finders.iter().for_each(|f| f.center.highlight(&mut out_img));
-        //
-        // let groups = group_finders(&bin_img, &finders);
-        // // groups[0].highlight(&mut out_img);
-        //
-        // let symbol = locate_symbol(bin_img, groups).unwrap();
-        // symbol.highlight(&mut out_img);
-        //
-        // let out = std::path::Path::new("assets/out.png");
-        // out_img.save(out).unwrap();
+        let mut out_img = image::open(path).unwrap().to_rgb8();
+
+        let finders = locate_finders(&mut bin_img);
+        // finders.iter().for_each(|f| f.center.highlight(&mut out_img));
+
+        let groups = group_finders(&bin_img, &finders);
+        // groups[0].highlight(&mut out_img);
+
+        let symbol = locate_symbol(bin_img, groups).unwrap();
+        symbol.highlight(&mut out_img);
+
+        let out = std::path::Path::new("assets/out.png");
+        out_img.save(out).unwrap();
     }
 }
