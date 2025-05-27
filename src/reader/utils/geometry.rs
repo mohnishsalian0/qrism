@@ -60,7 +60,11 @@ impl Slope {
 
 pub trait Axis {
     fn bound_check(img: &BinaryImage, pt: &Point) -> bool;
-    fn shift(pt: &mut Point, dir: i32);
+    fn shift(pt: &mut Point, dist: &(i32, i32)); // Shifts point along axis
+    fn shift_cross(pt: &mut Point, dist: &(i32, i32)); // Steps point along perpendicular axis
+    fn delta(m: &Slope) -> i32; // Returns delta from slope along axis
+    fn delta_cross(m: &Slope) -> i32; // Returns delta from slope along perpendicular axis
+    fn is_aligned(a: &Point, b: &Point) -> bool; // True if position along axis is the same
 }
 
 pub struct X;
@@ -70,8 +74,24 @@ impl Axis for X {
         0 <= pt.x && pt.x < img.w as i32
     }
 
-    fn shift(pt: &mut Point, dir: i32) {
-        pt.x += dir
+    fn shift(pt: &mut Point, dist: &(i32, i32)) {
+        pt.x += dist.0;
+    }
+
+    fn shift_cross(pt: &mut Point, dist: &(i32, i32)) {
+        pt.y += dist.1;
+    }
+
+    fn delta(m: &Slope) -> i32 {
+        m.dx
+    }
+
+    fn delta_cross(m: &Slope) -> i32 {
+        m.dy
+    }
+
+    fn is_aligned(a: &Point, b: &Point) -> bool {
+        a.x == b.x
     }
 }
 
@@ -82,8 +102,24 @@ impl Axis for Y {
         0 <= pt.y && pt.y < img.h as i32
     }
 
-    fn shift(pt: &mut Point, dir: i32) {
-        pt.y += dir
+    fn shift(pt: &mut Point, dist: &(i32, i32)) {
+        pt.y += dist.1;
+    }
+
+    fn shift_cross(pt: &mut Point, dist: &(i32, i32)) {
+        pt.x += dist.0;
+    }
+
+    fn delta(m: &Slope) -> i32 {
+        m.dy
+    }
+
+    fn delta_cross(m: &Slope) -> i32 {
+        m.dx
+    }
+
+    fn is_aligned(a: &Point, b: &Point) -> bool {
+        a.y == b.y
     }
 }
 
@@ -132,47 +168,68 @@ impl<A: Axis> BresenhamLine<A> {
     }
 }
 
-impl Iterator for BresenhamLine<X> {
+impl<A: Axis> Iterator for BresenhamLine<A> {
     type Item = Point;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.cur.x == self.end.x {
+        if A::is_aligned(&self.cur, &self.end) {
             return None;
         }
 
         let res = Some(self.cur);
 
         if self.err > 0 {
-            self.cur.y += self.inc.1;
-            self.err -= self.m.dx;
+            A::shift_cross(&mut self.cur, &self.inc);
+            self.err -= A::delta(&self.m);
         }
-        self.err += self.m.dy;
-        self.cur.x += self.inc.0;
+        A::shift(&mut self.cur, &self.inc);
+        self.err += A::delta_cross(&self.m);
 
         res
     }
 }
 
-impl Iterator for BresenhamLine<Y> {
-    type Item = Point;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.cur.y == self.end.y {
-            return None;
-        }
-
-        let res = Some(self.cur);
-
-        if self.err > 0 {
-            self.cur.x += self.inc.0;
-            self.err -= self.m.dy;
-        }
-        self.err += self.m.dx;
-        self.cur.y += self.inc.1;
-
-        res
-    }
-}
+// impl Iterator for BresenhamLine<X> {
+//     type Item = Point;
+//
+//     fn next(&mut self) -> Option<Self::Item> {
+//         if self.cur.x == self.end.x {
+//             return None;
+//         }
+//
+//         let res = Some(self.cur);
+//
+//         if self.err > 0 {
+//             self.cur.y += self.inc.1;
+//             self.err -= self.m.dx;
+//         }
+//         self.err += self.m.dy;
+//         self.cur.x += self.inc.0;
+//
+//         res
+//     }
+// }
+//
+// impl Iterator for BresenhamLine<Y> {
+//     type Item = Point;
+//
+//     fn next(&mut self) -> Option<Self::Item> {
+//         if self.cur.y == self.end.y {
+//             return None;
+//         }
+//
+//         let res = Some(self.cur);
+//
+//         if self.err > 0 {
+//             self.cur.x += self.inc.0;
+//             self.err -= self.m.dy;
+//         }
+//         self.err += self.m.dx;
+//         self.cur.y += self.inc.1;
+//
+//         res
+//     }
+// }
 
 // Line represented as Ax + By + C = 0
 //------------------------------------------------------------------------------

@@ -141,9 +141,7 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
 
             // Crosscheck 1:1:3:1:1 pattern along Y axis. Also verify if the area of stone region
             // is roughly 37.5% of ring region.
-            // FIXME:
             if verify_pattern::<Y>(img, &seed, &pattern, max_run) && validate_areas(img, &datum) {
-                // if crosscheck_vertical(img, &datum) && validate_areas(img, &datum) {
                 let f = construct_finder(img, &datum, finders.len());
                 finders.push(f);
             }
@@ -155,9 +153,7 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
             let seed = Point { x: sx as i32, y: datum.y as i32 };
             let max_run = (datum.right - datum.left) * 2;
 
-            // FIXME:
             if verify_pattern::<Y>(img, &seed, &pattern, max_run) && validate_areas(img, &datum) {
-                // if crosscheck_vertical(img, &datum) && validate_areas(img, &datum) {
                 let f = construct_finder(img, &datum, finders.len());
                 finders.push(f);
             }

@@ -26,10 +26,11 @@ pub fn verify_pattern<A: Axis>(
 
     // Count backwards
     let mut pos = *seed;
+    let dir = (-1, -1);
     let mut flips = pat_len / 2;
     let mut initial = Color::from(*px);
     while run_len[flips] <= max_run {
-        A::shift(&mut pos, -1);
+        A::shift(&mut pos, &dir);
         if !A::bound_check(img, &pos) {
             break;
         }
@@ -47,10 +48,11 @@ pub fn verify_pattern<A: Axis>(
 
     // Count forwards
     let mut pos = *seed;
+    let dir = (1, 1);
     let mut flips = pat_len / 2;
     let mut initial = Color::from(*px);
     while A::bound_check(img, &pos) && run_len[flips] <= max_run {
-        A::shift(&mut pos, 1);
+        A::shift(&mut pos, &dir);
         if !A::bound_check(img, &pos) {
             break;
         }
