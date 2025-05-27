@@ -8,8 +8,8 @@ pub mod accumulate;
 pub mod geometry;
 pub mod homography;
 
-// Util function to validate a pattern along a line. This is used in 2 places; in finder to verify
-// 1:1:3:1:1 pattern, and in alignment locator to verify 1:1:1 pattern
+// Util function to validate a pattern along a line. This is used in 2 places; in finder locator
+// to verify 1:1:3:1:1 pattern, and in alignment locator to verify 1:1:1 pattern
 //------------------------------------------------------------------------------
 
 pub fn verify_pattern<A: Axis>(
