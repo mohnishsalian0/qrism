@@ -55,7 +55,7 @@ impl SymbolLocation {
         // Getting provisional version
         let ver = Version::from_grid_size(group.size as usize)?;
 
-        // Locating provisional alignment center
+        // Computing location of provisional alignment center
         let hm = Slope::new(&c1, &c2); // Horizontal slope from c1 to c2
         let vm = Slope::new(&c1, &c0); // Vertical slope from c1 to c0
         let (hl, vl) = if *ver == 1 {
@@ -167,10 +167,10 @@ impl Symbol {
 
         let (w, h) = img.dimensions();
         let sz = self.ver.width() as f64;
-        let tl = self.h.map(0.0, 0.0).ok().unwrap();
-        let tr = self.h.map(sz, 0.0).ok().unwrap();
-        let br = self.h.map(sz, sz).ok().unwrap();
-        let bl = self.h.map(0.0, sz).ok().unwrap();
+        let tl = self.h.map(0.0, 0.0).unwrap();
+        let tr = self.h.map(sz, 0.0).unwrap();
+        let br = self.h.map(sz, sz).unwrap();
+        let bl = self.h.map(0.0, sz).unwrap();
         let bounds = [tl, tr, br, bl];
 
         for i in 0..4 {
@@ -206,7 +206,7 @@ fn locate_alignment_pattern(
 ) -> Option<Point> {
     let (w, h) = (img.w, img.h);
 
-    // Calculate area of module
+    // Calculate estimate area of module
     let m0 = Slope::new(&group.finders[0].center, &group.mids[0]);
     let m1 = Slope::new(&group.finders[1].center, &group.mids[5]);
     let mod_area = m0.cross(&m1).unsigned_abs() / 9;
@@ -220,7 +220,7 @@ fn locate_alignment_pattern(
     let mut run_len = 1;
 
     let invalid = Color::White;
-    while run_len * run_len < mod_area * 64 {
+    while run_len * run_len < mod_area * 100 {
         for _ in 0..run_len {
             let x = seed.x as u32;
             let y = seed.y as u32;
@@ -234,7 +234,10 @@ fn locate_alignment_pattern(
                 };
 
                 // Check if region area is less than twice mod area
-                if sz <= mod_area * 2 {
+                if sz <= mod_area * 2
+                    && crosscheck_horizontal(img, &seed, mod_area)
+                    && crosscheck_vertical(img, &seed, mod_area)
+                {
                     return Some(seed);
                 }
             }
@@ -250,6 +253,136 @@ fn locate_alignment_pattern(
     }
 
     None
+}
+
+fn crosscheck_horizontal(img: &BinaryImage, seed: &Point, mod_area: u32) -> bool {
+    let w = img.w;
+    let (x, y) = (seed.x as u32, seed.y as u32);
+
+    if x == 0 {
+        return false;
+    }
+
+    let max_run = mod_area * 2;
+    let mut run_len = [0; 3];
+    run_len[1] = 1;
+
+    // Count left
+    let mut pos = x - 1;
+    let mut flips = 1;
+    let mut initial = Color::from(img.get(x, y).unwrap());
+    while run_len[flips] <= max_run {
+        let color = Color::from(img.get(pos, y).unwrap());
+        if initial != color {
+            initial = color;
+            if flips == 0 {
+                break;
+            }
+            flips -= 1;
+        }
+        run_len[flips] += 1;
+
+        if pos == 0 {
+            break;
+        }
+        pos -= 1;
+    }
+
+    // Count right
+    let mut pos = x + 1;
+    let mut flips = 1;
+    let mut initial = Color::from(img.get(x, y).unwrap());
+    while pos < w && run_len[flips] <= max_run {
+        let color = Color::from(img.get(pos, y).unwrap());
+        if initial != color {
+            initial = color;
+            if flips == 2 {
+                break;
+            }
+            flips += 1;
+        }
+        run_len[flips] += 1;
+        pos += 1;
+    }
+
+    // Verify 1:1:1 ratio
+    let avg = (run_len.iter().sum::<u32>() as f64) / 3.0;
+    let tol = avg * 3.0 / 4.0;
+
+    let ratio: [f64; 3] = [1.0, 1.0, 1.0];
+    for (i, r) in ratio.iter().enumerate() {
+        let rl = run_len[i] as f64;
+        if rl < r * avg - tol || rl > r * avg + tol {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn crosscheck_vertical(img: &BinaryImage, seed: &Point, mod_area: u32) -> bool {
+    let h = img.h;
+    let (x, y) = (seed.x as u32, seed.y as u32);
+
+    if y == 0 {
+        return false;
+    }
+
+    let max_run = mod_area * 2;
+    let mut run_len = [0; 3];
+    run_len[1] = 1;
+
+    // Count left
+    let mut pos = y - 1;
+    let mut flips = 1;
+    let mut initial = Color::from(img.get(x, y).unwrap());
+    while run_len[flips] <= max_run {
+        let color = Color::from(img.get(x, pos).unwrap());
+        if initial != color {
+            initial = color;
+            if flips == 0 {
+                break;
+            }
+            flips -= 1;
+        }
+        run_len[flips] += 1;
+
+        if pos == 0 {
+            break;
+        }
+        pos -= 1;
+    }
+
+    // Count right
+    let mut pos = y + 1;
+    let mut flips = 1;
+    let mut initial = Color::from(img.get(x, y).unwrap());
+    while pos < h && run_len[flips] <= max_run {
+        let color = Color::from(img.get(x, pos).unwrap());
+        if initial != color {
+            initial = color;
+            if flips == 2 {
+                break;
+            }
+            flips += 1;
+        }
+        run_len[flips] += 1;
+        pos += 1;
+    }
+
+    // Verify 1:1:1 ratio
+    let avg = (run_len.iter().sum::<u32>() as f64) / 3.0;
+    let tol = avg * 3.0 / 4.0;
+
+    let ratio: [f64; 3] = [1.0, 1.0, 1.0];
+    for (i, r) in ratio.iter().enumerate() {
+        let rl = run_len[i] as f64;
+        if rl < r * avg - tol || rl > r * avg + tol {
+            return false;
+        }
+    }
+
+    true
 }
 
 fn setup_homography(
@@ -276,7 +409,6 @@ fn setup_homography(
 }
 
 // Adjust the homography slightly to refine viewport of qr
-// TODO: Add minimum threshold to reject invalid qr and consider next group of finders
 fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Homography {
     let mut best = symbol_fitness(img, &h, ver);
 
@@ -303,10 +435,6 @@ fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Homo
         adjustments = adjustments.map(|x| x * 0.5);
     }
     h
-}
-
-fn max_fitness_score(ver: Version) -> i32 {
-    todo!()
 }
 
 fn symbol_fitness(img: &BinaryImage, h: &Homography, ver: Version) -> i32 {

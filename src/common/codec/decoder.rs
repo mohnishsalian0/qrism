@@ -30,7 +30,7 @@ mod reader {
             1 => Mode::Numeric,
             2 => Mode::Alphanumeric,
             4 => Mode::Byte,
-            _ => return Err(QRError::InvalidMode),
+            _ => return Err(QRError::InvalidMode(mode_bits as u8)),
         };
         let len_bits = ver.char_cnt_bits(mode);
         let char_cnt = inp.take_bits(len_bits).ok_or(QRError::CorruptDataSegment)?;
@@ -225,6 +225,7 @@ pub mod decode {
         let mut total_bit_len = 0;
         loop {
             let (decoded_seg, bit_len) = take_segment(encoded, ver)?;
+
             if bit_len == 0 {
                 break;
             }

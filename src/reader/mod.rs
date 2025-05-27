@@ -207,19 +207,20 @@ mod reader_tests {
     #[test]
     #[ignore]
     fn test_reader_2() {
-        let (folder_id, qr_id) = (4, 5);
+        let (folder_id, qr_id) = (2, 7);
 
         let qr_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.png");
         let qr_path = std::path::Path::new(&qr_path_str);
         let img = image::open(qr_path).unwrap().to_luma8();
-        let extracted_data = QRReader::read(&img).expect("Couldn't read data");
+        let msg = QRReader::read(&img).expect("Couldn't read data");
+        let msg = msg.replace("\r\n", "\n");
 
         let msg_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.txt");
         let msg_path = std::path::Path::new(&msg_path_str);
         let exp_msg = std::fs::read_to_string(msg_path).unwrap();
         let exp_msg = exp_msg.replace("\r\n", "\n");
 
-        assert_eq!(extracted_data, exp_msg);
+        assert_eq!(msg, exp_msg);
     }
 
     #[test]
@@ -230,8 +231,8 @@ mod reader_tests {
         #[allow(unused_imports)]
         use crate::reader::finder::group_finders;
 
-        let inp = std::path::Path::new("tests/images/qrcode-5/16.png");
-        let img = image::open(inp).unwrap().to_rgb8();
+        let inp = std::path::Path::new("tests/images/qrcode-2/7.png");
+        let img = image::open(inp).unwrap().to_luma8();
         let mut bin_img = BinaryImage::prepare(&img);
         let path = std::path::Path::new("assets/inp.png");
         bin_img.save(path).unwrap();
@@ -239,10 +240,10 @@ mod reader_tests {
         let mut out_img = image::open(path).unwrap().to_rgb8();
 
         let finders = locate_finders(&mut bin_img);
-        // finders.iter().for_each(|f| f.center.highlight(&mut out_img));
+        finders.iter().for_each(|f| f.center.highlight(&mut out_img));
 
         let groups = group_finders(&bin_img, &finders);
-        // groups[0].highlight(&mut out_img);
+        groups[0].highlight(&mut out_img);
 
         let symbol = locate_symbol(bin_img, groups).unwrap();
         symbol.highlight(&mut out_img);

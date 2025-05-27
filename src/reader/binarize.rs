@@ -121,7 +121,7 @@ impl Binarize for RgbImage {
 
         // Sum of 8x8 pixels for fractional blocks (if exists) on the right edge
         if w & 0b111 != 0 {
-            for y in 0..h {
+            for y in 0..hr {
                 let idx = (((y >> 3) + 1) * wsteps - 1) as usize;
                 for x in w - 8..w {
                     let px = self.get_pixel(x, y);
@@ -138,13 +138,27 @@ impl Binarize for RgbImage {
         if h & 0b111 != 0 {
             let last_row = wsteps * (hsteps - 1);
             for y in h - 8..h {
-                for x in 0..w - 8 {
+                for x in 0..wr {
                     let idx = (last_row + (x >> 3)) as usize;
                     let px = self.get_pixel(x, y);
                     for c in 0..3 {
                         avg[idx][c] += px[c] as usize;
                         min[idx][c] = std::cmp::min(min[idx][c], px[c]);
                         max[idx][c] = std::cmp::max(max[idx][c], px[c]);
+                    }
+                }
+            }
+        }
+
+        // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom right corner
+        if w & 0b111 != 0 && h & 0b111 != 0 {
+            for y in h - 8..h {
+                for x in w - 8..w {
+                    let px = self.get_pixel(x, y);
+                    for c in 0..3 {
+                        avg[len - 1][c] += px[c] as usize;
+                        min[len - 1][c] = std::cmp::min(min[len - 1][c], px[c]);
+                        max[len - 1][c] = std::cmp::max(max[len - 1][c], px[c]);
                     }
                 }
             }
@@ -259,18 +273,17 @@ impl Binarize for GrayImage {
         let mut avg = vec![0usize; len];
         let mut min_max = vec![(u8::MAX, u8::MIN); len];
 
-        // Calculate sum of 8x8 pixels for each block
+        // Divide image into blocks of 8x8 pixels and calculate sum of values for each block.
         // Skip last few pixels which form fractional blocks. The last block will be computed later
         // Round w and h to skips these pixels
         let (wr, hr) = (w & !0b111, h & !0b111);
         for y in 0..hr {
             let row_off = (y >> 3) * wsteps;
             for x in 0..wr {
-                let p = self.get_pixel(x, y)[0];
-
                 let xsteps = x >> 3;
                 let idx = (row_off + xsteps) as usize;
 
+                let p = self.get_pixel(x, y)[0];
                 avg[idx] += p as usize;
                 min_max[idx].0 = std::cmp::min(min_max[idx].0, p);
                 min_max[idx].1 = std::cmp::max(min_max[idx].1, p);
@@ -279,7 +292,7 @@ impl Binarize for GrayImage {
 
         // Sum of 8x8 pixels for fractional blocks (if exists) on the right edge
         if w & 0b111 != 0 {
-            for y in 0..h {
+            for y in 0..hr {
                 let idx = (((y >> 3) + 1) * wsteps - 1) as usize;
                 for x in w - 8..w {
                     let p = self.get_pixel(x, y)[0];
@@ -295,15 +308,27 @@ impl Binarize for GrayImage {
         if h & 0b111 != 0 {
             let last_row = wsteps * (hsteps - 1);
             for y in h - 8..h {
-                for x in 0..w - 8 {
-                    let p = self.get_pixel(x, y)[0];
-
+                for x in 0..wr {
                     let xsteps = x >> 3;
                     let idx = (last_row + xsteps) as usize;
 
+                    let p = self.get_pixel(x, y)[0];
                     avg[idx] += p as usize;
                     min_max[idx].0 = std::cmp::min(min_max[idx].0, p);
                     min_max[idx].1 = std::cmp::max(min_max[idx].1, p);
+                }
+            }
+        }
+
+        // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom right corner
+        if w & 0b111 != 0 && h & 0b111 != 0 {
+            for y in h - 8..h {
+                for x in w - 8..w {
+                    let p = self.get_pixel(x, y)[0];
+
+                    avg[len - 1] += p as usize;
+                    min_max[len - 1].0 = std::cmp::min(min_max[len - 1].0, p);
+                    min_max[len - 1].1 = std::cmp::max(min_max[len - 1].1, p);
                 }
             }
         }

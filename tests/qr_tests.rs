@@ -160,22 +160,18 @@ mod qr_tests {
             for qr_id in 1..=*file_count {
                 let img_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.png");
                 let img_path = std::path::Path::new(&img_path_str);
-                let img = image::open(img_path).unwrap().to_luma8(); // WARN: Grayscale image
+                let img = image::open(img_path).unwrap().to_luma8();
 
-                // let err_msg = format!("Failed to read QR from: {}", &img_path_str);
-                // let msg = QRReader::read(img).expect(&err_msg);
-                // let msg = match QRReader::read(img) {
-                //     Ok(msg) => msg,
-                //     Err(_) => continue,
-                // };
-
-                let msg = match std::panic::catch_unwind(|| QRReader::read(&img)) {
+                match std::panic::catch_unwind(|| QRReader::read(&img)) {
                     Ok(Ok(msg)) => {
-                        let msg_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.txt");
-                        let msg_path = std::path::Path::new(&msg_path_str);
-                        let exp_msg = std::fs::read_to_string(msg_path).unwrap();
+                        let msg = msg.replace("\r\n", "\n");
+                        let exp_msg_path_str =
+                            format!("tests/images/qrcode-{folder_id}/{qr_id}.txt");
+                        let exp_msg_path = std::path::Path::new(&exp_msg_path_str);
+                        let exp_msg = std::fs::read_to_string(exp_msg_path).unwrap();
                         let exp_msg = exp_msg.replace("\r\n", "\n");
                         let _ = if msg == exp_msg {
+                            passed += 1;
                             writeln!(out_file, "[{}-{}] PASSED", folder_id, qr_id)
                         } else {
                             writeln!(out_file, "[{}-{}] DECODED", folder_id, qr_id)
@@ -198,19 +194,6 @@ mod qr_tests {
                         continue;
                     }
                 };
-
-                let msg_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.txt");
-                let msg_path = std::path::Path::new(&msg_path_str);
-                let exp_msg = std::fs::read_to_string(msg_path).unwrap();
-
-                if msg == exp_msg {
-                    passed += 1;
-                }
-
-                // assert_eq!(
-                //     exp_msg, msg,
-                //     "Failed to read QR from file {qr_id} in folder {folder_id}"
-                // );
             }
             let _ = writeln!(out_file);
         }
