@@ -206,8 +206,8 @@ mod reader_tests {
 
     #[test]
     #[ignore]
-    fn test_reader_2() {
-        let (folder_id, qr_id) = (2, 7);
+    fn decode_debugger() {
+        let (folder_id, qr_id) = (4, 48);
 
         let qr_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.png");
         let qr_path = std::path::Path::new(&qr_path_str);
@@ -225,13 +225,13 @@ mod reader_tests {
 
     #[test]
     #[ignore]
-    fn reader_debugger() {
+    fn detect_debugger() {
         #[allow(unused_imports)]
         use super::{binarize::BinaryImage, finder::locate_finders, locate_symbol, QRReader};
         #[allow(unused_imports)]
         use crate::reader::finder::group_finders;
 
-        let inp = std::path::Path::new("tests/images/qrcode-2/7.png");
+        let inp = std::path::Path::new("tests/images/qrcode-4/48.png");
         let img = image::open(inp).unwrap().to_luma8();
         let mut bin_img = BinaryImage::prepare(&img);
         let path = std::path::Path::new("assets/inp.png");

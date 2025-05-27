@@ -69,33 +69,25 @@ impl SymbolLocation {
             let vl = Line::from_point_slope(&group.mids[4], &vm);
             (hl, vl)
         };
-        let mut align_seed = hl.intersection(&vl)?;
+        let mut align_centre = hl.intersection(&vl)?;
 
         // Exit if projected alignment pt is outside the image
-        let Point { x: ax, y: ay } = align_seed;
+        let Point { x: ax, y: ay } = align_centre;
         if ax < 0 || ax as u32 >= img.w || ay < 0 || ay as u32 > img.h {
             return None;
         }
 
-        // For versions above 1 a more robust algorithm to locate align center.
+        // For versions greater than 1 a more robust algorithm to locate align center.
         // Spiral out of provisional align pt to identify potential pt. Then compare the area of
         // black region with estimate module size to confirm alignment stone. Finally, locate the
         // center of the stone.
         if *ver != 1 {
-            align_seed = locate_alignment_pattern(img, group, align_seed)?;
-
-            let cl = CenterLocator::new();
-            let color = Color::from(*img.get_at_point(&align_seed).unwrap());
-            let src = (align_seed.x as u32, align_seed.y as u32);
-            let to = Pixel::Reserved(color);
-
-            let cl = img.fill_and_accumulate(src, to, cl);
-            align_seed = cl.get_center();
+            align_centre = locate_alignment_pattern(img, group, align_centre)?;
         }
 
-        let h = setup_homography(img, group, align_seed, ver)?;
+        let h = setup_homography(img, group, align_centre, ver)?;
 
-        let anchors = [c1, c2, align_seed, c0];
+        let anchors = [c1, c2, align_centre, c0];
 
         Some(Self { h, anchors, ver })
     }
@@ -167,10 +159,10 @@ impl Symbol {
 
         let (w, h) = img.dimensions();
         let sz = self.ver.width() as f64;
-        let tl = self.h.map(0.0, 0.0).unwrap();
-        let tr = self.h.map(sz, 0.0).unwrap();
-        let br = self.h.map(sz, sz).unwrap();
-        let bl = self.h.map(0.0, sz).unwrap();
+        let tl = self.map(0.0, 0.0).unwrap();
+        let tr = self.map(sz, 0.0).unwrap();
+        let br = self.map(sz, sz).unwrap();
+        let bl = self.map(0.0, sz).unwrap();
         let bounds = [tl, tr, br, bl];
 
         for i in 0..4 {
@@ -234,11 +226,19 @@ fn locate_alignment_pattern(
                 };
 
                 // Check if region area is less than twice mod area
+                // and crosscheck 1:1:1 ratio horizontally and vertically
                 if sz <= mod_area * 2
                     && crosscheck_horizontal(img, &seed, mod_area)
                     && crosscheck_vertical(img, &seed, mod_area)
                 {
-                    return Some(seed);
+                    let cl = CenterLocator::new();
+                    let color = Color::from(*img.get_at_point(&seed).unwrap());
+                    let src = (seed.x as u32, seed.y as u32);
+                    let to = Pixel::Reserved(color);
+
+                    let cl = img.fill_and_accumulate(src, to, cl);
+                    let centre = cl.get_center();
+                    return Some(centre);
                 }
             }
             seed.x += DX[dir];
@@ -408,7 +408,7 @@ fn setup_homography(
     Some(jiggle_homography(img, initial_h, ver))
 }
 
-// Adjust the homography slightly to refine viewport of qr
+// Adjust the homography slightly to refine projection of qr
 fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Homography {
     let mut best = symbol_fitness(img, &h, ver);
 
@@ -416,18 +416,18 @@ fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Homo
     let mut adjustments = h.0.map(|x| x * 0.02);
 
     for _pass in 0..5 {
-        for i in 0..16 {
-            let j = i >> 1;
-            let old = h[j];
-            let step = adjustments[j];
+        for i in 0..8 {
+            let old = h[i];
+            for j in 0..2 {
+                let step = adjustments[i];
+                h[i] = if j & 1 == 0 { old - step } else { old + step };
 
-            h[j] = if i & 1 == 0 { old - step } else { old + step };
-
-            let test = symbol_fitness(img, &h, ver);
-            if test > best {
-                best = test
-            } else {
-                h[j] = old
+                let test = symbol_fitness(img, &h, ver);
+                if test > best {
+                    best = test
+                } else {
+                    h[i] = old
+                }
             }
         }
 
