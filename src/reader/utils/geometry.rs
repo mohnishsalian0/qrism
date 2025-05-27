@@ -189,48 +189,6 @@ impl<A: Axis> Iterator for BresenhamLine<A> {
     }
 }
 
-// impl Iterator for BresenhamLine<X> {
-//     type Item = Point;
-//
-//     fn next(&mut self) -> Option<Self::Item> {
-//         if self.cur.x == self.end.x {
-//             return None;
-//         }
-//
-//         let res = Some(self.cur);
-//
-//         if self.err > 0 {
-//             self.cur.y += self.inc.1;
-//             self.err -= self.m.dx;
-//         }
-//         self.err += self.m.dy;
-//         self.cur.x += self.inc.0;
-//
-//         res
-//     }
-// }
-//
-// impl Iterator for BresenhamLine<Y> {
-//     type Item = Point;
-//
-//     fn next(&mut self) -> Option<Self::Item> {
-//         if self.cur.y == self.end.y {
-//             return None;
-//         }
-//
-//         let res = Some(self.cur);
-//
-//         if self.err > 0 {
-//             self.cur.x += self.inc.0;
-//             self.err -= self.m.dy;
-//         }
-//         self.err += self.m.dx;
-//         self.cur.y += self.inc.1;
-//
-//         res
-//     }
-// }
-
 // Line represented as Ax + By + C = 0
 //------------------------------------------------------------------------------
 
