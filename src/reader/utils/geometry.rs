@@ -3,6 +3,8 @@ use std::{cmp::Ordering, marker::PhantomData};
 #[cfg(test)]
 use image::{Rgb, RgbImage};
 
+use crate::reader::binarize::BinaryImage;
+
 // Point
 //------------------------------------------------------------------------------
 
@@ -53,16 +55,40 @@ impl Slope {
     }
 }
 
-// Bresenham line scan algorithm
+// Axis trait to modify functions based on X/Y axis at compile time
 //------------------------------------------------------------------------------
 
-pub trait Axis {}
+pub trait Axis {
+    fn bound_check(img: &BinaryImage, pt: &Point) -> bool;
+    fn shift(pt: &mut Point, dir: i32);
+}
 
 pub struct X;
-impl Axis for X {}
+
+impl Axis for X {
+    fn bound_check(img: &BinaryImage, pt: &Point) -> bool {
+        0 <= pt.x && pt.x < img.w as i32
+    }
+
+    fn shift(pt: &mut Point, dir: i32) {
+        pt.x += dir
+    }
+}
 
 pub struct Y;
-impl Axis for Y {}
+
+impl Axis for Y {
+    fn bound_check(img: &BinaryImage, pt: &Point) -> bool {
+        0 <= pt.y && pt.y < img.h as i32
+    }
+
+    fn shift(pt: &mut Point, dir: i32) {
+        pt.y += dir
+    }
+}
+
+// Bresenham line scan algorithm
+//------------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub struct BresenhamLine<A: Axis> {

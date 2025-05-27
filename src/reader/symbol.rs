@@ -14,6 +14,10 @@ use crate::{
         FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK, VERSION_ERROR_BIT_LEN,
         VERSION_ERROR_CAPACITY, VERSION_INFOS, VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
     },
+    reader::utils::{
+        geometry::{X, Y},
+        verify_pattern,
+    },
     utils::{BitArray, EncRegionIter, QRError, QRResult},
     ECLevel, MaskPattern, Palette, Version,
 };
@@ -197,6 +201,7 @@ fn locate_alignment_pattern(
     mut seed: Point,
 ) -> Option<Point> {
     let (w, h) = (img.w, img.h);
+    let pattern = [1.0, 1.0, 1.0];
 
     // Calculate estimate area of module
     let m0 = Slope::new(&group.finders[0].center, &group.mids[0]);
@@ -228,8 +233,8 @@ fn locate_alignment_pattern(
                 // Check if region area is less than twice mod area
                 // and crosscheck 1:1:1 ratio horizontally and vertically
                 if sz <= mod_area * 2
-                    && crosscheck_horizontal(img, &seed, mod_area)
-                    && crosscheck_vertical(img, &seed, mod_area)
+                    && verify_pattern::<X>(img, &seed, &pattern, 2 * mod_area)
+                    && verify_pattern::<Y>(img, &seed, &pattern, 2 * mod_area)
                 {
                     let cl = CenterLocator::new();
                     let color = Color::from(*img.get_at_point(&seed).unwrap());
@@ -253,136 +258,6 @@ fn locate_alignment_pattern(
     }
 
     None
-}
-
-fn crosscheck_horizontal(img: &BinaryImage, seed: &Point, mod_area: u32) -> bool {
-    let w = img.w;
-    let (x, y) = (seed.x as u32, seed.y as u32);
-
-    if x == 0 {
-        return false;
-    }
-
-    let max_run = mod_area * 2;
-    let mut run_len = [0; 3];
-    run_len[1] = 1;
-
-    // Count left
-    let mut pos = x - 1;
-    let mut flips = 1;
-    let mut initial = Color::from(img.get(x, y).unwrap());
-    while run_len[flips] <= max_run {
-        let color = Color::from(img.get(pos, y).unwrap());
-        if initial != color {
-            initial = color;
-            if flips == 0 {
-                break;
-            }
-            flips -= 1;
-        }
-        run_len[flips] += 1;
-
-        if pos == 0 {
-            break;
-        }
-        pos -= 1;
-    }
-
-    // Count right
-    let mut pos = x + 1;
-    let mut flips = 1;
-    let mut initial = Color::from(img.get(x, y).unwrap());
-    while pos < w && run_len[flips] <= max_run {
-        let color = Color::from(img.get(pos, y).unwrap());
-        if initial != color {
-            initial = color;
-            if flips == 2 {
-                break;
-            }
-            flips += 1;
-        }
-        run_len[flips] += 1;
-        pos += 1;
-    }
-
-    // Verify 1:1:1 ratio
-    let avg = (run_len.iter().sum::<u32>() as f64) / 3.0;
-    let tol = avg * 3.0 / 4.0;
-
-    let ratio: [f64; 3] = [1.0, 1.0, 1.0];
-    for (i, r) in ratio.iter().enumerate() {
-        let rl = run_len[i] as f64;
-        if rl < r * avg - tol || rl > r * avg + tol {
-            return false;
-        }
-    }
-
-    true
-}
-
-fn crosscheck_vertical(img: &BinaryImage, seed: &Point, mod_area: u32) -> bool {
-    let h = img.h;
-    let (x, y) = (seed.x as u32, seed.y as u32);
-
-    if y == 0 {
-        return false;
-    }
-
-    let max_run = mod_area * 2;
-    let mut run_len = [0; 3];
-    run_len[1] = 1;
-
-    // Count left
-    let mut pos = y - 1;
-    let mut flips = 1;
-    let mut initial = Color::from(img.get(x, y).unwrap());
-    while run_len[flips] <= max_run {
-        let color = Color::from(img.get(x, pos).unwrap());
-        if initial != color {
-            initial = color;
-            if flips == 0 {
-                break;
-            }
-            flips -= 1;
-        }
-        run_len[flips] += 1;
-
-        if pos == 0 {
-            break;
-        }
-        pos -= 1;
-    }
-
-    // Count right
-    let mut pos = y + 1;
-    let mut flips = 1;
-    let mut initial = Color::from(img.get(x, y).unwrap());
-    while pos < h && run_len[flips] <= max_run {
-        let color = Color::from(img.get(x, pos).unwrap());
-        if initial != color {
-            initial = color;
-            if flips == 2 {
-                break;
-            }
-            flips += 1;
-        }
-        run_len[flips] += 1;
-        pos += 1;
-    }
-
-    // Verify 1:1:1 ratio
-    let avg = (run_len.iter().sum::<u32>() as f64) / 3.0;
-    let tol = avg * 3.0 / 4.0;
-
-    let ratio: [f64; 3] = [1.0, 1.0, 1.0];
-    for (i, r) in ratio.iter().enumerate() {
-        let rl = run_len[i] as f64;
-        if rl < r * avg - tol || rl > r * avg + tol {
-            return false;
-        }
-    }
-
-    true
 }
 
 fn setup_homography(

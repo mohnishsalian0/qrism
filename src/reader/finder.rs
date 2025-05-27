@@ -5,6 +5,7 @@ use super::{
     utils::{
         accumulate::CenterLocator,
         geometry::{Axis, Line, Point, Slope, X, Y},
+        verify_pattern,
     },
 };
 
@@ -124,6 +125,7 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
     let w = img.w;
     let h = img.h;
     let mut scanner = LineScanner::new();
+    let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
 
     for y in 0..h {
         for x in 0..w {
@@ -133,15 +135,29 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
                 None => continue,
             };
 
-            if crosscheck_vertical(img, &datum) && validate_regions(img, &datum) {
+            let sx = datum.right - (datum.stone - datum.left) * 5 / 4;
+            let seed = Point { x: sx as i32, y: datum.y as i32 };
+            let max_run = (datum.right - datum.left) * 2; // Setting a loose max limit on each run
+
+            // Crosscheck 1:1:3:1:1 pattern along Y axis. Also verify if the area of stone region
+            // is roughly 37.5% of ring region.
+            // FIXME:
+            if verify_pattern::<Y>(img, &seed, &pattern, max_run) && validate_areas(img, &datum) {
+                // if crosscheck_vertical(img, &datum) && validate_areas(img, &datum) {
                 let f = construct_finder(img, &datum, finders.len());
                 finders.push(f);
             }
         }
 
-        // Covers an edge case where a qr is at the right side edge of the image
+        // Handles an edge case where the QR is located at the right edge of the image
         if let Some(datum) = scanner.advance(Color::White) {
-            if crosscheck_vertical(img, &datum) && validate_regions(img, &datum) {
+            let sx = datum.right - (datum.stone - datum.left) * 5 / 4;
+            let seed = Point { x: sx as i32, y: datum.y as i32 };
+            let max_run = (datum.right - datum.left) * 2;
+
+            // FIXME:
+            if verify_pattern::<Y>(img, &seed, &pattern, max_run) && validate_areas(img, &datum) {
+                // if crosscheck_vertical(img, &datum) && validate_areas(img, &datum) {
                 let f = construct_finder(img, &datum, finders.len());
                 finders.push(f);
             }
@@ -224,7 +240,7 @@ fn crosscheck_vertical(img: &BinaryImage, datum: &DatumLine) -> bool {
 /// Stone area is roughly 37.5% of ring area
 /// Stone and ring areas are not connected
 /// Left and right points, of the row, lying inside the ring are connected
-fn validate_regions(img: &mut BinaryImage, datum: &DatumLine) -> bool {
+fn validate_areas(img: &mut BinaryImage, datum: &DatumLine) -> bool {
     let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
     let ring = img.get_region((r, y));
     let stone = img.get_region((s, y));
