@@ -59,6 +59,7 @@ impl SymbolLocation {
 
         // Getting provisional version
         let ver = Version::from_grid_size(group.size as usize)?;
+        dbg!(ver, group.size);
 
         // For versions greater than 1 a more robust algorithm to locate align center.
         // Spiral out of provisional align pt to identify potential pt. Then compare the area of
@@ -194,6 +195,7 @@ fn locate_alignment_pattern(
     let hor_w = group.finders[0].dist_sq(&group.mids[0]);
     let ver_w = group.finders[2].dist_sq(&group.mids[5]);
     let mod_w = ((hor_w + ver_w) as f64 / 2.0).sqrt() / 3.0;
+    let mod_w_i32 = mod_w as i32;
 
     // Calculate estimate area of module
     let m0 = Slope::new(&group.finders[0], &group.mids[0]);
@@ -209,7 +211,7 @@ fn locate_alignment_pattern(
     let mut run_len = 1;
     let invalid = Color::White;
 
-    while run_len * run_len < mod_area * 100 {
+    while run_len < mod_w_i32 * 100 {
         for _ in 0..run_len {
             let x = seed.x as u32;
             let y = seed.y as u32;
@@ -280,7 +282,7 @@ fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Homo
     let mut best = symbol_fitness(img, &h, ver);
 
     // Create an adjustment matrix by scaling the homography
-    let mut adjustments = h.0.map(|x| x * 0.02);
+    let mut adjustments = h.0.map(|x| x * 0.03);
 
     for _pass in 0..5 {
         for i in 0..8 {

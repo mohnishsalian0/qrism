@@ -4,7 +4,7 @@ use super::{
     binarize::{BinaryImage, Pixel, Region},
     utils::{
         accumulate::CentreLocator,
-        geometry::{Axis, Line, Point, Slope, X, Y},
+        geometry::{Axis, Point, Slope, X, Y},
         verify_pattern,
     },
 };
@@ -326,6 +326,7 @@ impl FinderGroup {
         for f in self.finders.iter() {
             f.highlight(img);
         }
+        self.align.highlight(img);
         for m in self.mids.iter() {
             m.highlight(img);
         }
@@ -407,13 +408,10 @@ pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
                 };
                 let s3 = Slope::new(f1, f3);
 
-                // Compute location of alignment centre (c4)
-                let l24 = Line::from_point_slope(f2, &s3);
-                let l34 = Line::from_point_slope(f3, &s2);
-                let c4 = match l24.intersection(&l34) {
-                    Some(pt) => pt,
-                    None => continue,
-                };
+                // Compute provisional location of alignment centre (c4)
+                let dx = f2.x - f1.x;
+                let dy = f2.y - f1.y;
+                let c4 = Point { x: f3.x + dx, y: f3.y + dy };
 
                 // Skip if intersection pt is outside the image
                 let Point { x: x4, y: y4 } = c4;
