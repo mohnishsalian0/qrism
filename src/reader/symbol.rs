@@ -2,7 +2,7 @@ use super::{
     binarize::{BinaryImage, Pixel, Region},
     finder::FinderGroup,
     utils::{
-        accumulate::CenterLocator,
+        accumulate::CentreLocator,
         geometry::{Line, Point, Slope},
         homography::Homography,
     },
@@ -40,9 +40,10 @@ pub struct SymbolLocation {
 
 impl SymbolLocation {
     pub fn locate(img: &mut BinaryImage, group: &mut FinderGroup) -> Option<SymbolLocation> {
-        let mut c0 = group.finders[0].center;
-        let c1 = group.finders[1].center;
-        let mut c2 = group.finders[2].center;
+        let mut c0 = group.finders[0];
+        let c1 = group.finders[1];
+        let mut c2 = group.finders[2];
+        let mut align_centre = group.align;
 
         // Hypotenuse slope
         let mut hm = Slope { dx: c2.x - c0.x, dy: c2.y - c0.y };
@@ -59,34 +60,20 @@ impl SymbolLocation {
         // Getting provisional version
         let ver = Version::from_grid_size(group.size as usize)?;
 
-        // Computing location of provisional alignment center
-        let hm = Slope::new(&c1, &c2); // Horizontal slope from c1 to c2
-        let vm = Slope::new(&c1, &c0); // Vertical slope from c1 to c0
-        let (hl, vl) = if *ver == 1 {
-            // If version 1, then lines are drawn from c0 and c2
-            let hl = Line::from_point_slope(&c0, &hm);
-            let vl = Line::from_point_slope(&c2, &vm);
-            (hl, vl)
-        } else {
-            // For any other version, lines are from m1 (m31) & m4 (m21)
-            let hl = Line::from_point_slope(&group.mids[1], &hm);
-            let vl = Line::from_point_slope(&group.mids[4], &vm);
-            (hl, vl)
-        };
-        let mut align_centre = hl.intersection(&vl)?;
-
-        // Exit if projected alignment pt is outside the image
-        let Point { x: ax, y: ay } = align_centre;
-        if ax < 0 || ax as u32 >= img.w || ay < 0 || ay as u32 > img.h {
-            return None;
-        }
-
         // For versions greater than 1 a more robust algorithm to locate align center.
         // Spiral out of provisional align pt to identify potential pt. Then compare the area of
         // black region with estimate module size to confirm alignment stone. Finally, locate the
         // center of the stone.
         if *ver != 1 {
-            align_centre = locate_alignment_pattern(img, group, align_centre)?;
+            let hm = Slope::new(&c1, &c2); // Horizontal slope from c1 to c2
+            let vm = Slope::new(&c1, &c0); // Vertical slope from c1 to c0
+
+            // For any other version, lines are from m1 (m31) & m4 (m21)
+            let hl = Line::from_point_slope(&group.mids[1], &hm);
+            let vl = Line::from_point_slope(&group.mids[4], &vm);
+
+            let seed = hl.intersection(&vl)?;
+            align_centre = locate_alignment_pattern(img, group, seed)?;
         }
 
         let h = setup_homography(img, group, align_centre, ver)?;
@@ -203,20 +190,25 @@ fn locate_alignment_pattern(
     let (w, h) = (img.w, img.h);
     let pattern = [1.0, 1.0, 1.0];
 
+    // Calculate estimate width of module
+    let hor_w = group.finders[0].dist_sq(&group.mids[0]);
+    let ver_w = group.finders[2].dist_sq(&group.mids[5]);
+    let mod_w = ((hor_w + ver_w) as f64 / 2.0).sqrt() / 3.0;
+
     // Calculate estimate area of module
-    let m0 = Slope::new(&group.finders[0].center, &group.mids[0]);
-    let m1 = Slope::new(&group.finders[1].center, &group.mids[5]);
+    let m0 = Slope::new(&group.finders[0], &group.mids[0]);
+    let m1 = Slope::new(&group.finders[2], &group.mids[5]);
     let mod_area = m0.cross(&m1).unsigned_abs() / 9;
 
-    // x & y increments w.r.t direction
+    // Directional increment for x & y: [right, down, left, up]
     const DX: [i32; 4] = [1, 0, -1, 0];
     const DY: [i32; 4] = [0, -1, 0, 1];
 
     // Spiral outward to find stone
     let mut dir = 0;
     let mut run_len = 1;
-
     let invalid = Color::White;
+
     while run_len * run_len < mod_area * 100 {
         for _ in 0..run_len {
             let x = seed.x as u32;
@@ -233,10 +225,10 @@ fn locate_alignment_pattern(
                 // Check if region area is less than twice mod area
                 // and crosscheck 1:1:1 ratio horizontally and vertically
                 if sz <= mod_area * 2
-                    && verify_pattern::<X>(img, &seed, &pattern, 2 * mod_area)
-                    && verify_pattern::<Y>(img, &seed, &pattern, 2 * mod_area)
+                    && verify_pattern::<X>(img, &seed, &pattern, mod_w, 2 * mod_area)
+                    && verify_pattern::<Y>(img, &seed, &pattern, mod_w, 2 * mod_area)
                 {
-                    let cl = CenterLocator::new();
+                    let cl = CentreLocator::new();
                     let color = Color::from(*img.get_at_point(&seed).unwrap());
                     let src = (seed.x as u32, seed.y as u32);
                     let to = Pixel::Reserved(color);
@@ -270,9 +262,9 @@ fn setup_homography(
     let br_off = if *ver == 1 { 3.5 } else { 6.5 };
     let src = [(3.5, 3.5), (size - 3.5, 3.5), (size - br_off, size - br_off), (3.5, size - 3.5)];
 
-    let c0 = (group.finders[0].center.x as f64, group.finders[0].center.y as f64);
-    let c1 = (group.finders[1].center.x as f64, group.finders[1].center.y as f64);
-    let c2 = (group.finders[2].center.x as f64, group.finders[2].center.y as f64);
+    let c0 = (group.finders[0].x as f64, group.finders[0].y as f64);
+    let c1 = (group.finders[1].x as f64, group.finders[1].y as f64);
+    let c2 = (group.finders[2].x as f64, group.finders[2].y as f64);
     let ca = (align_center.x as f64, align_center.y as f64);
     let dst = [c1, c2, ca, c0];
 
@@ -425,10 +417,17 @@ mod symbol_tests {
         let img = qr.to_image(10);
         let exp_anchors = [(75, 75), (335, 75), (305, 305), (75, 335)];
 
+        //FIXME:
+        let path = std::path::Path::new("assets/inp.png");
+        img.save(path).unwrap();
+        let mut out_img = image::open(path).unwrap().to_rgb8();
+
         let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
-        let symbol = locate_symbol(img, groups).expect("No symbol found");
+        groups.iter().for_each(|f| f.highlight(&mut out_img)); // FIXME:
+        out_img.save(std::path::Path::new("assets/out.png")).unwrap();
+        let symbol = locate_symbol(img, groups).expect("Symbol not found");
         for b in symbol.anchors {
             assert!(exp_anchors.contains(&(b.x, b.y)), "Symbol not within bounds");
         }

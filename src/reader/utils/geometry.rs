@@ -15,7 +15,7 @@ pub struct Point {
 }
 
 impl Point {
-    pub fn squared_distance(&self, other: &Point) -> u32 {
+    pub fn dist_sq(&self, other: &Point) -> u32 {
         let dx = other.x - self.x;
         let dy = other.y - self.y;
         (dx * dx + dy * dy) as _

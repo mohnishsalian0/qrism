@@ -171,13 +171,13 @@ impl Accumulator for TopLeftCornerFinder {
 // CY = Sum of Y / Total points
 //------------------------------------------------------------------------------
 
-pub struct CenterLocator {
+pub struct CentreLocator {
     sum_x: u32,
     sum_y: u32,
     area: u32,
 }
 
-impl CenterLocator {
+impl CentreLocator {
     pub fn new() -> Self {
         Self { sum_x: 0, sum_y: 0, area: 0 }
     }
@@ -196,7 +196,7 @@ impl CenterLocator {
     }
 }
 
-impl Accumulator for CenterLocator {
+impl Accumulator for CentreLocator {
     fn accumulate(&mut self, row: Row) {
         let Row { left, right, y } = row;
         let width = right - left + 1;

@@ -19,6 +19,7 @@ Deal with shadow:
     Implement zxing binarization
 Deal with warped qr like on a tshirt:
     Implement zxing detector
+Address the failing testcase in codec
 
 OUT OF SCOPE:
 Detecting branded (custom colors) traditional QR

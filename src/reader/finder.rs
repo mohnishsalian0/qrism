@@ -3,7 +3,7 @@ use crate::{metadata::Color, reader::utils::geometry::BresenhamLine};
 use super::{
     binarize::{BinaryImage, Pixel, Region},
     utils::{
-        accumulate::CenterLocator,
+        accumulate::CentreLocator,
         geometry::{Axis, Line, Point, Slope, X, Y},
         verify_pattern,
     },
@@ -27,31 +27,15 @@ struct DatumLine {
     y: u32,
 }
 
-// Finder
-//------------------------------------------------------------------------------
-
-#[derive(Debug, Clone)]
-pub struct Finder {
-    pub id: usize,
-    pub center: Point,
-}
-
-impl Finder {
-    #[cfg(test)]
-    fn highlight(&self, img: &mut RgbImage) {
-        self.center.highlight(img);
-    }
-}
-
 // Line scanner to detect finder line
 //------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct LineScanner {
-    buffer: [u32; 6],    // Run length of each transition
-    prev: Option<Color>, // Last observed color
-    flips: u32,          // Count of color changes
-    pos: u32,            // Current position
+    pub buffer: [u32; 6], // Run length of each transition
+    prev: Option<Color>,  // Last observed color
+    flips: u32,           // Count of color changes
+    pos: u32,             // Current position
     y: u32,
 }
 
@@ -120,12 +104,12 @@ impl LineScanner {
 //------------------------------------------------------------------------------
 
 // ENTRY POINT FOR LOCATING FINDER
-pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
+// Returns a list of centres of potential finder
+pub fn locate_finders(img: &mut BinaryImage) -> Vec<Point> {
     let mut finders = Vec::with_capacity(100);
     let w = img.w;
     let h = img.h;
     let mut scanner = LineScanner::new();
-    let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
 
     for y in 0..h {
         for x in 0..w {
@@ -135,26 +119,16 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
                 None => continue,
             };
 
-            let sx = datum.right - (datum.stone - datum.left) * 5 / 4;
-            let seed = Point { x: sx as i32, y: datum.y as i32 };
-            let max_run = (datum.right - datum.left) * 2; // Setting a loose max limit on each run
-
-            // Crosscheck 1:1:3:1:1 pattern along Y axis. Also verify if the area of stone region
-            // is roughly 37.5% of ring region.
-            if verify_pattern::<Y>(img, &seed, &pattern, max_run) && validate_areas(img, &datum) {
-                let f = construct_finder(img, &datum, finders.len());
+            if is_valid_finder(img, &scanner, &datum) {
+                let f = locate_finder_centre(img, &datum);
                 finders.push(f);
             }
         }
 
         // Handles an edge case where the QR is located at the right edge of the image
         if let Some(datum) = scanner.advance(Color::White) {
-            let sx = datum.right - (datum.stone - datum.left) * 5 / 4;
-            let seed = Point { x: sx as i32, y: datum.y as i32 };
-            let max_run = (datum.right - datum.left) * 2;
-
-            if verify_pattern::<Y>(img, &seed, &pattern, max_run) && validate_areas(img, &datum) {
-                let f = construct_finder(img, &datum, finders.len());
+            if is_valid_finder(img, &scanner, &datum) {
+                let f = locate_finder_centre(img, &datum);
                 finders.push(f);
             }
         }
@@ -163,6 +137,19 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
     }
 
     finders
+}
+
+// Crosscheck 1:1:3:1:1 pattern along Y axis. Also verify if the area of stone region
+// is roughly 37.5% of ring region.
+fn is_valid_finder(img: &mut BinaryImage, scn: &LineScanner, datum: &DatumLine) -> bool {
+    let sx = datum.right - (datum.stone - datum.left) * 5 / 4;
+    let seed = Point { x: sx as i32, y: datum.y as i32 };
+    let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
+    let buf = &scn.buffer;
+    let thresh = (buf[0] + buf[1] + buf[3] + buf[4]) as f64 / 4.0;
+    let max_run = (datum.right - datum.left) * 2; // Setting a loose upper limit on the run
+
+    verify_pattern::<Y>(img, &seed, &pattern, thresh, max_run) && validate_areas(img, datum)
 }
 
 /// Checks if the vertical run along finder line center satisfies the 1:1:3:1:1 ratio
@@ -260,13 +247,13 @@ fn validate_areas(img: &mut BinaryImage, datum: &DatumLine) -> bool {
     }
 }
 
-fn construct_finder(img: &mut BinaryImage, datum: &DatumLine, id: usize) -> Finder {
+fn locate_finder_centre(img: &mut BinaryImage, datum: &DatumLine) -> Point {
     let (stone, right, y) = (datum.stone, datum.right, datum.y);
     let color = Color::from(img.get(stone, y).unwrap());
     let ref_pt = Point { x: stone as i32, y: y as i32 };
 
     // Locating center of finder
-    let cl = CenterLocator::new();
+    let cl = CentreLocator::new();
     let to = Pixel::Candidate(color);
     let cl = img.fill_and_accumulate((stone, y), to, cl);
     let center = cl.get_center();
@@ -276,7 +263,7 @@ fn construct_finder(img: &mut BinaryImage, datum: &DatumLine, id: usize) -> Find
     let to = Pixel::Candidate(color);
     let _ = img.fill_and_accumulate((right, y), to, |_| ());
 
-    Finder { id, center }
+    center
 }
 
 #[cfg(test)]
@@ -316,7 +303,7 @@ mod finder_tests {
         let finders = locate_finders(&mut img);
         for (i, f) in finders.iter().enumerate() {
             let cent_pt = Point { x: centers[i][0], y: centers[i][1] };
-            assert_eq!(f.center, cent_pt, "Finder center doesn't match");
+            assert_eq!(*f, cent_pt, "Finder center doesn't match");
         }
     }
 }
@@ -326,10 +313,11 @@ mod finder_tests {
 
 #[derive(Debug)]
 pub struct FinderGroup {
-    pub finders: [Finder; 3], // [BL, TL, TR]
-    pub mids: [Point; 6],     // [BLR, BLU, TLB, TLR, TRL, TRD]. Mid pts of edges
-    pub size: u32,            // Grid size of potential qr
-    pub score: f64,           // Timing pattern score + Estimate mod count score
+    pub finders: [Point; 3], // [BL, TL, TR]
+    pub align: Point,        // Centre of provisional alignment pattern
+    pub mids: [Point; 6],    // [BLR, BLU, TLB, TLR, TRL, TRD]. Mid pts of edges
+    pub size: u32,           // Grid size of potential qr
+    pub score: f64,          // Timing pattern score + Estimate mod count score
 }
 
 impl FinderGroup {
@@ -379,7 +367,7 @@ impl FinderGroup {
 // ****************************
 // ****************************
 // ****************************
-pub fn group_finders(img: &BinaryImage, finders: &[Finder]) -> Vec<FinderGroup> {
+pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
     let mut groups: Vec<FinderGroup> = Vec::new();
     let len = finders.len();
     let angle_threshold = 50f64.to_radians();
@@ -390,37 +378,38 @@ pub fn group_finders(img: &BinaryImage, finders: &[Finder]) -> Vec<FinderGroup> 
                 continue;
             }
 
-            let m12 = match find_edge_mid(img, &f1.center, &f2.center) {
+            let m12 = match find_edge_mid(img, f1, f2) {
                 Some(pt) => pt,
                 None => continue,
             };
-            let m21 = match find_edge_mid(img, &f2.center, &f1.center) {
+            let m21 = match find_edge_mid(img, f2, f1) {
                 Some(pt) => pt,
                 None => continue,
             };
-            let s2 = Slope::new(&f1.center, &f2.center);
+            let s2 = Slope::new(f1, f2);
 
             for (i3, f3) in finders.iter().enumerate() {
                 if i3 <= i2 || i3 == i1 {
                     continue;
                 }
 
-                if angle(f2.center, f1.center, f3.center) < angle_threshold {
+                if angle(f2, f1, f3) < angle_threshold {
                     continue;
                 }
 
-                let m13 = match find_edge_mid(img, &f1.center, &f3.center) {
+                let m13 = match find_edge_mid(img, f1, f3) {
                     Some(pt) => pt,
                     None => continue,
                 };
-                let m31 = match find_edge_mid(img, &f3.center, &f1.center) {
+                let m31 = match find_edge_mid(img, f3, f1) {
                     Some(pt) => pt,
                     None => continue,
                 };
-                let s3 = Slope::new(&f1.center, &f3.center);
+                let s3 = Slope::new(f1, f3);
 
-                let l24 = Line::from_point_slope(&f2.center, &s3);
-                let l34 = Line::from_point_slope(&f3.center, &s2);
+                // Compute location of alignment centre (c4)
+                let l24 = Line::from_point_slope(f2, &s3);
+                let l34 = Line::from_point_slope(f3, &s2);
                 let c4 = match l24.intersection(&l34) {
                     Some(pt) => pt,
                     None => continue,
@@ -432,11 +421,11 @@ pub fn group_finders(img: &BinaryImage, finders: &[Finder]) -> Vec<FinderGroup> 
                     continue;
                 }
 
-                let m24 = match find_edge_mid(img, &f2.center, &c4) {
+                let m24 = match find_edge_mid(img, f2, &c4) {
                     Some(pt) => pt,
                     None => continue,
                 };
-                let m34 = match find_edge_mid(img, &f3.center, &c4) {
+                let m34 = match find_edge_mid(img, f3, &c4) {
                     Some(pt) => pt,
                     None => continue,
                 };
@@ -447,21 +436,21 @@ pub fn group_finders(img: &BinaryImage, finders: &[Finder]) -> Vec<FinderGroup> 
                 // Calculate score
                 let symmetry_score = ((t12 as f64 / t13 as f64) - 1.0).abs();
 
-                let est_mod_count12 = estimate_mod_count(&f1.center, &m12, &f2.center, &m21);
+                let est_mod_count12 = estimate_mod_count(f1, &m12, f2, &m21);
                 let mod_score12 = ((est_mod_count12 / (t12 + 6) as f64) - 1.0).abs();
 
-                let est_mod_count13 = estimate_mod_count(&f1.center, &m13, &f3.center, &m31);
+                let est_mod_count13 = estimate_mod_count(f1, &m13, f3, &m31);
                 let mod_score13 = ((est_mod_count13 / (t13 + 6) as f64) - 1.0).abs();
 
                 let score = symmetry_score + mod_score12 + mod_score13;
 
                 // Create and push group into groups
-                let finders = [f3.clone(), f1.clone(), f2.clone()];
+                let finders = [*f3, *f1, *f2];
                 let mids = [m34, m31, m13, m12, m21, m24];
                 let size = std::cmp::max(t12, t13) + 13;
                 let ver = (size as f64 - 15.0).floor() as u32 / 4;
                 let size = ver * 4 + 17;
-                let group = FinderGroup { finders, mids, size, score };
+                let group = FinderGroup { finders, align: c4, mids, size, score };
                 groups.push(group);
             }
         }
@@ -473,7 +462,7 @@ pub fn group_finders(img: &BinaryImage, finders: &[Finder]) -> Vec<FinderGroup> 
 }
 
 // Angle between AB & BC in radians
-fn angle(a: Point, b: Point, c: Point) -> f64 {
+fn angle(a: &Point, b: &Point, c: &Point) -> f64 {
     let ab = ((a.x - b.x) as f64, (a.y - b.y) as f64);
     let cb = ((c.x - b.x) as f64, (c.y - b.y) as f64);
 
@@ -566,11 +555,11 @@ where
 }
 
 fn estimate_mod_count(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {
-    let d1 = c1.squared_distance(m1);
-    let d2 = c2.squared_distance(m2);
+    let d1 = c1.dist_sq(m1);
+    let d2 = c2.dist_sq(m2);
 
     let avg_d = ((d1 + d2) / 2) as f64;
-    let d12 = c1.squared_distance(c2) as f64;
+    let d12 = c1.dist_sq(c2) as f64;
 
     (d12 * 9.0 / avg_d).sqrt()
 }
@@ -606,7 +595,7 @@ mod group_finders_tests {
         let group = group_finders(&img, &finders);
         assert!(!group.is_empty(), "No group found");
         for f in group[0].finders.iter() {
-            let c = (f.center.x, f.center.y);
+            let c = (f.x, f.y);
             assert!(centers.contains(&c))
         }
     }

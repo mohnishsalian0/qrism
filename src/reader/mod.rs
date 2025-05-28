@@ -207,7 +207,7 @@ mod reader_tests {
     #[test]
     #[ignore]
     fn decode_debugger() {
-        let (folder_id, qr_id) = (4, 48);
+        let (folder_id, qr_id) = (3, 22);
 
         let qr_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.png");
         let qr_path = std::path::Path::new(&qr_path_str);
@@ -229,9 +229,13 @@ mod reader_tests {
         #[allow(unused_imports)]
         use super::{binarize::BinaryImage, finder::locate_finders, locate_symbol, QRReader};
         #[allow(unused_imports)]
-        use crate::reader::finder::group_finders;
+        use crate::reader::{
+            finder::group_finders,
+            utils::geometry::{BresenhamLine, Line, X, Y},
+        };
 
-        let inp = std::path::Path::new("tests/images/qrcode-4/48.png");
+        let (folder_id, qr_id) = (3, 22);
+        let inp = format!("tests/images/qrcode-{folder_id}/{qr_id}.png");
         let img = image::open(inp).unwrap().to_luma8();
         let mut bin_img = BinaryImage::prepare(&img);
         let path = std::path::Path::new("assets/inp.png");
@@ -240,13 +244,13 @@ mod reader_tests {
         let mut out_img = image::open(path).unwrap().to_rgb8();
 
         let finders = locate_finders(&mut bin_img);
-        finders.iter().for_each(|f| f.center.highlight(&mut out_img));
+        finders.iter().for_each(|f| f.highlight(&mut out_img));
 
         let groups = group_finders(&bin_img, &finders);
         groups[0].highlight(&mut out_img);
 
         let symbol = locate_symbol(bin_img, groups).unwrap();
-        symbol.highlight(&mut out_img);
+        // symbol.highlight(&mut out_img);
 
         let out = std::path::Path::new("assets/out.png");
         out_img.save(out).unwrap();

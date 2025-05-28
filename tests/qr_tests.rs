@@ -152,7 +152,7 @@ mod qr_tests {
         let file_counts = [20, 36, 42, 48, 19, 15]; // Count of qrs in 6 folders
         let total = file_counts.iter().sum::<u32>();
         let mut passed = 0;
-        let mut out_file = std::fs::File::create("tests/images/result.txt").unwrap();
+        let mut out_file = std::fs::File::create("tests/images/result1.txt").unwrap();
 
         for (i, file_count) in file_counts.iter().enumerate() {
             let folder_id = i + 1;
