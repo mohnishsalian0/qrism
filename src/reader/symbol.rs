@@ -62,18 +62,15 @@ impl SymbolLocation {
         dbg!(ver, group.size);
 
         // For versions greater than 1 a more robust algorithm to locate align center.
+        // First, locate provisional centre from mid 1 with distance of c1 from mid 4.
         // Spiral out of provisional align pt to identify potential pt. Then compare the area of
         // black region with estimate module size to confirm alignment stone. Finally, locate the
         // center of the stone.
         if *ver != 1 {
-            let hm = Slope::new(&c1, &c2); // Horizontal slope from c1 to c2
-            let vm = Slope::new(&c1, &c0); // Vertical slope from c1 to c0
+            let dx = group.mids[4].x - c1.x;
+            let dy = group.mids[4].y - c1.y;
+            let seed = Point { x: group.mids[1].x + dx, y: group.mids[1].y + dy };
 
-            // For any other version, lines are from m1 (m31) & m4 (m21)
-            let hl = Line::from_point_slope(&group.mids[1], &hm);
-            let vl = Line::from_point_slope(&group.mids[4], &vm);
-
-            let seed = hl.intersection(&vl)?;
             align_centre = locate_alignment_pattern(img, group, seed)?;
         }
 
