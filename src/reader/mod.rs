@@ -77,7 +77,7 @@ impl QRReader {
 
         debug_println!("\n{}\n", Metadata::new(Some(ver), Some(ecl), Some(mask)));
 
-        String::from_utf8(msg).or(Err(QRError::InvalidUTF8Sequence))
+        Ok(msg)
     }
 }
 

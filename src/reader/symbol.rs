@@ -1,9 +1,8 @@
 use super::{
-    binarize::{BinaryImage, Pixel, Region},
+    binarize::{BinaryImage, Pixel},
     finder::FinderGroup,
     utils::{
-        accumulate::CentreLocator,
-        geometry::{Line, Point, Slope},
+        geometry::{Point, Slope},
         homography::Homography,
     },
 };
@@ -28,7 +27,7 @@ use image::RgbImage;
 #[cfg(test)]
 use std::path::Path;
 
-// Locates symbol based on 3 finder centers, their edge points & provisional grid size
+// Locates symbol based on 3 finder centres, their edge points & provisional grid size
 //------------------------------------------------------------------------------
 
 #[derive(Debug)]
@@ -59,13 +58,12 @@ impl SymbolLocation {
 
         // Getting provisional version
         let ver = Version::from_grid_size(group.size as usize)?;
-        dbg!(ver, group.size);
 
-        // For versions greater than 1 a more robust algorithm to locate align center.
+        // For versions greater than 1 a more robust algorithm to locate align centre.
         // First, locate provisional centre from mid 1 with distance of c1 from mid 4.
         // Spiral out of provisional align pt to identify potential pt. Then compare the area of
         // black region with estimate module size to confirm alignment stone. Finally, locate the
-        // center of the stone.
+        // centre of the stone.
         if *ver != 1 {
             let dx = group.mids[4].x - c1.x;
             let dy = group.mids[4].y - c1.y;
@@ -215,26 +213,18 @@ fn locate_alignment_pattern(
 
             let color = Color::from(*img.get_at_point(&seed).unwrap());
             if x < w && y < h && color != invalid {
-                let reg = img.get_region((x, y));
-                let sz = match reg {
-                    Some(Region { area, .. }) => area,
-                    _ => continue,
+                let reg = match img.get_region((x, y)) {
+                    Some(reg) => reg.clone(),
+                    None => continue,
                 };
 
                 // Check if region area is less than twice mod area
                 // and crosscheck 1:1:1 ratio horizontally and vertically
-                if sz <= mod_area * 2
+                if reg.area <= mod_area * 2
                     && verify_pattern::<X>(img, &seed, &pattern, mod_w, 2 * mod_area)
                     && verify_pattern::<Y>(img, &seed, &pattern, mod_w, 2 * mod_area)
                 {
-                    let cl = CentreLocator::new();
-                    let color = Color::from(*img.get_at_point(&seed).unwrap());
-                    let src = (seed.x as u32, seed.y as u32);
-                    let to = Pixel::Reserved(color);
-
-                    let cl = img.fill_and_accumulate(src, to, cl);
-                    let centre = cl.get_center();
-                    return Some(centre);
+                    return Some(reg.centre);
                 }
             }
             seed.x += DX[dir];
@@ -254,7 +244,7 @@ fn locate_alignment_pattern(
 fn setup_homography(
     img: &BinaryImage,
     group: &FinderGroup,
-    align_center: Point,
+    align_centre: Point,
     ver: Version,
 ) -> Option<Homography> {
     let size = group.size as f64;
@@ -264,7 +254,7 @@ fn setup_homography(
     let c0 = (group.finders[0].x as f64, group.finders[0].y as f64);
     let c1 = (group.finders[1].x as f64, group.finders[1].y as f64);
     let c2 = (group.finders[2].x as f64, group.finders[2].y as f64);
-    let ca = (align_center.x as f64, align_center.y as f64);
+    let ca = (align_centre.x as f64, align_centre.y as f64);
     let dst = [c1, c2, ca, c0];
 
     let initial_h = Homography::compute(src, dst).ok()?;
@@ -279,9 +269,9 @@ fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Homo
     let mut best = symbol_fitness(img, &h, ver);
 
     // Create an adjustment matrix by scaling the homography
-    let mut adjustments = h.0.map(|x| x * 0.03);
+    let mut adjustments = h.0.map(|x| x * 0.04);
 
-    for _pass in 0..5 {
+    for _pass in 0..6 {
         for i in 0..8 {
             let old = h[i];
             for j in 0..2 {
@@ -364,8 +354,6 @@ fn ring_fitness(img: &BinaryImage, h: &Homography, cx: i32, cy: i32, r: i32) -> 
 
 fn cell_fitness(img: &BinaryImage, hm: &Homography, x: i32, y: i32) -> i32 {
     const OFFSETS: [f64; 3] = [0.3, 0.5, 0.7];
-    let w = img.w;
-    let h = img.h;
     let white = Color::White;
     let mut score = 0;
 

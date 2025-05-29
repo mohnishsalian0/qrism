@@ -6,77 +6,129 @@ pub use decode::*;
 mod reader {
     use std::cmp::min;
 
+    use encoding_rs::SHIFT_JIS;
+
     use crate::codec::Mode;
     use crate::metadata::Version;
     use crate::utils::{BitStream, QRError, QRResult};
 
-    pub fn take_segment(inp: &mut BitStream, ver: Version) -> QRResult<(Vec<u8>, usize)> {
+    pub fn write_segment(inp: &mut BitStream, ver: Version, out: &mut String) -> QRResult<usize> {
+        let old_len = out.len();
         let (mode, char_cnt) = take_header(inp, ver)?;
-        let byte_data = match mode {
-            Mode::Numeric => take_numeric_data(inp, char_cnt)?,
-            Mode::Alphanumeric => take_alphanumeric_data(inp, char_cnt)?,
-            Mode::Byte => take_byte_data(inp, char_cnt)?,
-            Mode::Terminator => return Ok((vec![], 0)),
+
+        match mode {
+            Mode::Numeric => write_numeric(inp, char_cnt, out)?,
+            Mode::Alphanumeric => write_alphanumeric(inp, char_cnt, out)?,
+            Mode::Byte => write_byte(inp, char_cnt, out)?,
+            Mode::Kanji => write_kanji(inp, char_cnt, out)?,
+            Mode::Terminator => return Ok(0),
         };
-        let encoded_len = mode.encoded_len(byte_data.len());
+
+        let seg_len = out.len() - old_len;
+        let encoded_len = mode.encoded_len(seg_len);
         let bit_len = ver.mode_bits() + ver.char_cnt_bits(mode) + encoded_len;
-        Ok((byte_data, bit_len))
+
+        Ok(bit_len)
     }
 
     fn take_header(inp: &mut BitStream, ver: Version) -> QRResult<(Mode, usize)> {
         let mode_bits = inp.take_bits(4).ok_or(QRError::CorruptDataSegment)?;
+
         let mode = match mode_bits {
             0 => Mode::Terminator,
             1 => Mode::Numeric,
             2 => Mode::Alphanumeric,
             4 => Mode::Byte,
+            8 => Mode::Kanji,
             _ => return Err(QRError::InvalidMode(mode_bits as u8)),
         };
+
         let len_bits = ver.char_cnt_bits(mode);
         let char_cnt = inp.take_bits(len_bits).ok_or(QRError::CorruptDataSegment)?;
+
         Ok((mode, char_cnt.into()))
     }
 
-    fn take_numeric_data(inp: &mut BitStream, mut char_cnt: usize) -> QRResult<Vec<u8>> {
-        let mut res = Vec::with_capacity(char_cnt);
+    fn write_numeric(inp: &mut BitStream, mut char_cnt: usize, out: &mut String) -> QRResult<()> {
         while char_cnt > 0 {
             let bit_len = if char_cnt > 2 { 10 } else { (char_cnt % 3) * 3 + 1 };
             let chunk = inp.take_bits(bit_len).ok_or(QRError::CorruptDataSegment)?;
-            let bytes = Mode::Numeric.decode_chunk(chunk, bit_len);
-            res.extend(bytes);
+            let decoded = Mode::Numeric.decode_chunk(chunk, bit_len);
+            let decoded_str =
+                String::from_utf8(decoded).map_err(|_| QRError::InvalidUTF8Encoding)?;
+            out.push_str(&decoded_str);
             char_cnt -= min(3, char_cnt);
         }
-        Ok(res)
+
+        Ok(())
     }
 
-    fn take_alphanumeric_data(inp: &mut BitStream, mut char_cnt: usize) -> QRResult<Vec<u8>> {
-        let mut res = Vec::with_capacity(char_cnt);
+    fn write_alphanumeric(
+        inp: &mut BitStream,
+        mut char_cnt: usize,
+        out: &mut String,
+    ) -> QRResult<()> {
         while char_cnt > 0 {
             let bit_len = if char_cnt > 1 { 11 } else { 6 };
             let chunk = inp.take_bits(bit_len).ok_or(QRError::CorruptDataSegment)?;
-            let bytes = Mode::Alphanumeric.decode_chunk(chunk, bit_len);
-            res.extend(bytes);
+            let decoded = Mode::Alphanumeric.decode_chunk(chunk, bit_len);
+            let decoded_str =
+                String::from_utf8(decoded).map_err(|_| QRError::InvalidUTF8Encoding)?;
+            out.push_str(&decoded_str);
             char_cnt -= min(2, char_cnt);
         }
-        Ok(res)
+
+        Ok(())
     }
 
-    fn take_byte_data(inp: &mut BitStream, mut char_cnt: usize) -> QRResult<Vec<u8>> {
-        let mut res = Vec::with_capacity(char_cnt);
+    fn write_byte(inp: &mut BitStream, mut char_cnt: usize, out: &mut String) -> QRResult<()> {
+        let mut bytes = Vec::with_capacity(char_cnt);
+
         while char_cnt > 0 {
             let chunk = inp.take_bits(8).ok_or(QRError::CorruptDataSegment)?;
-            let bytes = Mode::Byte.decode_chunk(chunk, 8);
-            res.extend(bytes);
+            let decoded = Mode::Byte.decode_chunk(chunk, 8);
+            bytes.extend(decoded);
             char_cnt -= 1;
         }
-        Ok(res)
+
+        match String::from_utf8(bytes.clone()) {
+            Ok(utf8) => out.push_str(&utf8),
+            Err(_) => {
+                let (kanji, _, has_err) = SHIFT_JIS.decode(&bytes);
+
+                if has_err {
+                    return Err(QRError::InvalidCharacterEncoding);
+                }
+
+                out.push_str(&kanji);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn write_kanji(inp: &mut BitStream, mut char_cnt: usize, out: &mut String) -> QRResult<()> {
+        while char_cnt > 0 {
+            let chunk = inp.take_bits(13).ok_or(QRError::CorruptDataSegment)?;
+            let decoded = Mode::Kanji.decode_chunk(chunk, 13);
+            let (decoded_str, _, has_err) = SHIFT_JIS.decode(&decoded);
+
+            if has_err {
+                return Err(QRError::CorruptDataSegment);
+            }
+
+            out.push_str(&decoded_str);
+            char_cnt -= 1;
+        }
+
+        Ok(())
     }
 
     #[cfg(test)]
     mod reader_tests {
         use super::{
-            take_alphanumeric_data, take_byte_data, take_header, take_numeric_data, take_segment,
-            BitStream, Mode,
+            take_header, write_alphanumeric, write_byte, write_numeric, write_segment, BitStream,
+            Mode,
         };
         use crate::common::codec::encoder::encode_with_version;
         use crate::{ECLevel, Palette, Version};
@@ -134,74 +186,103 @@ mod reader {
         }
 
         #[test]
-        fn test_take_numeric_data() {
+        fn test_take_numeric() {
             let data = "12345".as_bytes();
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
             let pal = Palette::Mono;
             let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
+            let mut out = String::with_capacity(100);
+
             take_header(&mut bs, ver).unwrap();
-            let numeric_data = take_numeric_data(&mut bs, 3).unwrap();
-            assert_eq!(numeric_data, "123".as_bytes().to_vec());
-            let numeric_data = take_numeric_data(&mut bs, 2).unwrap();
-            assert_eq!(numeric_data, "45".as_bytes().to_vec());
+
+            write_numeric(&mut bs, 3, &mut out).unwrap();
+            assert_eq!(out, "123");
+            out.clear();
+
+            write_numeric(&mut bs, 2, &mut out).unwrap();
+            assert_eq!(out, "45");
+            out.clear();
+
             let data = "6".as_bytes();
             let mut bs = encode_with_version(data, ver, ECLevel::L, pal).unwrap();
             take_header(&mut bs, ver).unwrap();
-            let numeric_data = take_numeric_data(&mut bs, 1).unwrap();
-            assert_eq!(numeric_data, "6".as_bytes().to_vec());
+            write_numeric(&mut bs, 1, &mut out).unwrap();
+            assert_eq!(out, "6");
         }
 
         #[test]
-        fn test_take_alphanumeric_data() {
+        fn test_write_alphanumeric() {
             let data = "AC-".as_bytes();
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
             let pal = Palette::Mono;
             let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
+            let mut out = String::with_capacity(100);
+
             take_header(&mut bs, ver).unwrap();
-            let alphanumeric_data = take_alphanumeric_data(&mut bs, 2).unwrap();
-            assert_eq!(alphanumeric_data, "AC".as_bytes().to_vec());
-            let alphanumeric_data = take_alphanumeric_data(&mut bs, 1).unwrap();
-            assert_eq!(alphanumeric_data, "-".as_bytes().to_vec());
+
+            write_alphanumeric(&mut bs, 2, &mut out).unwrap();
+            assert_eq!(out, "AC");
+            out.clear();
+
+            write_alphanumeric(&mut bs, 1, &mut out).unwrap();
+            assert_eq!(out, "-");
+            out.clear();
+
             let data = "%".as_bytes();
             let mut bs = encode_with_version(data, ver, ECLevel::L, pal).unwrap();
             take_header(&mut bs, ver).unwrap();
-            let alphanumeric_data = take_alphanumeric_data(&mut bs, 1).unwrap();
-            assert_eq!(alphanumeric_data, "%".as_bytes().to_vec());
+            write_alphanumeric(&mut bs, 1, &mut out).unwrap();
+            assert_eq!(out, "%");
         }
 
         #[test]
-        fn test_take_byte_data() {
+        fn test_write_byte() {
             let data = "abc".as_bytes();
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
             let pal = Palette::Mono;
             let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
+            let mut out = String::with_capacity(100);
+
             take_header(&mut bs, ver).unwrap();
-            let byte_data = take_byte_data(&mut bs, 2).unwrap();
-            assert_eq!(byte_data, "ab".as_bytes().to_vec());
-            let byte_data = take_byte_data(&mut bs, 1).unwrap();
-            assert_eq!(byte_data, "c".as_bytes().to_vec());
+
+            write_byte(&mut bs, 2, &mut out).unwrap();
+            assert_eq!(out, "ab");
+            out.clear();
+
+            write_byte(&mut bs, 1, &mut out).unwrap();
+            assert_eq!(out, "c");
         }
 
         #[test]
-        fn test_take_segment() {
+        fn test_write_segment() {
             let data = "abcABCDEF1234567890123ABCDEFabc".as_bytes();
             let ver = Version::Normal(2);
             let ecl = ECLevel::L;
             let pal = Palette::Mono;
             let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
-            let (seg_data, _) = take_segment(&mut bs, ver).unwrap();
-            assert_eq!(seg_data, "abc".as_bytes().to_vec());
-            let (seg_data, _) = take_segment(&mut bs, ver).unwrap();
-            assert_eq!(seg_data, "ABCDEF".as_bytes().to_vec());
-            let (seg_data, _) = take_segment(&mut bs, ver).unwrap();
-            assert_eq!(seg_data, "1234567890123".as_bytes().to_vec());
-            let (seg_data, _) = take_segment(&mut bs, ver).unwrap();
-            assert_eq!(seg_data, "ABCDEF".as_bytes().to_vec());
-            let (seg_data, _) = take_segment(&mut bs, ver).unwrap();
-            assert_eq!(seg_data, "abc".as_bytes().to_vec());
+            let mut out = String::with_capacity(100);
+
+            write_segment(&mut bs, ver, &mut out).unwrap();
+            assert_eq!(out, "abc");
+            out.clear();
+
+            write_segment(&mut bs, ver, &mut out).unwrap();
+            assert_eq!(out, "ABCDEF");
+            out.clear();
+
+            write_segment(&mut bs, ver, &mut out).unwrap();
+            assert_eq!(out, "1234567890123");
+            out.clear();
+
+            write_segment(&mut bs, ver, &mut out).unwrap();
+            assert_eq!(out, "ABCDEF");
+            out.clear();
+
+            write_segment(&mut bs, ver, &mut out).unwrap();
+            assert_eq!(out, "abc");
         }
     }
 }
@@ -210,7 +291,7 @@ mod reader {
 //------------------------------------------------------------------------------
 
 pub mod decode {
-    use super::reader::take_segment;
+    use super::reader::write_segment;
     use crate::utils::{BitStream, QRResult};
     use crate::{ECLevel, Palette, Version};
 
@@ -219,27 +300,22 @@ pub mod decode {
         ver: Version,
         ecl: ECLevel,
         pal: Palette,
-    ) -> QRResult<Vec<u8>> {
-        let data_bit_cap = ver.data_bit_capacity(ecl, Palette::Mono);
-        let mut res = Vec::with_capacity(encoded.len());
-        let mut total_bit_len = 0;
+    ) -> QRResult<String> {
+        let bcap = ver.data_bit_capacity(ecl, Palette::Mono);
+        let mut res = String::with_capacity(encoded.len());
+        let mut bit_len = 0;
         loop {
-            let (decoded_seg, bit_len) = take_segment(encoded, ver)?;
-
-            if bit_len == 0 {
+            let seg_bit_len = write_segment(encoded, ver, &mut res)?;
+            if seg_bit_len == 0 {
                 break;
             }
 
-            res.extend(decoded_seg);
-            total_bit_len += bit_len;
+            bit_len += seg_bit_len;
 
             // Handles an edge case where the diff between capacity and data len is less than
             // 4 bits, in which case there isn't enough space for 4 terminator bits, in the
             // absence of which the decoder would proceed to the next channel
-            if total_bit_len <= data_bit_cap
-                && data_bit_cap - total_bit_len < 4
-                && pal == Palette::Mono
-            {
+            if bit_len <= bcap && bcap - bit_len < 4 && pal == Palette::Mono {
                 break;
             }
         }
@@ -254,11 +330,11 @@ pub mod decode {
 
         #[test]
         fn test_decode() {
-            let data = "abcABCDEF1234567890123ABCDEFabc".as_bytes();
+            let data = "abcABCDEF1234567890123ABCDEFabc";
             let ver = Version::Normal(2);
             let ecl = ECLevel::L;
             let pal = Palette::Mono;
-            let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
+            let mut bs = encode_with_version(data.as_bytes(), ver, ecl, pal).unwrap();
             let decoded_data = decode(&mut bs, ver, ecl, pal).unwrap();
             assert_eq!(decoded_data, data);
         }

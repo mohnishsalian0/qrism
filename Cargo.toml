@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+encoding_rs = "0.8.35"
 image = "0.25.2"
 lru = "0.14.0"
 num-traits = "0.2.19"

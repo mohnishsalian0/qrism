@@ -3,8 +3,8 @@ use crate::{metadata::Color, reader::utils::geometry::BresenhamLine};
 use super::{
     binarize::{BinaryImage, Pixel, Region},
     utils::{
-        accumulate::CentreLocator,
-        geometry::{Axis, Point, Slope, X, Y},
+        accumulate::AreaAndCentreLocator,
+        geometry::{Axis, Point, X, Y},
         verify_pattern,
     },
 };
@@ -119,17 +119,15 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Point> {
                 None => continue,
             };
 
-            if is_valid_finder(img, &scanner, &datum) {
-                let f = locate_finder_centre(img, &datum);
-                finders.push(f);
+            if let Some(centre) = verify_and_mark_finder(img, &scanner, &datum) {
+                finders.push(centre);
             }
         }
 
         // Handles an edge case where the QR is located at the right edge of the image
         if let Some(datum) = scanner.advance(Color::White) {
-            if is_valid_finder(img, &scanner, &datum) {
-                let f = locate_finder_centre(img, &datum);
-                finders.push(f);
+            if let Some(centre) = verify_and_mark_finder(img, &scanner, &datum) {
+                finders.push(centre);
             }
         }
 
@@ -139,132 +137,96 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Point> {
     finders
 }
 
-// Crosscheck 1:1:3:1:1 pattern along Y axis. Also verify if the area of stone region
-// is roughly 37.5% of ring region.
-fn is_valid_finder(img: &mut BinaryImage, scn: &LineScanner, datum: &DatumLine) -> bool {
-    let sx = datum.right - (datum.stone - datum.left) * 5 / 4;
+// Checks multiple conditions to ensure the finder is valid
+// 1. Left and right datum points are connected
+// 2. The region wasn't already marked as candidate
+// 3. Ring and stone regions aren't connected
+// 4. Area of stone region is roughly 37.5% of ring region
+// 5. Crosscheck 1:1:3:1:1 pattern along Y axis
+// Finally it marks the regions are candidate and returns the centre
+fn verify_and_mark_finder(
+    img: &mut BinaryImage,
+    scn: &LineScanner,
+    datum: &DatumLine,
+) -> Option<Point> {
+    let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
+    let sx = r - (s - l) * 5 / 4;
     let seed = Point { x: sx as i32, y: datum.y as i32 };
     let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
     let buf = &scn.buffer;
     let thresh = (buf[0] + buf[1] + buf[3] + buf[4]) as f64 / 4.0;
-    let max_run = (datum.right - datum.left) * 2; // Setting a loose upper limit on the run
+    let max_run = (r - l) * 2; // Setting a loose upper limit on the run
 
-    verify_pattern::<Y>(img, &seed, &pattern, thresh, max_run) && validate_areas(img, datum)
+    // Check if left and right pts are not connected through same region
+    // The id in Pixel::Visited makes the pixels unique
+    if img.get(l, y) != img.get(r, y) {
+        return None;
+    }
+
+    let ring = match img.get_region((r, y)) {
+        Some(reg) => reg.clone(),
+        None => return None,
+    };
+
+    let stone = match img.get_region((s, y)) {
+        Some(reg) => reg.clone(),
+        None => return None,
+    };
+
+    // Exit if stone has already been made a candidate in previous iteration
+    if stone.is_candidate {
+        return None;
+    }
+
+    // False if ring & stone are connected, or if ring to stone area is outside limits
+    let ratio = stone.area * 100 / ring.area;
+    if img.get(r, y) == img.get(s, y) || ratio <= 10 || 70 <= ratio {
+        return None;
+    }
+
+    // Verify 1:1:3:1:1 pattern along Y axis
+    if !verify_pattern::<Y>(img, &seed, &pattern, thresh, max_run) {
+        return None;
+    };
+
+    img.get_region((r, y)).unwrap().is_candidate = true;
+    img.get_region((s, y)).unwrap().is_candidate = true;
+
+    Some(stone.centre)
 }
 
-/// Checks if the vertical run along finder line center satisfies the 1:1:3:1:1 ratio
-fn crosscheck_vertical(img: &BinaryImage, datum: &DatumLine) -> bool {
-    let h = img.h;
-    let cx = datum.right - (datum.stone - datum.left) * 5 / 4;
-    let cy = datum.y;
-
-    if cy == 0 {
-        return false;
-    }
-
-    let max_run = (datum.right - datum.left) * 2; // Setting a loose max limit on each run
-    let mut run_len = [0; 5];
-    run_len[2] = 1;
-
-    // Count upwards
-    let mut pos = cy - 1;
-    let mut flips = 2;
-    let mut initial = Color::from(img.get(cx, cy).unwrap());
-    while run_len[flips] <= max_run {
-        let color = Color::from(img.get(cx, pos).unwrap());
-        if initial != color {
-            initial = color;
-            if flips == 0 {
-                break;
-            }
-            flips -= 1;
-        }
-        run_len[flips] += 1;
-
-        if pos == 0 {
-            break;
-        }
-        pos -= 1;
-    }
-
-    // Count downwards
-    let mut pos = cy + 1;
-    let mut flips = 2;
-    let mut initial = Color::from(img.get(cx, cy).unwrap());
-    while pos < h && run_len[flips] <= max_run {
-        let color = Color::from(img.get(cx, pos).unwrap());
-        if initial != color {
-            initial = color;
-            if flips == 4 {
-                break;
-            }
-            flips += 1;
-        }
-        run_len[flips] += 1;
-        pos += 1;
-    }
-
-    // Verify 1:1:3:1:1 ratio
-    let avg = (run_len.iter().sum::<u32>() as f64) / 7.0;
-    let tol = avg * 3.0 / 4.0;
-
-    let ratio: [f64; 5] = [1.0, 1.0, 3.0, 1.0, 1.0];
-    for (i, r) in ratio.iter().enumerate() {
-        let rl = run_len[i] as f64;
-        if rl < r * avg - tol || rl > r * avg + tol {
-            return false;
-        }
-    }
-
-    true
-}
-
-/// Sweeps stone and ring regions from datum line and checks:
+/// Sweeps stone and ring regions and checks:
 /// Stone area is roughly 37.5% of ring area
 /// Stone and ring areas are not connected
-/// Left and right points, of the row, lying inside the ring are connected
-fn validate_areas(img: &mut BinaryImage, datum: &DatumLine) -> bool {
-    let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
-    let ring = img.get_region((r, y));
-    let stone = img.get_region((s, y));
-
-    if img.get(l, y) != img.get(r, y) {
-        return false;
-    }
-
-    if let (
-        Some(Region { src: r_src, area: r_area, .. }),
-        Some(Region { src: s_src, area: s_area, .. }),
-    ) = (ring, stone)
-    {
-        let ratio = s_area * 100 / r_area;
-        let r_color = img.get(r_src.0, r_src.1);
-        let s_color = img.get(s_src.0, s_src.1);
-        // r_color != s_color && (20 < ratio && ratio < 50)
-        r_color != s_color && (10 < ratio && ratio < 70)
-    } else {
-        false
-    }
-}
-
-fn locate_finder_centre(img: &mut BinaryImage, datum: &DatumLine) -> Point {
-    let (stone, right, y) = (datum.stone, datum.right, datum.y);
-    let color = Color::from(img.get(stone, y).unwrap());
-    let ref_pt = Point { x: stone as i32, y: y as i32 };
-
-    // Locating center of finder
-    let cl = CentreLocator::new();
-    let to = Pixel::Candidate(color);
-    let cl = img.fill_and_accumulate((stone, y), to, cl);
-    let center = cl.get_center();
-
-    // Mark the ring as candidate
-    let color = Color::from(img.get(right, y).unwrap());
-    let to = Pixel::Candidate(color);
-    let _ = img.fill_and_accumulate((right, y), to, |_| ());
-
-    center
-}
+/// Left and right points, of the row, lying inside the ring, are connected
+// fn validate_areas(img: &mut BinaryImage, datum: &DatumLine) -> bool {
+//     let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
+//
+//     if img.get(l, y) != img.get(r, y) {
+//         return false;
+//     }
+//
+//     // Ring centre and area
+//     let ring = match img.get_region((r, y)) {
+//         Some(reg) => reg.clone(),
+//         None => return false,
+//     };
+//     // Stone centre and area
+//     let stone = match img.get_region((s, y)) {
+//         Some(reg) => reg.clone(),
+//         None => return false,
+//     };
+//
+//     let ratio = stone.area * 100 / ring.area;
+//     if ring.id != stone.id && (10 < ratio && ratio < 70) {
+//         let ring = img.get_region((r, y)).unwrap();
+//         ring.is_candidate = true;
+//         let stone = img.get_region((s, y)).unwrap();
+//         stone.is_candidate = true;
+//         return true;
+//     }
+//     false
+// }
 
 #[cfg(test)]
 mod finder_tests {
@@ -298,12 +260,12 @@ mod finder_tests {
             [[300, 109], [300, 40], [369, 109], [369, 40]],
             [[40, 369], [40, 300], [109, 300], [109, 369]],
         ];
-        let centers = [[75, 75], [335, 75], [75, 335]];
+        let centres = [[75, 75], [335, 75], [75, 335]];
         let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         for (i, f) in finders.iter().enumerate() {
-            let cent_pt = Point { x: centers[i][0], y: centers[i][1] };
-            assert_eq!(*f, cent_pt, "Finder center doesn't match");
+            let cent_pt = Point { x: centres[i][0], y: centres[i][1] };
+            assert_eq!(*f, cent_pt, "Finder centre doesn't match");
         }
     }
 }
@@ -333,7 +295,7 @@ impl FinderGroup {
     }
 }
 
-// Below diagram shows the location of all centers and edge mid points
+// Below diagram shows the location of all centres and edge mid points
 // referenced in the group finder function
 // ****************************              ****************************
 // ****************************              ****************************
@@ -370,7 +332,6 @@ impl FinderGroup {
 // ****************************
 pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
     let mut groups: Vec<FinderGroup> = Vec::new();
-    let len = finders.len();
     let angle_threshold = 50f64.to_radians();
 
     for (i1, f1) in finders.iter().enumerate() {
@@ -387,7 +348,6 @@ pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
                 Some(pt) => pt,
                 None => continue,
             };
-            let s2 = Slope::new(f1, f2);
 
             for (i3, f3) in finders.iter().enumerate() {
                 if i3 <= i2 || i3 == i1 {
@@ -406,7 +366,6 @@ pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
                     Some(pt) => pt,
                     None => continue,
                 };
-                let s3 = Slope::new(f1, f3);
 
                 // Compute provisional location of alignment centre (c4)
                 let dx = f2.x - f1.x;
@@ -586,7 +545,7 @@ mod group_finders_tests {
             .unwrap();
         let img = qr.to_image(10);
 
-        let centers = [(75, 75), (335, 75), (75, 335)];
+        let centres = [(75, 75), (335, 75), (75, 335)];
 
         let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
@@ -594,7 +553,7 @@ mod group_finders_tests {
         assert!(!group.is_empty(), "No group found");
         for f in group[0].finders.iter() {
             let c = (f.x, f.y);
-            assert!(centers.contains(&c))
+            assert!(centres.contains(&c))
         }
     }
 }

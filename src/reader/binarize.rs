@@ -6,8 +6,9 @@ use lru::LruCache;
 
 use crate::metadata::Color;
 
+use super::utils::accumulate::AreaAndCentreLocator;
 use super::utils::{
-    accumulate::{Accumulator, Area, Row},
+    accumulate::{Accumulator, Row},
     geometry::Point,
 };
 
@@ -67,11 +68,13 @@ impl From<Pixel> for Rgb<u8> {
 // Region
 //------------------------------------------------------------------------------
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Region {
     pub src: (u32, u32),
-    pub color: Color,
+    pub centre: Point,
     pub area: u32,
+    pub color: Color,
+    pub is_candidate: bool,
 }
 
 // Binarize trait for rgb & grayscale image
@@ -452,10 +455,14 @@ impl BinaryImage {
     }
 
     pub fn get(&self, x: u32, y: u32) -> Option<Pixel> {
-        let x = i32::try_from(x).expect("x coordinate exceeds i32::MAX");
-        let y = i32::try_from(y).expect("y coordinate exceeds i32::MAX");
+        let w = self.w;
+        let h = self.h;
 
-        let idx = self.coord_to_index(x, y)?;
+        if x >= w || y >= h {
+            return None;
+        }
+
+        let idx = (y * w + x) as usize;
         Some(self.buffer[idx])
     }
 
@@ -479,10 +486,14 @@ impl BinaryImage {
     }
 
     pub fn get_mut(&mut self, x: u32, y: u32) -> Option<&mut Pixel> {
-        let x = i32::try_from(x).expect("x coordinate exceeds i32::MAX");
-        let y = i32::try_from(y).expect("y coordinate exceeds i32::MAX");
+        let w = self.w;
+        let h = self.h;
 
-        let idx = self.coord_to_index(x, y)?;
+        if x >= w || y >= h {
+            return None;
+        }
+
+        let idx = (y * w + x) as usize;
         Some(&mut self.buffer[idx])
     }
 
@@ -516,7 +527,7 @@ impl BinaryImage {
         Ok(())
     }
 
-    pub(crate) fn get_region(&mut self, src: (u32, u32)) -> Option<Region> {
+    pub(crate) fn get_region(&mut self, src: (u32, u32)) -> Option<&mut Region> {
         let px = self.get(src.0, src.1).unwrap();
 
         match px {
@@ -527,6 +538,7 @@ impl BinaryImage {
                     let (id, reg) = self.regions.pop_lru().expect("Cache is full");
                     let Region { src, color, .. } = reg;
 
+                    dbg!(self.regions.len());
                     let _ = self.fill_and_accumulate(src, Pixel::Unvisited(color), |_| ());
 
                     id
@@ -534,17 +546,23 @@ impl BinaryImage {
                     reg_count
                 };
 
-                let area = Area(0);
+                let acl = AreaAndCentreLocator::new();
                 let to = Pixel::Visited(reg_id, color);
-                let acc = self.fill_and_accumulate(src, to, area);
-                let new_reg = Region { src, color, area: acc.0 };
+                let acl = self.fill_and_accumulate(src, to, acl);
+                let new_reg = Region {
+                    src,
+                    color,
+                    area: acl.area,
+                    centre: acl.get_centre(),
+                    is_candidate: false,
+                };
 
                 self.regions.put(reg_id, new_reg);
 
-                Some(new_reg)
+                Some(self.regions.get_mut(&reg_id).expect("Region not found after saving"))
             }
             Pixel::Visited(id, _) => {
-                Some(*self.regions.get(&id).expect("No region found for visited pixel"))
+                Some(self.regions.get_mut(&id).expect("No region found for visited pixel"))
             }
             _ => None,
         }
@@ -573,13 +591,13 @@ impl BinaryImage {
             let mut right = x;
             self.set(x, y, target);
 
-            // Traverse left till boundary
+            // Travel left till boundary
             while left > 0 && self.get(left - 1, y).unwrap() == from {
                 left -= 1;
                 self.set(left, y, target);
             }
 
-            // Traverse right till boundary
+            // Travel right till boundary
             while right < w - 1 && self.get(right + 1, y).unwrap() == from {
                 right += 1;
                 self.set(right, y, target);

@@ -31,7 +31,9 @@ pub enum QRError {
     AlignmentMismatch,
     InvalidMode(u8),
     CorruptDataSegment,
-    InvalidUTF8Sequence,
+    EndOfStream,
+    InvalidUTF8Encoding,
+    InvalidCharacterEncoding,
 }
 
 impl Display for QRError {
@@ -63,7 +65,9 @@ impl Display for QRError {
             Self::AlignmentMismatch => "Alignment color mismatch",
             Self::InvalidMode(m) => &format!("Unexpected mode bits: {m}").to_string(),
             Self::CorruptDataSegment => "Truncated data segment",
-            Self::InvalidUTF8Sequence => "Invalid UTF8 sequence",
+            Self::EndOfStream => "End of stream reached",
+            Self::InvalidUTF8Encoding => "Invalid UTF8 sequence",
+            Self::InvalidCharacterEncoding => "Character sequence is neither utf8 nor shift jis",
         };
         f.write_str(msg)
     }

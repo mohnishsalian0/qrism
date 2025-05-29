@@ -20,6 +20,7 @@ Deal with shadow:
 Deal with warped qr like on a tshirt:
     Implement zxing detector
 Address the failing testcase in codec
+Delete accumulator & make fill_accumulate return area and centre
 
 OUT OF SCOPE:
 Detecting branded (custom colors) traditional QR

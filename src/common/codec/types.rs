@@ -8,6 +8,7 @@ pub enum Mode {
     Numeric = 0b0001,
     Alphanumeric = 0b0010,
     Byte = 0b0100,
+    Kanji = 0b1000,
     Terminator = 0b0000,
 }
 
@@ -76,6 +77,7 @@ impl Mode {
                 _ => unreachable!("Invalid alphanumeric digit {mode_digit}"),
             },
             Self::Byte => mode_digit,
+            Self::Kanji => todo!(),
             Self::Terminator => unreachable!("Terminator mode doesn't have characters"),
         }
     }
@@ -95,7 +97,22 @@ impl Mode {
                 debug_assert!(len == 1, "Data is too long for byte conver: {len}");
                 data[0] as u16
             }
+            Self::Kanji => todo!(),
             Self::Terminator => unreachable!("Cannot encode in terminator mode"),
+        }
+    }
+
+    pub fn decode_chunk(&self, data: u16, bit_len: usize) -> Vec<u8> {
+        match self {
+            Self::Numeric => Self::decode_numeric_chunk(data, bit_len),
+            Self::Alphanumeric => Self::decode_alphanumeric_chunk(data, bit_len),
+            Self::Byte => {
+                debug_assert!(bit_len == 8, "Invalid byte encoded length: {bit_len}");
+
+                vec![data as u8]
+            }
+            Self::Kanji => Self::decode_kanji_chunk(data, bit_len),
+            Self::Terminator => unreachable!("Cannot decode in terminator mode"),
         }
     }
 
@@ -129,17 +146,13 @@ impl Mode {
         res
     }
 
-    pub fn decode_chunk(&self, data: u16, bit_len: usize) -> Vec<u8> {
-        match self {
-            Self::Numeric => Self::decode_numeric_chunk(data, bit_len),
-            Self::Alphanumeric => Self::decode_alphanumeric_chunk(data, bit_len),
-            Self::Byte => {
-                debug_assert!(bit_len == 8, "Invalid byte encoded length: {bit_len}");
+    fn decode_kanji_chunk(data: u16, bit_len: usize) -> Vec<u8> {
+        let msbyte = data / 0xc0;
+        let lsbyte = data % 0xc0;
+        let temp = ((msbyte << 8) | lsbyte) + 0x8140;
+        let sjw = if temp <= 0x9ffc { temp } else { temp + 0x4000 };
 
-                vec![data as u8]
-            }
-            Self::Terminator => unreachable!("Cannot decode in terminator mode"),
-        }
+        vec![(sjw >> 8) as u8, (sjw & 0xff) as u8]
     }
 
     pub fn contains(&self, byte: u8) -> bool {
@@ -149,6 +162,7 @@ impl Mode {
                 matches!(byte, b'0'..=b'9' | b'A'..=b'Z' | b' ' | b'$' | b'%' | b'*' | b'+' | b'-' | b'.' | b'/' | b':')
             }
             Self::Byte => true,
+            Self::Kanji => todo!(),
             Self::Terminator => false,
         }
     }
@@ -158,6 +172,7 @@ impl Mode {
             Self::Numeric => (len * 10 + 2) / 3,
             Self::Alphanumeric => (len * 11 + 1) / 2,
             Self::Byte => len * 8,
+            Self::Kanji => (len / 2) * 13,
             Self::Terminator => unreachable!("Cannot encode in terminator mode"),
         }
     }

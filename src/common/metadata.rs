@@ -99,27 +99,31 @@ impl Version {
 
         match self {
             Version::Micro(v) => match mode {
-                Mode::Numeric => v + 2,
-                Mode::Alphanumeric => v + 1,
-                Mode::Byte => v + 1,
+                Mode::Numeric => *v + 2,
+                Mode::Alphanumeric => *v + 1,
+                Mode::Byte => *v + 1,
+                Mode::Kanji => *v,
                 Mode::Terminator => 0,
             },
             Version::Normal(1..=9) => match mode {
                 Mode::Numeric => 10,
                 Mode::Alphanumeric => 9,
                 Mode::Byte => 8,
+                Mode::Kanji => 8,
                 Mode::Terminator => 0,
             },
             Version::Normal(10..=26) => match mode {
                 Mode::Numeric => 12,
                 Mode::Alphanumeric => 11,
                 Mode::Byte => 16,
+                Mode::Kanji => 10,
                 Mode::Terminator => 0,
             },
             Version::Normal(_) => match mode {
                 Mode::Numeric => 14,
                 Mode::Alphanumeric => 13,
                 Mode::Byte => 16,
+                Mode::Kanji => 12,
                 Mode::Terminator => 0,
             },
         }
