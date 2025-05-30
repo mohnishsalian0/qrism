@@ -1,0 +1,186 @@
+[1-1] PASSED
+[1-2] PASSED
+[1-3] PASSED
+[1-4] PASSED
+[1-5] PASSED
+[1-6] PASSED
+[1-7] PASSED
+[1-8] PASSED
+[1-9] PASSED
+[1-10] PASSED
+[1-11] PASSED
+[1-12] PASSED
+[1-13] PASSED
+[1-14] PASSED
+[1-15] PASSED
+[1-16] PASSED
+[1-17] PASSED
+[1-18] PASSED
+[1-19] PASSED
+[1-20] PASSED
+
+[2-1] PASSED
+[2-2] PASSED
+[2-3] PASSED
+[2-4] PASSED
+[2-5] Too many errors
+[2-6] PASSED
+[2-7] PASSED
+[2-8] PASSED
+[2-9] PASSED
+[2-10] Invalid UTF8 sequence
+[2-11] PASSED
+[2-12] QR not found
+[2-13] QR not found
+[2-14] PASSED
+[2-15] PASSED
+[2-16] Unexpected mode bits: 8
+[2-17] Invalid UTF8 sequence
+[2-18] Invalid UTF8 sequence
+[2-19] Invalid UTF8 sequence
+[2-20] Invalid UTF8 sequence
+[2-21] Invalid UTF8 sequence
+[2-22] PASSED
+[2-23] PASSED
+[2-24] Invalid UTF8 sequence
+[2-25] Too many errors
+[2-26] Unexpected mode bits: 8
+[2-27] Invalid UTF8 sequence
+[2-28] PASSED
+[2-29] Invalid UTF8 sequence
+[2-30] PASSED
+[2-31] Unexpected mode bits: 8
+[2-32] PASSED
+[2-33] Unexpected mode bits: 13
+[2-34] PASSED
+[2-35] PASSED
+[2-36] PASSED
+
+[3-1] PASSED
+[3-2] PASSED
+[3-3] PASSED
+[3-4] Too many errors
+[3-5] PASSED
+[3-6] PASSED
+[3-7] PASSED
+[3-8] PASSED
+[3-9] Too many errors
+[3-10] PASSED
+[3-11] PASSED
+[3-12] PASSED
+[3-13] PASSED
+[3-14] PASSED
+[3-15] PASSED
+[3-16] PASSED
+[3-17] PASSED
+[3-18] PASSED
+[3-19] PASSED
+[3-20] PASSED
+[3-21] PASSED
+[3-22] Invalid palette info detected
+[3-23] QR not found
+[3-24] Too many errors
+[3-25] PASSED
+[3-26] PASSED
+[3-27] PASSED
+[3-28] PASSED
+[3-29] PASSED
+[3-30] PASSED
+[3-31] PASSED
+[3-32] PASSED
+[3-33] PASSED
+[3-34] PASSED
+[3-35] PASSED
+[3-36] PASSED
+[3-37] PASSED
+[3-38] PASSED
+[3-39] PASSED
+[3-40] PASSED
+[3-41] PASSED
+[3-42] PASSED
+
+[4-1] PASSED
+[4-2] PASSED
+[4-3] PASSED
+[4-4] Too many errors
+[4-5] Too many errors
+[4-6] Too many errors
+[4-7] PASSED
+[4-8] Too many errors
+[4-9] Invalid format info detected
+[4-10] Too many errors
+[4-11] Too many errors
+[4-12] Too many errors
+[4-13] Too many errors
+[4-14] PASSED
+[4-15] PASSED
+[4-16] PASSED
+[4-17] PASSED
+[4-18] PASSED
+[4-19] PASSED
+[4-20] PASSED
+[4-21] PASSED
+[4-22] PASSED
+[4-23] PASSED
+[4-24] PASSED
+[4-25] PASSED
+[4-26] PASSED
+[4-27] PASSED
+[4-28] PASSED
+[4-29] PASSED
+[4-30] Too many errors
+[4-31] Too many errors
+[4-32] Too many errors
+[4-33] Invalid format info detected
+[4-34] Too many errors
+[4-35] PASSED
+[4-36] PASSED
+[4-37] PASSED
+[4-38] PASSED
+[4-39] PASSED
+[4-40] PASSED
+[4-41] Too many errors
+[4-42] PASSED
+[4-43] PASSED
+[4-44] PASSED
+[4-45] PASSED
+[4-46] PASSED
+[4-47] PASSED
+[4-48] PASSED
+
+[5-1] PASSED
+[5-2] PASSED
+[5-3] PASSED
+[5-4] PASSED
+[5-5] PASSED
+[5-6] PASSED
+[5-7] PASSED
+[5-8] PASSED
+[5-9] PASSED
+[5-10] PASSED
+[5-11] PASSED
+[5-12] PASSED
+[5-13] PASSED
+[5-14] PASSED
+[5-15] PASSED
+[5-16] PASSED
+[5-17] PASSED
+[5-18] PASSED
+[5-19] PASSED
+
+[6-1] PASSED
+[6-2] PASSED
+[6-3] PASSED
+[6-4] PASSED
+[6-5] PASSED
+[6-6] PASSED
+[6-7] PASSED
+[6-8] PASSED
+[6-9] PASSED
+[6-10] PASSED
+[6-11] PASSED
+[6-12] PASSED
+[6-13] PASSED
+[6-14] PASSED
+[6-15] PASSED
+
