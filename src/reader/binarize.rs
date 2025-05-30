@@ -538,7 +538,6 @@ impl BinaryImage {
                     let (id, reg) = self.regions.pop_lru().expect("Cache is full");
                     let Region { src, color, .. } = reg;
 
-                    dbg!(self.regions.len());
                     let _ = self.fill_and_accumulate(src, Pixel::Unvisited(color), |_| ());
 
                     id

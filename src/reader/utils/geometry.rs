@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, marker::PhantomData};
+use std::{cmp::Ordering, marker::PhantomData, ops::Add};
 
 #[cfg(test)]
 use image::{Rgb, RgbImage};

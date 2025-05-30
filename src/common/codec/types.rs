@@ -111,7 +111,7 @@ impl Mode {
 
                 vec![data as u8]
             }
-            Self::Kanji => Self::decode_kanji_chunk(data, bit_len),
+            Self::Kanji => Self::decode_kanji_chunk(data),
             Self::Terminator => unreachable!("Cannot decode in terminator mode"),
         }
     }
@@ -146,7 +146,7 @@ impl Mode {
         res
     }
 
-    fn decode_kanji_chunk(data: u16, bit_len: usize) -> Vec<u8> {
+    fn decode_kanji_chunk(data: u16) -> Vec<u8> {
         let msbyte = data / 0xc0;
         let lsbyte = data % 0xc0;
         let temp = ((msbyte << 8) | lsbyte) + 0x8140;

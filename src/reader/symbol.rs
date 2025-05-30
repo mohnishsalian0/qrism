@@ -195,7 +195,7 @@ fn locate_alignment_pattern(
     // Calculate estimate area of module
     let m0 = Slope::new(&group.finders[0], &group.mids[0]);
     let m1 = Slope::new(&group.finders[2], &group.mids[5]);
-    let mod_area = m0.cross(&m1).unsigned_abs() / 9;
+    let threshold = m0.cross(&m1).unsigned_abs() * 2 / 9;
 
     // Directional increment for x & y: [right, down, left, up]
     const DX: [i32; 4] = [1, 0, -1, 0];
@@ -204,27 +204,31 @@ fn locate_alignment_pattern(
     // Spiral outward to find stone
     let mut dir = 0;
     let mut run_len = 1;
-    let invalid = Color::White;
+    let mut rejected = Vec::with_capacity(100);
 
-    while run_len < mod_w_i32 * 100 {
+    while run_len < mod_w_i32 * 15 {
         for _ in 0..run_len {
             let x = seed.x as u32;
             let y = seed.y as u32;
 
             let color = Color::from(*img.get_at_point(&seed).unwrap());
-            if x < w && y < h && color != invalid {
-                let reg = match img.get_region((x, y)) {
-                    Some(reg) => reg.clone(),
+            if x < w && y < h && color == Color::Black {
+                let (reg_centre, reg_area) = match img.get_region((x, y)) {
+                    Some(reg) => (reg.centre, reg.area),
                     None => continue,
                 };
 
-                // Check if region area is less than twice mod area
-                // and crosscheck 1:1:1 ratio horizontally and vertically
-                if reg.area <= mod_area * 2
-                    && verify_pattern::<X>(img, &seed, &pattern, mod_w, 2 * mod_area)
-                    && verify_pattern::<Y>(img, &seed, &pattern, mod_w, 2 * mod_area)
-                {
-                    return Some(reg.centre);
+                if !rejected.contains(&reg_centre) {
+                    // Check if region area is roughly equal to mod area with 100% tolerance
+                    // and crosscheck 1:1:1 ratio horizontally and vertically
+                    if reg_area <= threshold
+                        && verify_pattern::<X>(img, &reg_centre, &pattern, mod_w, threshold)
+                        && verify_pattern::<Y>(img, &reg_centre, &pattern, mod_w, threshold)
+                    {
+                        return Some(reg_centre);
+                    } else {
+                        rejected.push(reg_centre);
+                    }
                 }
             }
             seed.x += DX[dir];
@@ -404,16 +408,9 @@ mod symbol_tests {
         let img = qr.to_image(10);
         let exp_anchors = [(75, 75), (335, 75), (305, 305), (75, 335)];
 
-        //FIXME:
-        let path = std::path::Path::new("assets/inp.png");
-        img.save(path).unwrap();
-        let mut out_img = image::open(path).unwrap().to_rgb8();
-
         let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
-        groups.iter().for_each(|f| f.highlight(&mut out_img)); // FIXME:
-        out_img.save(std::path::Path::new("assets/out.png")).unwrap();
         let symbol = locate_symbol(img, groups).expect("Symbol not found");
         for b in symbol.anchors {
             assert!(exp_anchors.contains(&(b.x, b.y)), "Symbol not within bounds");

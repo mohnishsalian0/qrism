@@ -207,7 +207,7 @@ mod reader_tests {
     #[test]
     #[ignore]
     fn decode_debugger() {
-        let (folder_id, qr_id) = (2, 5);
+        let (folder_id, qr_id) = (4, 11);
 
         let qr_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.png");
         let qr_path = std::path::Path::new(&qr_path_str);
@@ -234,7 +234,7 @@ mod reader_tests {
             utils::geometry::{BresenhamLine, Line, X, Y},
         };
 
-        let (folder_id, qr_id) = (2, 5);
+        let (folder_id, qr_id) = (4, 11);
         let inp = format!("tests/images/qrcode-{folder_id}/{qr_id}.png");
         let img = image::open(inp).unwrap().to_luma8();
         let mut bin_img = BinaryImage::prepare(&img);

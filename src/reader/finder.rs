@@ -1,9 +1,8 @@
 use crate::{metadata::Color, reader::utils::geometry::BresenhamLine};
 
 use super::{
-    binarize::{BinaryImage, Pixel, Region},
+    binarize::BinaryImage,
     utils::{
-        accumulate::AreaAndCentreLocator,
         geometry::{Axis, Point, X, Y},
         verify_pattern,
     },
@@ -79,7 +78,6 @@ impl LineScanner {
 
     // Validates whether last 5 run lengths are in the 1:1:3:1:1 ratio
     fn is_finder_line(&self) -> bool {
-        let white = Color::White;
         if self.flips < 5 {
             return false;
         }
@@ -150,31 +148,20 @@ fn verify_and_mark_finder(
     datum: &DatumLine,
 ) -> Option<Point> {
     let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
-    let sx = r - (s - l) * 5 / 4;
-    let seed = Point { x: sx as i32, y: datum.y as i32 };
-    let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
-    let buf = &scn.buffer;
-    let thresh = (buf[0] + buf[1] + buf[3] + buf[4]) as f64 / 4.0;
-    let max_run = (r - l) * 2; // Setting a loose upper limit on the run
+
+    let stone = img.get_region((s, y))?;
+
+    // Exit if stone is already made a candidate from previous iterations
+    if stone.is_candidate {
+        return None;
+    }
+
+    let stone = stone.clone();
+    let ring = img.get_region((r, y))?.clone();
 
     // Check if left and right pts are not connected through same region
     // The id in Pixel::Visited makes the pixels unique
     if img.get(l, y) != img.get(r, y) {
-        return None;
-    }
-
-    let ring = match img.get_region((r, y)) {
-        Some(reg) => reg.clone(),
-        None => return None,
-    };
-
-    let stone = match img.get_region((s, y)) {
-        Some(reg) => reg.clone(),
-        None => return None,
-    };
-
-    // Exit if stone has already been made a candidate in previous iteration
-    if stone.is_candidate {
         return None;
     }
 
@@ -183,6 +170,13 @@ fn verify_and_mark_finder(
     if img.get(r, y) == img.get(s, y) || ratio <= 10 || 70 <= ratio {
         return None;
     }
+
+    let sx = r - (s - l) * 5 / 4;
+    let seed = Point { x: sx as i32, y: datum.y as i32 };
+    let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
+    let buf = &scn.buffer;
+    let thresh = (buf[0] + buf[1] + buf[3] + buf[4]) as f64 / 4.0;
+    let max_run = (r - l) * 2; // Setting a loose upper limit on the run
 
     // Verify 1:1:3:1:1 pattern along Y axis
     if !verify_pattern::<Y>(img, &seed, &pattern, thresh, max_run) {
@@ -194,39 +188,6 @@ fn verify_and_mark_finder(
 
     Some(stone.centre)
 }
-
-/// Sweeps stone and ring regions and checks:
-/// Stone area is roughly 37.5% of ring area
-/// Stone and ring areas are not connected
-/// Left and right points, of the row, lying inside the ring, are connected
-// fn validate_areas(img: &mut BinaryImage, datum: &DatumLine) -> bool {
-//     let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
-//
-//     if img.get(l, y) != img.get(r, y) {
-//         return false;
-//     }
-//
-//     // Ring centre and area
-//     let ring = match img.get_region((r, y)) {
-//         Some(reg) => reg.clone(),
-//         None => return false,
-//     };
-//     // Stone centre and area
-//     let stone = match img.get_region((s, y)) {
-//         Some(reg) => reg.clone(),
-//         None => return false,
-//     };
-//
-//     let ratio = stone.area * 100 / ring.area;
-//     if ring.id != stone.id && (10 < ratio && ratio < 70) {
-//         let ring = img.get_region((r, y)).unwrap();
-//         ring.is_candidate = true;
-//         let stone = img.get_region((s, y)).unwrap();
-//         stone.is_candidate = true;
-//         return true;
-//     }
-//     false
-// }
 
 #[cfg(test)]
 mod finder_tests {
