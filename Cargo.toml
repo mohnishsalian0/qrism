@@ -6,11 +6,11 @@ edition = "2021"
 [dependencies]
 encoding_rs = "0.8.35"
 image = "0.25.2"
-lru = "0.14.0"
 num-traits = "0.2.19"
 proptest = "1.6.0"
 rand = "0.9.0"
 rqrr = "0.9.3"
+time = "0.3.41"
 
 [dev-dependencies]
 test-case = "3.3.1"

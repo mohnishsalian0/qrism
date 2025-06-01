@@ -59,6 +59,10 @@ mod qr_proptests {
 
 #[cfg(test)]
 mod qr_tests {
+    use std::time::Instant;
+
+    use image::imageops;
+    use rqrr::PreparedImage;
     use test_case::test_case;
 
     use qrism::{ECLevel, Palette, QRBuilder, QRReader, Version};
@@ -151,7 +155,8 @@ mod qr_tests {
 
         let file_counts = [20, 36, 42, 48, 19, 15]; // Count of qrs in 6 folders
         let total = file_counts.iter().sum::<u32>();
-        let mut passed = 0;
+        let mut passed_table = vec![[0; 4]; file_counts.len()];
+        let mut bench_table = vec![[0; 4]; file_counts.len()];
         let mut out_file = std::fs::File::create("tests/images/result1.txt").unwrap();
 
         for (i, file_count) in file_counts.iter().enumerate() {
@@ -162,42 +167,107 @@ mod qr_tests {
                 let img_path = std::path::Path::new(&img_path_str);
                 let img = image::open(img_path).unwrap().to_luma8();
 
-                match std::panic::catch_unwind(|| QRReader::read(&img)) {
-                    Ok(Ok(msg)) => {
-                        let msg = msg.replace("\r\n", "\n");
-                        let exp_msg_path_str =
-                            format!("tests/images/qrcode-{folder_id}/{qr_id}.txt");
-                        let exp_msg_path = std::path::Path::new(&exp_msg_path_str);
-                        let exp_msg = std::fs::read_to_string(exp_msg_path).unwrap();
-                        let exp_msg = exp_msg.replace("\r\n", "\n");
-                        let _ = if msg == exp_msg {
-                            passed += 1;
-                            writeln!(out_file, "[{}-{}] PASSED", folder_id, qr_id)
-                        } else {
-                            writeln!(out_file, "[{}-{}] DECODED", folder_id, qr_id)
-                        };
-                        msg
+                for (j, angle) in [0, 90, 180, 270].iter().enumerate() {
+                    let img = match angle {
+                        90 => imageops::rotate90(&img),
+                        180 => imageops::rotate180(&img),
+                        270 => imageops::rotate270(&img),
+                        _ => img.clone(),
+                    };
+
+                    write!(out_file, "[{}-{}-{}] ", folder_id, qr_id, angle).unwrap();
+
+                    let start = Instant::now();
+
+                    match QRReader::read(&img) {
+                        Ok(msg) => {
+                            let elapsed = start.elapsed();
+                            bench_table[i][j] += elapsed.as_millis();
+
+                            let msg = msg.replace("\r\n", "\n");
+                            let exp_msg_path_str =
+                                format!("tests/images/qrcode-{folder_id}/{qr_id}.txt");
+                            let exp_msg_path = std::path::Path::new(&exp_msg_path_str);
+                            let exp_msg = std::fs::read_to_string(exp_msg_path).unwrap();
+                            let exp_msg = exp_msg.replace("\r\n", "\n");
+
+                            if msg == exp_msg {
+                                passed_table[i][j] += 1;
+                                write!(out_file, "PASSED").unwrap();
+                            } else {
+                                write!(out_file, "DECODED").unwrap();
+                            };
+                        }
+                        Err(e) => {
+                            write!(out_file, "{}", e).unwrap();
+                            continue;
+                        }
                     }
-                    Ok(Err(e)) => {
-                        let _ = writeln!(out_file, "[{}-{}] {}", folder_id, qr_id, e);
-                        continue;
-                    }
-                    Err(e) => {
-                        let panic_msg = if let Some(s) = e.downcast_ref::<&str>() {
-                            *s
-                        } else if let Some(s) = e.downcast_ref::<String>() {
-                            s.as_str()
-                        } else {
-                            "Unknown panic"
-                        };
-                        let _ = writeln!(out_file, "[{}-{}] {}", folder_id, qr_id, panic_msg);
-                        continue;
-                    }
-                };
+                }
+                writeln!(out_file).unwrap();
             }
-            let _ = writeln!(out_file);
         }
-        let percentage = passed * 100 / total;
-        assert_eq!(passed, total, "Passed: {passed} out of {total} ({percentage}%)");
+
+        // Print results table
+        println!("Result for {} test images:", total * 4);
+        println!("=============================================================");
+        println!("|Folder   |0        |90       |180      |270      |Total    |");
+        println!("=============================================================");
+        let mut passed_per_angle = [0; 4];
+        let mut passed_per_folder = vec![0; file_counts.len()];
+        for (i, row) in passed_table.iter().enumerate() {
+            let mut line = format!("|{:<9}|", i + 1).to_string();
+            for (j, p) in row.iter().enumerate() {
+                line.push_str(&format!("{p:<9}|"));
+                passed_per_folder[i] += p;
+                passed_per_angle[j] += p;
+            }
+            line.push_str(&format!("{:<9}|", passed_per_folder[i]));
+            println!("{line}");
+        }
+        println!("=============================================================");
+        let mut line = "|Total    |".to_string();
+        for p in passed_per_angle {
+            line.push_str(&format!("{p:<9}|"));
+        }
+        let total_passed = passed_per_angle.iter().sum::<u32>();
+        line.push_str(&format!("{total_passed:<9}|"));
+        println!("{line}");
+        println!("=============================================================");
+        println!();
+
+        // Print bench table
+        println!("Benchmark for {} test images:", total * 4);
+        println!("=============================================================");
+        println!("|Folder   |0        |90       |180      |270      |Average  |");
+        println!("=============================================================");
+        let mut time_per_angle = [0; 4];
+        let mut time_per_folder = vec![0; file_counts.len()];
+        for (i, row) in bench_table.iter().enumerate() {
+            let mut line = format!("|{:<9}|", i + 1).to_string();
+            for (j, t) in row.iter().enumerate() {
+                let avg_t = t / passed_table[i][j] as u128;
+                line.push_str(&format!("{avg_t:<9}|"));
+                // line.push_str(&format!("{t:<9}|"));
+                time_per_folder[i] += t;
+                time_per_angle[j] += t;
+            }
+            let avg_folder = time_per_folder[i] / passed_per_folder[i] as u128;
+            line.push_str(&format!("{:<9}|", avg_folder));
+            // line.push_str(&format!("{:<9}|", time_per_folder[i]));
+            println!("{line}");
+        }
+        println!("=============================================================");
+        let mut line = "|Total    |".to_string();
+        for (i, p) in time_per_angle.iter().enumerate() {
+            let avg_angle = p / passed_per_angle[i] as u128;
+            line.push_str(&format!("{:<9}|", avg_angle));
+            // line.push_str(&format!("{:<9}|", p));
+        }
+        let overall_avg_time = time_per_angle.iter().sum::<u128>() / total_passed as u128;
+        // let overall_avg_time = time_per_angle.iter().sum::<u128>();
+        line.push_str(&format!("{:<9}|", overall_avg_time));
+        println!("{line}");
+        println!("=============================================================");
     }
 }

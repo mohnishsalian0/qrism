@@ -211,26 +211,30 @@ fn locate_alignment_pattern(
             let x = seed.x as u32;
             let y = seed.y as u32;
 
-            let color = Color::from(*img.get_at_point(&seed).unwrap());
-            if x < w && y < h && color == Color::Black {
-                let (reg_centre, reg_area) = match img.get_region((x, y)) {
-                    Some(reg) => (reg.centre, reg.area),
-                    None => continue,
-                };
+            if let Some(px) = img.get_at_point(&seed) {
+                let color = Color::from(*px);
 
-                if !rejected.contains(&reg_centre) {
-                    // Check if region area is roughly equal to mod area with 100% tolerance
-                    // and crosscheck 1:1:1 ratio horizontally and vertically
-                    if reg_area <= threshold
-                        && verify_pattern::<X>(img, &reg_centre, &pattern, mod_w, threshold)
-                        && verify_pattern::<Y>(img, &reg_centre, &pattern, mod_w, threshold)
-                    {
-                        return Some(reg_centre);
-                    } else {
-                        rejected.push(reg_centre);
+                if x < w && y < h && color == Color::Black {
+                    let (reg_centre, reg_area) = match img.get_region((x, y)) {
+                        Some(reg) => (reg.centre, reg.area),
+                        None => continue,
+                    };
+
+                    if !rejected.contains(&reg_centre) {
+                        // Check if region area is roughly equal to mod area with 100% tolerance
+                        // and crosscheck 1:1:1 ratio horizontally and vertically
+                        if reg_area <= threshold
+                            && verify_pattern::<X>(img, &reg_centre, &pattern, mod_w, threshold)
+                            && verify_pattern::<Y>(img, &reg_centre, &pattern, mod_w, threshold)
+                        {
+                            return Some(reg_centre);
+                        } else {
+                            rejected.push(reg_centre);
+                        }
                     }
                 }
             }
+
             seed.x += DX[dir];
             seed.y += DY[dir];
         }

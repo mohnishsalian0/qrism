@@ -70,7 +70,6 @@ pub fn verify_pattern<A: Axis>(
     }
 
     // Verify pattern with 80% tolerance. This was tuned to pass maximum number of test images
-    let avg = (run_len.iter().sum::<u32>() as f64) / pattern.iter().sum::<f64>();
     let tol = threshold * 0.8;
 
     for (i, r) in pattern.iter().enumerate() {

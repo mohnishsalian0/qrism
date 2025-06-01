@@ -24,46 +24,36 @@ impl QRReader {
         I: image::GenericImageView + Binarize,
         I::Pixel: ImgPixel<Subpixel = u8>,
     {
-        debug_println!("Reading QR...");
-
-        debug_println!("Preparing image...");
+        // Detector
         let mut img = BinaryImage::prepare(img);
 
-        debug_println!("Locating finders...");
         let finders = locate_finders(&mut img);
 
-        debug_println!("Grouping finders...");
         let groups = group_finders(&img, &finders);
 
-        debug_println!("Locating symbol...");
         let mut symbol = locate_symbol(img, groups).ok_or(QRError::SymbolNotFound)?;
 
-        debug_println!("Reading format info...");
+        // Decoder
         let (ecl, mask) = symbol.read_format_info()?;
 
-        debug_println!("Reading version info...");
         if matches!(symbol.ver, Version::Normal(7..=40)) {
             symbol.ver = symbol.read_version_info()?;
         }
         let ver = symbol.ver;
 
-        debug_println!("Reading palette info...");
         let pal = symbol.read_palette_info()?;
 
-        debug_println!("Marking all function patterns...");
         symbol.mark_all_function_patterns();
 
-        debug_println!("Extracting payload...");
         let pld = symbol.extract_payload(&mask)?;
 
         let blk_info = ver.data_codewords_per_block(ecl);
         let ec_len = ver.ecc_per_block(ecl);
 
-        // Extracting encoded data from payload
         let mut enc = BitStream::new(pld.len() << 3);
         let chan_cap = ver.channel_codewords();
 
-        debug_println!("Separating channels, deinterleaving & rectifying payload...");
+        // Chunking channel data, deinterleaving & rectifying payload
         for c in pld.data().chunks_exact(chan_cap) {
             let mut blocks = deinterleave(c, blk_info, ec_len);
             for b in blocks.iter_mut().flatten() {
@@ -72,10 +62,10 @@ impl QRReader {
             }
         }
 
-        debug_println!("Decoding data blocks...");
         let msg = decode(&mut enc, ver, ecl, pal)?;
 
-        debug_println!("\n{}\n", Metadata::new(Some(ver), Some(ecl), Some(mask)));
+        // FIXME: Uncomment
+        // debug_println!("\n{}\n", Metadata::new(Some(ver), Some(ecl), Some(mask)));
 
         Ok(msg)
     }
@@ -175,7 +165,7 @@ mod reader_tests {
             .mask(mask)
             .build()
             .unwrap();
-        let img = qr.to_image(3);
+        let img = qr.to_image(2);
 
         let extracted_data = QRReader::read(&img).expect("Couldn't read data");
 
@@ -197,7 +187,7 @@ mod reader_tests {
             .mask(mask)
             .build()
             .unwrap();
-        let img = qr.to_image(4);
+        let img = qr.to_image(3);
 
         let extracted_data = QRReader::read(&img).expect("Couldn't read data");
 
@@ -234,8 +224,9 @@ mod reader_tests {
             utils::geometry::{BresenhamLine, Line, X, Y},
         };
 
-        let (folder_id, qr_id) = (4, 11);
-        let inp = format!("tests/images/qrcode-{folder_id}/{qr_id}.png");
+        // let (folder_id, qr_id) = (4, 11);
+        // let inp = format!("tests/images/qrcode-{folder_id}/{qr_id}.png");
+        let inp = "tests/qrcodes/detection/blurred/image042.jpg".to_string();
         let img = image::open(inp).unwrap().to_luma8();
         let mut bin_img = BinaryImage::prepare(&img);
         let path = std::path::Path::new("assets/inp.png");

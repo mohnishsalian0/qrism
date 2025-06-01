@@ -152,11 +152,24 @@ fn verify_and_mark_finder(
     let stone = img.get_region((s, y))?;
 
     // Exit if stone is already made a candidate from previous iterations
-    if stone.is_candidate {
+    if stone.is_finder {
         return None;
     }
 
     let stone = stone.clone();
+
+    let sx = r - (s - l) * 5 / 4;
+    let seed = Point { x: sx as i32, y: datum.y as i32 };
+    let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
+    let buf = &scn.buffer;
+    let thresh = (buf[0] + buf[1] + buf[3] + buf[4]) as f64 / 4.0;
+    let max_run = (r - l) * 2; // Setting a loose upper limit on the run
+
+    // Verify 1:1:3:1:1 pattern along Y axis
+    if !verify_pattern::<Y>(img, &seed, &pattern, thresh, max_run) {
+        return None;
+    };
+
     let ring = img.get_region((r, y))?.clone();
 
     // Check if left and right pts are not connected through same region
@@ -171,20 +184,8 @@ fn verify_and_mark_finder(
         return None;
     }
 
-    let sx = r - (s - l) * 5 / 4;
-    let seed = Point { x: sx as i32, y: datum.y as i32 };
-    let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
-    let buf = &scn.buffer;
-    let thresh = (buf[0] + buf[1] + buf[3] + buf[4]) as f64 / 4.0;
-    let max_run = (r - l) * 2; // Setting a loose upper limit on the run
-
-    // Verify 1:1:3:1:1 pattern along Y axis
-    if !verify_pattern::<Y>(img, &seed, &pattern, thresh, max_run) {
-        return None;
-    };
-
-    img.get_region((r, y)).unwrap().is_candidate = true;
-    img.get_region((s, y)).unwrap().is_candidate = true;
+    img.get_region((r, y)).unwrap().is_finder = true;
+    img.get_region((s, y)).unwrap().is_finder = true;
 
     Some(stone.centre)
 }
@@ -334,8 +335,7 @@ pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
                 let c4 = Point { x: f3.x + dx, y: f3.y + dy };
 
                 // Skip if intersection pt is outside the image
-                let Point { x: x4, y: y4 } = c4;
-                if x4 < 0 || x4 as u32 >= img.w || y4 < 0 || y4 as u32 > img.h {
+                if c4.x < 0 || c4.x as u32 >= img.w || c4.y < 0 || c4.y as u32 >= img.h {
                     continue;
                 }
 

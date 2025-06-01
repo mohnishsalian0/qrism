@@ -1,8 +1,7 @@
-use std::{collections::VecDeque, num::NonZeroUsize};
+use std::collections::VecDeque;
 
 use image::Pixel as ImgPixel;
 use image::{GenericImageView, GrayImage, Luma, Rgb, RgbImage};
-use lru::LruCache;
 
 use crate::metadata::Color;
 
@@ -23,10 +22,9 @@ use image::ImageResult;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Pixel {
-    Visited(u8, Color), // Contains id of associated region
-    Unvisited(Color),   // Default tag
-    Candidate(Color),   // Candidate for finder
-    Reserved(Color),    // Reserved pixels for functional patterns and infos
+    Visited(usize, Color), // Contains id of associated region
+    Unvisited(Color),      // Default tag
+    Reserved(Color),       // Reserved pixels for functional patterns and infos
 }
 
 impl From<Pixel> for Color {
@@ -34,7 +32,6 @@ impl From<Pixel> for Color {
         match p {
             Pixel::Visited(_, c) => c,
             Pixel::Unvisited(c) => c,
-            Pixel::Candidate(c) => c,
             Pixel::Reserved(c) => c,
         }
     }
@@ -57,10 +54,7 @@ impl From<Luma<u8>> for Pixel {
 impl From<Pixel> for Rgb<u8> {
     fn from(p: Pixel) -> Self {
         match p {
-            Pixel::Visited(_, c)
-            | Pixel::Unvisited(c)
-            | Pixel::Reserved(c)
-            | Pixel::Candidate(c) => c.into(),
+            Pixel::Visited(_, c) | Pixel::Unvisited(c) | Pixel::Reserved(c) => c.into(),
         }
     }
 }
@@ -74,7 +68,7 @@ pub struct Region {
     pub centre: Point,
     pub area: u32,
     pub color: Color,
-    pub is_candidate: bool,
+    pub is_finder: bool,
 }
 
 // Binarize trait for rgb & grayscale image
@@ -421,7 +415,7 @@ impl Binarize for GrayImage {
 #[derive(Debug)]
 pub struct BinaryImage {
     pub buffer: Vec<Pixel>,
-    regions: LruCache<u8, Region>, // Areas of visited regions. Index is id
+    regions: Vec<Region>, // Areas of visited regions. Index is id
     pub w: u32,
     pub h: u32,
 }
@@ -436,7 +430,8 @@ impl BinaryImage {
     {
         let (w, h) = img.dimensions();
         let buffer = img.binarize();
-        Self { buffer, regions: LruCache::new(NonZeroUsize::new(250).unwrap()), w, h }
+        let regions = Vec::with_capacity(100);
+        Self { buffer, regions, w, h }
     }
 
     /// Performs absolute/naive binarization
@@ -451,7 +446,7 @@ impl BinaryImage {
             let np = Color::try_from(r << 2 | g << 1 | b).unwrap();
             buffer.push(Pixel::Unvisited(np));
         }
-        Self { buffer, regions: LruCache::new(NonZeroUsize::new(250).unwrap()), w, h }
+        Self { buffer, regions: Vec::with_capacity(100), w, h }
     }
 
     pub fn get(&self, x: u32, y: u32) -> Option<Pixel> {
@@ -532,18 +527,7 @@ impl BinaryImage {
 
         match px {
             Pixel::Unvisited(color) => {
-                let reg_count = self.regions.len() as u8;
-
-                let reg_id = if reg_count == self.regions.cap().get() as u8 {
-                    let (id, reg) = self.regions.pop_lru().expect("Cache is full");
-                    let Region { src, color, .. } = reg;
-
-                    let _ = self.fill_and_accumulate(src, Pixel::Unvisited(color), |_| ());
-
-                    id
-                } else {
-                    reg_count
-                };
+                let reg_id = self.regions.len();
 
                 let acl = AreaAndCentreLocator::new();
                 let to = Pixel::Visited(reg_id, color);
@@ -553,15 +537,15 @@ impl BinaryImage {
                     color,
                     area: acl.area,
                     centre: acl.get_centre(),
-                    is_candidate: false,
+                    is_finder: false,
                 };
 
-                self.regions.put(reg_id, new_reg);
+                self.regions.push(new_reg);
 
-                Some(self.regions.get_mut(&reg_id).expect("Region not found after saving"))
+                Some(self.regions.get_mut(reg_id).expect("Region not found after saving"))
             }
             Pixel::Visited(id, _) => {
-                Some(self.regions.get_mut(&id).expect("No region found for visited pixel"))
+                Some(self.regions.get_mut(id).expect("No region found for visited pixel"))
             }
             _ => None,
         }
