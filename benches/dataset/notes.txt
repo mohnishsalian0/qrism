@@ -1,0 +1,1 @@
+mogrify -auto-orient -quality 75 -format jpg *.jpg;ls -lh *

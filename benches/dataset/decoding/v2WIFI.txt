@@ -1,0 +1,1 @@
+WIFI:S:ABC;T:WEP;P:123;;

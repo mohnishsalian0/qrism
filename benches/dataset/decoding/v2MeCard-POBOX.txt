@@ -1,0 +1,1 @@
+MECARD:N:Standard11.3,Joe;ADR:PO Box 555,Suite 55,5555 Any Street,San Diego,CA,92111,USA;;

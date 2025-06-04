@@ -1,0 +1,6 @@
+BEGIN:VCARD
+VERSION:2.1
+N:Standard;Joe;;;
+FN:Joe Standard12.04
+TITLE:President
+END:VCARD

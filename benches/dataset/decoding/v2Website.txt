@@ -1,0 +1,1 @@
+http://www.mywebsite.com/?parameter=TEST%20CASE&secondparmeter=secondtest
