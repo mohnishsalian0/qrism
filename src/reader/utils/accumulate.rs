@@ -52,8 +52,8 @@ impl AreaAndCentreLocator {
         let x = x.round();
         let y = y.round();
 
-        let x = f64_to_i32(&x);
-        let y = f64_to_i32(&y);
+        let x = f64_to_i32(&x).unwrap();
+        let y = f64_to_i32(&y).unwrap();
 
         Point { x, y }
     }

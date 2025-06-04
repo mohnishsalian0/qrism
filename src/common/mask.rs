@@ -21,36 +21,36 @@ impl Deref for MaskPattern {
 }
 
 mod mask_functions {
-    pub fn checkerboard(r: i32, c: i32) -> bool {
-        (r + c) & 1 == 0
+    pub fn checkerboard(x: i32, y: i32) -> bool {
+        (x + y) & 1 == 0
     }
 
-    pub fn horizontal_lines(r: i32, _: i32) -> bool {
-        r & 1 == 0
+    pub fn horizontal_lines(_: i32, y: i32) -> bool {
+        y & 1 == 0
     }
 
-    pub fn vertical_lines(_: i32, c: i32) -> bool {
-        c % 3 == 0
+    pub fn vertical_lines(x: i32, _: i32) -> bool {
+        x % 3 == 0
     }
 
-    pub fn diagonal_lines(r: i32, c: i32) -> bool {
-        (r + c) % 3 == 0
+    pub fn diagonal_lines(x: i32, y: i32) -> bool {
+        (x + y) % 3 == 0
     }
 
-    pub fn large_checkerboard(r: i32, c: i32) -> bool {
-        ((r >> 1) + (c / 3)) & 1 == 0
+    pub fn large_checkerboard(x: i32, y: i32) -> bool {
+        ((y >> 1) + (x / 3)) & 1 == 0
     }
 
-    pub fn fields(r: i32, c: i32) -> bool {
-        ((r * c) & 1) + ((r * c) % 3) == 0
+    pub fn fields(x: i32, y: i32) -> bool {
+        ((x * y) & 1) + ((x * y) % 3) == 0
     }
 
-    pub fn diamonds(r: i32, c: i32) -> bool {
-        (((r * c) & 1) + ((r * c) % 3)) & 1 == 0
+    pub fn diamonds(x: i32, y: i32) -> bool {
+        (((x * y) & 1) + ((x * y) % 3)) & 1 == 0
     }
 
-    pub fn meadow(r: i32, c: i32) -> bool {
-        (((r + c) & 1) + ((r * c) % 3)) & 1 == 0
+    pub fn meadow(x: i32, y: i32) -> bool {
+        (((x + y) & 1) + ((x * y) % 3)) & 1 == 0
     }
 }
 

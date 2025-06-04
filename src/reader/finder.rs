@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::{metadata::Color, reader::utils::geometry::BresenhamLine};
 
 use super::{
@@ -223,8 +225,9 @@ mod finder_tests {
             [[40, 369], [40, 300], [109, 300], [109, 369]],
         ];
         let centres = [[75, 75], [335, 75], [75, 335]];
-        let mut img = BinaryImage::prepare(&img);
-        let finders = locate_finders(&mut img);
+        let mut bin_img = BinaryImage::prepare_rgb(&img);
+        let finders = locate_finders(&mut bin_img);
+
         for (i, f) in finders.iter().enumerate() {
             let cent_pt = Point { x: centres[i][0], y: centres[i][1] };
             assert_eq!(*f, cent_pt, "Finder centre doesn't match");
@@ -295,6 +298,8 @@ impl FinderGroup {
 pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
     let mut groups: Vec<FinderGroup> = Vec::new();
     let angle_threshold = 50f64.to_radians();
+    // let start = Instant::now();
+    // dbg!(start);
 
     for (i1, f1) in finders.iter().enumerate() {
         for (i2, f2) in finders.iter().enumerate() {
@@ -348,17 +353,35 @@ pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
                     None => continue,
                 };
 
+                // Calculate score
                 let t12 = measure_timing_patterns(img, &m13, &m24);
                 let t13 = measure_timing_patterns(img, &m12, &m34);
 
-                // Calculate score
+                // Closeness of the 2 timing patterns
                 let symmetry_score = ((t12 as f64 / t13 as f64) - 1.0).abs();
 
+                // Skip if one timing pattern is more than twice as long as the other
+                if symmetry_score > 1.0 {
+                    continue;
+                }
+
+                // Estimate module count from c1 to c2
                 let est_mod_count12 = estimate_mod_count(f1, &m12, f2, &m21);
                 let mod_score12 = ((est_mod_count12 / (t12 + 6) as f64) - 1.0).abs();
 
+                // Skip if one is more than twice as long as the other
+                if mod_score12 > 1.0 {
+                    continue;
+                }
+
+                // Estimate module count from c1 to c3
                 let est_mod_count13 = estimate_mod_count(f1, &m13, f3, &m31);
                 let mod_score13 = ((est_mod_count13 / (t13 + 6) as f64) - 1.0).abs();
+
+                // Skip if one is more than twice as long as the other
+                if mod_score13 > 1.0 {
+                    continue;
+                }
 
                 let score = symmetry_score + mod_score12 + mod_score13;
 
@@ -373,6 +396,7 @@ pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
             }
         }
     }
+    // dbg!(start.elapsed());
 
     groups.sort_unstable_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
 
@@ -508,7 +532,7 @@ mod group_finders_tests {
 
         let centres = [(75, 75), (335, 75), (75, 335)];
 
-        let mut img = BinaryImage::prepare(&img);
+        let mut img = BinaryImage::prepare_rgb(&img);
         let finders = locate_finders(&mut img);
         let group = group_finders(&img, &finders);
         assert!(!group.is_empty(), "No group found");

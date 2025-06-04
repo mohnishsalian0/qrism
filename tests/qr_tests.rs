@@ -5,6 +5,7 @@ mod qr_proptests {
     use proptest::prelude::*;
 
     use qrism::*;
+    use reader::binarize::BinaryImage;
 
     pub fn ec_level_strategy() -> BoxedStrategy<ECLevel> {
         prop_oneof![Just(ECLevel::L), Just(ECLevel::M), Just(ECLevel::Q), Just(ECLevel::H)].boxed()
@@ -38,7 +39,9 @@ mod qr_proptests {
 
             let qr = QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-            let decoded = QRReader::read(&qr).unwrap();
+        let mut img = BinaryImage::prepare_rgb(&qr);
+        let mut symbols = QRReader::detect(&mut img);
+        let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
 
             prop_assert_eq!(data, decoded);
         }
@@ -50,7 +53,9 @@ mod qr_proptests {
 
             let qr = QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-            let decoded = QRReader::read(&qr).unwrap();
+        let mut img = BinaryImage::prepare_rgb(&qr);
+        let mut symbols = QRReader::detect(&mut img);
+        let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
 
             prop_assert_eq!(data, decoded);
         }
@@ -62,10 +67,9 @@ mod qr_tests {
     use std::time::Instant;
 
     use image::imageops;
-    use rqrr::PreparedImage;
     use test_case::test_case;
 
-    use qrism::{ECLevel, Palette, QRBuilder, QRReader, Version};
+    use qrism::{reader::binarize::BinaryImage, ECLevel, Palette, QRBuilder, QRReader, Version};
 
     #[test_case("Hello, world!🌎".to_string(), Version::Normal(1), ECLevel::L, Palette::Mono)]
     #[test_case("TEST".to_string(), Version::Normal(1), ECLevel::M, Palette::Poly)]
@@ -98,9 +102,11 @@ mod qr_tests {
             .unwrap()
             .to_image(3);
 
-        let decoded_data = QRReader::read(&qr).unwrap();
+        let mut img = BinaryImage::prepare_rgb(&qr);
+        let mut symbols = QRReader::detect(&mut img);
+        let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
 
-        assert_eq!(decoded_data, data);
+        assert_eq!(data, decoded);
     }
 
     #[test]
@@ -112,9 +118,11 @@ mod qr_tests {
         let qr =
             QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-        let decoded_data = QRReader::read(&qr).unwrap();
+        let mut img = BinaryImage::prepare_rgb(&qr);
+        let mut symbols = QRReader::detect(&mut img);
+        let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
 
-        assert_eq!(decoded_data, data);
+        assert_eq!(data, decoded);
     }
 
     #[test]
@@ -126,9 +134,11 @@ mod qr_tests {
         let qr =
             QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-        let decoded_data = QRReader::read(&qr).unwrap();
+        let mut img = BinaryImage::prepare_rgb(&qr);
+        let mut symbols = QRReader::detect(&mut img);
+        let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
 
-        assert_eq!(decoded_data, data);
+        assert_eq!(data, decoded);
     }
 
     #[test]
@@ -143,9 +153,11 @@ mod qr_tests {
         let path = std::path::Path::new("assets/built.png");
         qr.save(path).unwrap();
 
-        let decoded_data = QRReader::read(&qr).unwrap();
+        let mut img = BinaryImage::prepare_rgb(&qr);
+        let mut symbols = QRReader::detect(&mut img);
+        let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
 
-        assert_eq!(decoded_data, data);
+        assert_eq!(data, decoded);
     }
 
     #[test]
@@ -178,9 +190,16 @@ mod qr_tests {
                     write!(out_file, "[{}-{}-{}] ", folder_id, qr_id, angle).unwrap();
 
                     let start = Instant::now();
+                    let mut img = BinaryImage::prepare(&img);
+                    let mut symbols = QRReader::detect(&mut img);
 
-                    match QRReader::read(&img) {
-                        Ok(msg) => {
+                    if symbols.is_empty() {
+                        write!(out_file, "QR not found").unwrap();
+                        continue;
+                    }
+
+                    match symbols[0].decode() {
+                        Ok((_meta, msg)) => {
                             let elapsed = start.elapsed();
                             bench_table[i][j] += elapsed.as_millis();
 

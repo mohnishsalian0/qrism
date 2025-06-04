@@ -7,9 +7,10 @@ use super::{
     },
 };
 use crate::{
-    ec::rectify_info,
+    codec::decode as codec_decode,
+    ec::{rectify_info, Block},
     metadata::{
-        parse_format_info_qr, Color, FORMAT_ERROR_CAPACITY, FORMAT_INFOS_QR,
+        parse_format_info_qr, Color, Metadata, FORMAT_ERROR_CAPACITY, FORMAT_INFOS_QR,
         FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK, VERSION_ERROR_BIT_LEN,
         VERSION_ERROR_CAPACITY, VERSION_INFOS, VERSION_INFO_COORDS_BL, VERSION_INFO_COORDS_TR,
     },
@@ -17,7 +18,7 @@ use crate::{
         geometry::{X, Y},
         verify_pattern,
     },
-    utils::{BitArray, EncRegionIter, QRError, QRResult},
+    utils::{BitArray, BitStream, EncRegionIter, QRError, QRResult},
     ECLevel, MaskPattern, Palette, Version,
 };
 
@@ -84,35 +85,52 @@ impl SymbolLocation {
 //------------------------------------------------------------------------------
 
 #[derive(Debug)]
-pub struct Symbol {
-    img: BinaryImage,
+pub struct Symbol<'a> {
+    img: &'a BinaryImage,
     h: Homography,
     anchors: [Point; 4],
     pub ver: Version,
 }
 
-impl Symbol {
-    pub fn new(img: BinaryImage, sym_loc: SymbolLocation) -> Self {
+impl<'a> Symbol<'a> {
+    pub fn new(img: &'a BinaryImage, sym_loc: SymbolLocation) -> Self {
         let SymbolLocation { h, anchors, ver } = sym_loc;
         Self { img, h, anchors, ver }
+    }
+
+    pub fn decode(&mut self) -> QRResult<(Metadata, String)> {
+        let (ecl, mask) = self.read_format_info()?;
+        if matches!(self.ver, Version::Normal(7..=40)) {
+            self.ver = self.read_version_info()?;
+        }
+        let ver = self.ver;
+        let pal = self.read_palette_info()?;
+
+        let pld = self.extract_payload(&mask)?;
+
+        let blk_info = ver.data_codewords_per_block(ecl);
+        let ec_len = ver.ecc_per_block(ecl);
+        let mut enc = BitStream::new(pld.len() << 3);
+        let chan_cap = ver.channel_codewords();
+
+        // Chunking channel data, deinterleaving & rectifying payload
+        for c in pld.data().chunks_exact(chan_cap) {
+            let mut blocks = deinterleave(c, blk_info, ec_len);
+            for b in blocks.iter_mut() {
+                let rectified = b.rectify()?;
+                enc.extend(rectified);
+            }
+        }
+
+        let msg = codec_decode(&mut enc, ver, ecl, pal)?;
+
+        Ok((Metadata::new(Some(ver), Some(ecl), Some(mask)), msg))
     }
 
     pub fn get(&self, x: i32, y: i32) -> Option<&Pixel> {
         let (xp, yp) = self.wrap_coord(x, y);
         let pt = self.map(xp as f64 + 0.5, yp as f64 + 0.5).unwrap();
         self.img.get_at_point(&pt)
-    }
-
-    pub fn get_mut(&mut self, x: i32, y: i32) -> Option<&mut Pixel> {
-        let (x, y) = self.wrap_coord(x, y);
-        let pt = self.map(x as f64 + 0.5, y as f64 + 0.5).unwrap();
-        self.img.get_mut_at_point(&pt)
-    }
-
-    pub fn set(&mut self, x: i32, y: i32, px: Pixel) {
-        if let Some(pt) = self.get_mut(x, y) {
-            *pt = px;
-        }
     }
 
     fn wrap_coord(&self, x: i32, y: i32) -> (i32, i32) {
@@ -128,6 +146,12 @@ impl Symbol {
     #[inline]
     pub fn map(&self, x: f64, y: f64) -> QRResult<Point> {
         self.h.map(x, y)
+    }
+
+    #[cfg(feature = "benchmark")]
+    #[inline]
+    pub fn raw_map(&self, x: f64, y: f64) -> QRResult<(f64, f64)> {
+        self.h.raw_map(x, y)
     }
 
     #[cfg(test)]
@@ -269,11 +293,11 @@ fn setup_homography(
 
     let ver = Version::from_grid_size(group.size as usize)?;
 
-    Some(jiggle_homography(img, initial_h, ver))
+    jiggle_homography(img, initial_h, ver)
 }
 
 // Adjust the homography slightly to refine projection of qr
-fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Homography {
+fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Option<Homography> {
     let mut best = symbol_fitness(img, &h, ver);
 
     // Create an adjustment matrix by scaling the homography
@@ -298,7 +322,12 @@ fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Homo
         // Halve all adjustment steps
         adjustments = adjustments.map(|x| x * 0.5);
     }
-    h
+    let max_score = max_fitness_score(ver);
+    if best >= max_score / 2 {
+        Some(h)
+    } else {
+        None
+    }
 }
 
 fn symbol_fitness(img: &BinaryImage, h: &Homography, ver: Version) -> i32 {
@@ -335,6 +364,23 @@ fn symbol_fitness(img: &BinaryImage, h: &Homography, ver: Version) -> i32 {
     }
 
     score
+}
+
+fn max_fitness_score(ver: Version) -> i32 {
+    let mut max_score = 0;
+
+    // Finder score
+    max_score += 49 * 3;
+
+    // Timing score
+    let grid_size = ver.width() as i32;
+    max_score += (grid_size - 14) * 2;
+
+    // Alignment score
+    let align_count = ver.alignment_pattern().len();
+    max_score += 25 * align_count as i32;
+
+    max_score
 }
 
 fn finder_fitness(img: &BinaryImage, h: &Homography, x: i32, y: i32) -> i32 {
@@ -388,7 +434,7 @@ mod symbol_tests {
         reader::{
             binarize::BinaryImage,
             finder::{group_finders, locate_finders},
-            locate_symbol,
+            locate_symbols,
         },
         ECLevel, MaskPattern, Palette, QRBuilder, Version,
     };
@@ -412,27 +458,24 @@ mod symbol_tests {
         let img = qr.to_image(10);
         let exp_anchors = [(75, 75), (335, 75), (305, 305), (75, 335)];
 
-        let mut img = BinaryImage::prepare(&img);
+        let mut img = BinaryImage::prepare_rgb(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
-        let symbol = locate_symbol(img, groups).expect("Symbol not found");
-        for b in symbol.anchors {
+        let symbols = locate_symbols(&mut img, groups);
+        for b in symbols[0].anchors {
             assert!(exp_anchors.contains(&(b.x, b.y)), "Symbol not within bounds");
         }
     }
 }
 
-// Format, version & palette info read and mark
+// Read format, version & palette info
 //------------------------------------------------------------------------------
 
-impl Symbol {
-    pub fn read_format_info(&mut self) -> QRResult<(ECLevel, MaskPattern)> {
+impl Symbol<'_> {
+    pub fn read_format_info(&self) -> QRResult<(ECLevel, MaskPattern)> {
         // Parse main format area
         if let Some(main) = self.get_number(&FORMAT_INFO_COORDS_QR_MAIN) {
             if let Ok(format) = rectify_info(main, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY) {
-                self.mark_coords(&FORMAT_INFO_COORDS_QR_MAIN);
-                self.mark_coords(&FORMAT_INFO_COORDS_QR_SIDE);
-
                 let format = format ^ FORMAT_MASK;
                 let (ecl, mask) = parse_format_info_qr(format);
                 return Ok((ecl, mask));
@@ -442,9 +485,6 @@ impl Symbol {
         // Parse side format area
         if let Some(side) = self.get_number(&FORMAT_INFO_COORDS_QR_SIDE) {
             if let Ok(format) = rectify_info(side, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY) {
-                self.mark_coords(&FORMAT_INFO_COORDS_QR_MAIN);
-                self.mark_coords(&FORMAT_INFO_COORDS_QR_SIDE);
-
                 let format = format ^ FORMAT_MASK;
                 let (ecl, mask) = parse_format_info_qr(format);
                 return Ok((ecl, mask));
@@ -454,13 +494,10 @@ impl Symbol {
         Err(QRError::InvalidFormatInfo)
     }
 
-    pub fn read_version_info(&mut self) -> QRResult<Version> {
+    pub fn read_version_info(&self) -> QRResult<Version> {
         // Parse bottom left version area
         if let Some(bl) = self.get_number(&VERSION_INFO_COORDS_BL) {
             if let Ok(v) = rectify_info(bl, &VERSION_INFOS, VERSION_ERROR_CAPACITY) {
-                self.mark_coords(&VERSION_INFO_COORDS_BL);
-                self.mark_coords(&VERSION_INFO_COORDS_TR);
-
                 return Ok(Version::Normal(v as usize >> VERSION_ERROR_BIT_LEN));
             }
         }
@@ -468,9 +505,6 @@ impl Symbol {
         // Parse top right version area
         if let Some(tr) = self.get_number(&VERSION_INFO_COORDS_TR) {
             if let Ok(v) = rectify_info(tr, &VERSION_INFOS, VERSION_ERROR_CAPACITY) {
-                self.mark_coords(&VERSION_INFO_COORDS_BL);
-                self.mark_coords(&VERSION_INFO_COORDS_TR);
-
                 return Ok(Version::Normal(v as usize >> VERSION_ERROR_BIT_LEN));
             }
         }
@@ -478,10 +512,9 @@ impl Symbol {
         Err(QRError::InvalidVersionInfo)
     }
 
-    pub fn read_palette_info(&mut self) -> QRResult<Palette> {
+    pub fn read_palette_info(&self) -> QRResult<Palette> {
         if let Some(px) = self.get(8, -8) {
             let color = Color::from(*px);
-            self.set(8, -8, Pixel::Reserved(color));
 
             if color == Color::Black {
                 return Ok(Palette::Mono);
@@ -493,23 +526,14 @@ impl Symbol {
         Err(QRError::InvalidPaletteInfo)
     }
 
-    pub fn get_number(&mut self, coords: &[(i32, i32)]) -> Option<u32> {
+    pub fn get_number(&self, coords: &[(i32, i32)]) -> Option<u32> {
         let mut num = 0;
-        for (y, x) in coords {
-            let color = Color::from(*self.get(*x, *y)?);
+        for &(x, y) in coords {
+            let color = Color::from(*self.get(x, y)?);
             let bit = (color != Color::White) as u32;
             num = (num << 1) | bit;
         }
         Some(num)
-    }
-
-    pub fn mark_coords(&mut self, coords: &[(i32, i32)]) {
-        for (y, x) in coords {
-            if let Some(px) = self.get_mut(*x, *y) {
-                let color = Color::from(*px);
-                self.set(*x, *y, Pixel::Reserved(color));
-            }
-        }
     }
 }
 
@@ -521,7 +545,7 @@ mod symbol_infos_tests {
         reader::{
             binarize::BinaryImage,
             finder::{group_finders, locate_finders},
-            locate_symbol,
+            locate_symbols,
         },
         ECLevel, MaskPattern, Module, QRBuilder, Version,
     };
@@ -537,12 +561,12 @@ mod symbol_infos_tests {
             QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(&img);
+        let mut img = BinaryImage::prepare_rgb(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
-        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+        let symbols = locate_symbols(&mut img, groups);
 
-        let fmt_info = symbol.read_format_info().expect("Failed to read format info");
+        let fmt_info = symbols[0].read_format_info().expect("Failed to read format info");
         assert_eq!(fmt_info, (ecl, mask));
     }
 
@@ -555,17 +579,17 @@ mod symbol_infos_tests {
 
         let mut qr =
             QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
-        qr.set(8, 1, Module::Format(Color::White));
-        qr.set(8, 2, Module::Format(Color::White));
-        qr.set(8, 4, Module::Format(Color::Black));
+        qr.set(1, 8, Module::Format(Color::White));
+        qr.set(2, 8, Module::Format(Color::White));
+        qr.set(4, 8, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(&img);
+        let mut img = BinaryImage::prepare_rgb(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
-        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+        let symbols = locate_symbols(&mut img, groups);
 
-        let fmt_info = symbol.read_format_info().expect("Failed to read format info");
+        let fmt_info = symbols[0].read_format_info().expect("Failed to read format info");
         assert_eq!(fmt_info, (ecl, mask));
     }
 
@@ -578,18 +602,18 @@ mod symbol_infos_tests {
 
         let mut qr =
             QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
-        qr.set(8, 1, Module::Format(Color::White));
-        qr.set(8, 2, Module::Format(Color::White));
-        qr.set(8, 3, Module::Format(Color::Black));
-        qr.set(8, 4, Module::Format(Color::Black));
+        qr.set(1, 8, Module::Format(Color::White));
+        qr.set(2, 8, Module::Format(Color::White));
+        qr.set(3, 8, Module::Format(Color::Black));
+        qr.set(4, 8, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(&img);
+        let mut img = BinaryImage::prepare_rgb(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
-        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+        let symbols = locate_symbols(&mut img, groups);
 
-        let fmt_info = symbol.read_format_info().expect("Failed to read format info");
+        let fmt_info = symbols[0].read_format_info().expect("Failed to read format info");
         assert_eq!(fmt_info, (ecl, mask));
     }
 
@@ -603,22 +627,22 @@ mod symbol_infos_tests {
 
         let mut qr =
             QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
-        qr.set(8, 1, Module::Format(Color::White));
-        qr.set(8, 2, Module::Format(Color::White));
-        qr.set(8, 3, Module::Format(Color::Black));
-        qr.set(8, 4, Module::Format(Color::Black));
-        qr.set(-2, 8, Module::Format(Color::White));
-        qr.set(-3, 8, Module::Format(Color::White));
-        qr.set(-4, 8, Module::Format(Color::Black));
-        qr.set(-5, 8, Module::Format(Color::Black));
+        qr.set(1, 8, Module::Format(Color::White));
+        qr.set(2, 8, Module::Format(Color::White));
+        qr.set(3, 8, Module::Format(Color::Black));
+        qr.set(4, 8, Module::Format(Color::Black));
+        qr.set(8, -2, Module::Format(Color::White));
+        qr.set(8, -3, Module::Format(Color::White));
+        qr.set(8, -4, Module::Format(Color::Black));
+        qr.set(8, -5, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(&img);
+        let mut img = BinaryImage::prepare_rgb(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
-        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+        let symbols = locate_symbols(&mut img, groups);
 
-        let _ = symbol.read_format_info().expect("Failed to read format info");
+        let _ = symbols[0].read_format_info().expect("Failed to read format info");
     }
 
     #[test]
@@ -630,12 +654,12 @@ mod symbol_infos_tests {
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(&img);
+        let mut img = BinaryImage::prepare_rgb(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
-        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+        let symbols = locate_symbols(&mut img, groups);
 
-        let scanned_ver = symbol.read_version_info().expect("Failed to read format info");
+        let scanned_ver = symbols[0].read_version_info().expect("Failed to read format info");
         assert_eq!(scanned_ver, ver);
     }
 
@@ -646,17 +670,17 @@ mod symbol_infos_tests {
         let ecl = ECLevel::L;
 
         let mut qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
-        qr.set(-9, 5, Module::Format(Color::Black));
-        qr.set(-10, 5, Module::Format(Color::Black));
-        qr.set(-11, 5, Module::Format(Color::Black));
+        qr.set(5, -9, Module::Format(Color::Black));
+        qr.set(5, -10, Module::Format(Color::Black));
+        qr.set(5, -11, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(&img);
+        let mut img = BinaryImage::prepare_rgb(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
-        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+        let symbols = locate_symbols(&mut img, groups);
 
-        let scanned_ver = symbol.read_version_info().expect("Failed to read format info");
+        let scanned_ver = symbols[0].read_version_info().expect("Failed to read format info");
         assert_eq!(scanned_ver, ver);
     }
 
@@ -667,18 +691,18 @@ mod symbol_infos_tests {
         let ecl = ECLevel::L;
 
         let mut qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
-        qr.set(-9, 5, Module::Format(Color::Black));
-        qr.set(-10, 5, Module::Format(Color::Black));
-        qr.set(-11, 5, Module::Format(Color::Black));
-        qr.set(-9, 4, Module::Format(Color::White));
+        qr.set(5, -9, Module::Format(Color::Black));
+        qr.set(5, -10, Module::Format(Color::Black));
+        qr.set(5, -11, Module::Format(Color::Black));
+        qr.set(4, -9, Module::Format(Color::White));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(&img);
+        let mut img = BinaryImage::prepare_rgb(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
-        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+        let symbols = locate_symbols(&mut img, groups);
 
-        let scanned_ver = symbol.read_version_info().expect("Failed to read format info");
+        let scanned_ver = symbols[0].read_version_info().expect("Failed to read format info");
         assert_eq!(scanned_ver, ver);
     }
 
@@ -690,160 +714,114 @@ mod symbol_infos_tests {
         let ecl = ECLevel::L;
 
         let mut qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
-        qr.set(-9, 5, Module::Format(Color::Black));
-        qr.set(-10, 5, Module::Format(Color::Black));
-        qr.set(-11, 5, Module::Format(Color::Black));
-        qr.set(-9, 4, Module::Format(Color::White));
         qr.set(5, -9, Module::Format(Color::Black));
         qr.set(5, -10, Module::Format(Color::Black));
         qr.set(5, -11, Module::Format(Color::Black));
         qr.set(4, -9, Module::Format(Color::White));
+        qr.set(-9, 5, Module::Format(Color::Black));
+        qr.set(-10, 5, Module::Format(Color::Black));
+        qr.set(-11, 5, Module::Format(Color::Black));
+        qr.set(-9, 4, Module::Format(Color::White));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare(&img);
+        let mut img = BinaryImage::prepare_rgb(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
-        let mut symbol = locate_symbol(img, groups).expect("Symbol not found");
+        let symbols = locate_symbols(&mut img, groups);
 
-        let _ = symbol.read_version_info().expect("Failed to read format info");
-    }
-}
-
-// Mark all function patterns
-//------------------------------------------------------------------------------
-
-// Marks all function pattern so they are ignored while extracting data
-impl Symbol {
-    pub fn mark_all_function_patterns(&mut self) {
-        self.mark_finder_patterns();
-        self.mark_timing_patterns();
-        self.mark_alignment_patterns();
-    }
-}
-
-// Mark finder pattern
-//------------------------------------------------------------------------------
-
-impl Symbol {
-    pub fn mark_finder_patterns(&mut self) {
-        self.mark_finder_pattern_at(3, 3);
-        match self.ver {
-            Version::Micro(_) => {}
-            Version::Normal(_) => {
-                self.mark_finder_pattern_at(3, -4);
-                self.mark_finder_pattern_at(-4, 3);
-            }
-        }
-    }
-
-    fn mark_finder_pattern_at(&mut self, x: i32, y: i32) {
-        let (dy_l, dy_r) = if y > 0 { (-3, 4) } else { (-4, 3) };
-        let (dx_t, dx_b) = if x > 0 { (-3, 4) } else { (-4, 3) };
-        for i in dy_l..=dy_r {
-            for j in dx_t..=dx_b {
-                if let Some(px) = self.get(x + j, y + i) {
-                    let color = Color::from(*px);
-                    self.set(x + j, y + i, Pixel::Reserved(color));
-                }
-            }
-        }
-    }
-}
-
-// Mark timing patterns
-//------------------------------------------------------------------------------
-
-impl Symbol {
-    pub fn mark_timing_patterns(&mut self) {
-        let w = self.ver.width() as i32;
-        let (off, last) = match self.ver {
-            Version::Micro(_) => (0, w - 1),
-            Version::Normal(_) => (6, w - 9),
-        };
-        self.mark_line(8, off, last, off);
-        self.mark_line(off, 8, off, last);
-    }
-
-    fn mark_line(&mut self, x1: i32, y1: i32, x2: i32, y2: i32) {
-        debug_assert!(x1 == x2 || y1 == y2, "Line is neither vertical nor horizontal");
-
-        if x1 == x2 {
-            for j in y1..=y2 {
-                if let Some(px) = self.get(x1, j) {
-                    let color = Color::from(*px);
-                    self.set(x1, j, Pixel::Reserved(color));
-                }
-            }
-        } else {
-            for i in x1..=x2 {
-                if let Some(px) = self.get(i, y1) {
-                    let color = Color::from(*px);
-                    self.set(i, y1, Pixel::Reserved(color));
-                }
-            }
-        }
-    }
-}
-
-// Mark alignment patterns
-//------------------------------------------------------------------------------
-
-impl Symbol {
-    pub fn mark_alignment_patterns(&mut self) {
-        let poses = self.ver.alignment_pattern();
-        for &x in poses {
-            for &y in poses {
-                self.mark_alignment_pattern_at(x, y);
-            }
-        }
-    }
-
-    fn mark_alignment_pattern_at(&mut self, x: i32, y: i32) {
-        let w = self.ver.width() as i32;
-        if (x == 6 && (y == 6 || y - w == -7)) || (x - w == -7 && y == 6) {
-            return;
-        }
-        for i in -2..=2 {
-            for j in -2..=2 {
-                if let Some(px) = self.get(x + i, y + j) {
-                    let color = Color::from(*px);
-                    self.set(x + i, y + j, Pixel::Reserved(color));
-                }
-            }
-        }
+        let _ = symbols[0].read_version_info().expect("Failed to read format info");
     }
 }
 
 // Extracts encoded data codewords and error correction codewords
 //------------------------------------------------------------------------------
 
-impl Symbol {
-    pub fn extract_payload(&mut self, mask: &MaskPattern) -> QRResult<BitArray> {
+impl Symbol<'_> {
+    pub fn extract_payload(&self, mask: &MaskPattern) -> QRResult<BitArray> {
         let ver = self.ver;
         let mask_fn = mask.mask_functions();
         let chan_bits = ver.channel_codewords() << 3;
         let (g_off, b_off) = (chan_bits, 2 * chan_bits);
-        let mut pyld = BitArray::new(chan_bits * 3);
+        let mut payload = BitArray::new(chan_bits * 3);
         let mut rgn_iter = EncRegionIter::new(ver);
 
-        for i in 0..chan_bits {
-            for (y, x) in rgn_iter.by_ref() {
-                let px = self.get(x, y).ok_or(QRError::PixelOutOfBounds)?;
-                if !matches!(px, Pixel::Reserved(_)) {
-                    let color = Color::from(*px);
-                    let [mut r, mut g, mut b] = color.to_bits();
-                    if !mask_fn(y, x) {
-                        r = !r;
-                        g = !g;
-                        b = !b;
-                    };
-                    pyld.put(i, r);
-                    pyld.put(i + g_off, g);
-                    pyld.put(i + b_off, b);
-                    break;
-                }
-            }
+        for (i, (x, y)) in rgn_iter.by_ref().take(chan_bits).enumerate() {
+            let px = self.get(x, y).ok_or(QRError::PixelOutOfBounds)?;
+            let color = Color::from(*px);
+            let [mut r, mut g, mut b] = color.to_bits();
+
+            if !mask_fn(x, y) {
+                r = !r;
+                g = !g;
+                b = !b;
+            };
+
+            payload.put(i, r);
+            payload.put(i + g_off, g);
+            payload.put(i + b_off, b);
         }
-        Ok(pyld)
+
+        debug_assert_eq!(rgn_iter.count(), self.ver.remainder_bits(), "Remainder bits don't match");
+
+        Ok(payload)
+    }
+}
+
+fn deinterleave(data: &[u8], blk_info: (usize, usize, usize, usize), ec_len: usize) -> Vec<Block> {
+    // b1s = block1_size, b1c = block1_count
+    let (b1s, b1c, b2s, b2c) = blk_info;
+
+    let total_blks = b1c + b2c;
+    let spl = b1s * total_blks;
+    let data_sz = b1s * b1c + b2s * b2c;
+
+    let mut dilvd = vec![Vec::with_capacity(b2s); total_blks];
+
+    // Deinterleaving data
+    data[..spl]
+        .chunks(total_blks)
+        .for_each(|ch| ch.iter().enumerate().for_each(|(i, v)| dilvd[i].push(*v)));
+    if b2c > 0 {
+        data[spl..data_sz]
+            .chunks(b2c)
+            .for_each(|ch| ch.iter().enumerate().for_each(|(i, v)| dilvd[b1c + i].push(*v)));
+    }
+
+    // Deinterleaving ecc
+    data[data_sz..]
+        .chunks(total_blks)
+        .for_each(|ch| ch.iter().enumerate().for_each(|(i, v)| dilvd[i].push(*v)));
+
+    let mut blks: Vec<Block> = Vec::with_capacity(256);
+    dilvd.iter().for_each(|b| blks.push(Block::with_encoded(b, b.len() - ec_len)));
+    blks
+}
+
+#[cfg(test)]
+mod reader_tests {
+
+    use crate::{
+        builder::QRBuilder,
+        metadata::{ECLevel, Palette, Version},
+        reader::deinterleave,
+        utils::BitStream,
+    };
+
+    #[test]
+    fn test_deinterleave() {
+        // Data length has to match version capacity
+        let data = "Hello, world!!!🌍".as_bytes();
+        let ver = Version::Normal(1);
+        let ecl = ECLevel::L;
+
+        let exp_blks = QRBuilder::blockify(data, ver, ecl);
+
+        let mut bs = BitStream::new(ver.total_codewords(Palette::Mono) << 3);
+        QRBuilder::interleave_into(&exp_blks, &mut bs);
+
+        let blk_info = ver.data_codewords_per_block(ecl);
+        let ec_len = ver.ecc_per_block(ecl);
+        let blks = deinterleave(bs.data(), blk_info, ec_len);
+        assert_eq!(blks, exp_blks);
     }
 }

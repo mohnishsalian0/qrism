@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 
-use image::Pixel as ImgPixel;
-use image::{GenericImageView, GrayImage, Luma, Rgb, RgbImage};
+use image::{GrayImage, Luma, Rgb, RgbImage};
 
 use crate::metadata::Color;
 
@@ -423,11 +422,14 @@ pub struct BinaryImage {
 impl BinaryImage {
     /// Performs adaptive binarization on an RGB image using a sliding window
     /// and per-channel average filtering.
-    pub fn prepare<I>(img: &I) -> Self
-    where
-        I: GenericImageView + Binarize,
-        I::Pixel: ImgPixel<Subpixel = u8>,
-    {
+    pub fn prepare(img: &GrayImage) -> Self {
+        let (w, h) = img.dimensions();
+        let buffer = img.binarize();
+        let regions = Vec::with_capacity(100);
+        Self { buffer, regions, w, h }
+    }
+
+    pub fn prepare_rgb(img: &RgbImage) -> Self {
         let (w, h) = img.dimensions();
         let buffer = img.binarize();
         let regions = Vec::with_capacity(100);

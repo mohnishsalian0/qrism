@@ -258,7 +258,7 @@ impl BitStream {
         Some(res as u16)
     }
 
-    pub fn take(&mut self) -> Option<bool> {
+    pub fn take_bit(&mut self) -> Option<bool> {
         if self.cursor == self.len {
             return None;
         }
@@ -328,7 +328,7 @@ mod bit_stream_take_tests {
 impl Iterator for BitStream {
     type Item = bool;
     fn next(&mut self) -> Option<Self::Item> {
-        self.take()
+        self.take_bit()
     }
 }
 

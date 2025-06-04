@@ -1,8 +1,11 @@
-pub fn f64_to_i32(num: &f64) -> i32 {
+use super::{QRError, QRResult};
+
+pub fn f64_to_i32(num: &f64) -> QRResult<i32> {
     let num = *num;
 
-    assert!(num <= i32::MAX as f64);
-    assert!(num >= i32::MIN as f64);
+    if num < i32::MIN as f64 || num > i32::MAX as f64 {
+        return Err(QRError::CastingFailed);
+    }
 
-    num as i32
+    Ok(num as i32)
 }

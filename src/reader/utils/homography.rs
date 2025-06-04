@@ -136,10 +136,23 @@ impl Homography {
         let xp = (xp / w).round();
         let yp = (yp / w).round();
 
-        let x = f64_to_i32(&xp);
-        let y = f64_to_i32(&yp);
+        let x = f64_to_i32(&xp)?;
+        let y = f64_to_i32(&yp)?;
 
         Ok(Point { x, y })
+    }
+
+    #[cfg(feature = "benchmark")]
+    pub fn raw_map(&self, x: f64, y: f64) -> QRResult<(f64, f64)> {
+        let xp = self[0] * x + self[1] * y + self[2];
+        let yp = self[3] * x + self[4] * y + self[5];
+        let w = self[6] * x + self[7] * y + 1.0;
+
+        if w.abs() <= f64::EPSILON {
+            return Err(QRError::PointAtInfinity);
+        }
+
+        Ok((xp / w, yp / w))
     }
 }
 

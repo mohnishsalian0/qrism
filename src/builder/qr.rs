@@ -109,27 +109,27 @@ impl QR {
         res
     }
 
-    fn coord_to_index(&self, r: i32, c: i32) -> usize {
+    fn coord_to_index(&self, x: i32, y: i32) -> usize {
         let w = self.w as i32;
-        debug_assert!(-w <= r && r < w, "row should be greater than or equal to w");
-        debug_assert!(-w <= c && c < w, "column should be greater than or equal to w");
+        debug_assert!(-w <= x && x < w, "row should be greater than or equal to w");
+        debug_assert!(-w <= y && y < w, "column should be greater than or equal to w");
 
-        let r = if r < 0 { r + w } else { r };
-        let c = if c < 0 { c + w } else { c };
-        (r * w + c) as _
+        let x = if x < 0 { x + w } else { x };
+        let y = if y < 0 { y + w } else { y };
+        (y * w + x) as _
     }
 
-    pub fn get(&self, r: i32, c: i32) -> Module {
-        self.grid[self.coord_to_index(r, c)]
+    pub fn get(&self, x: i32, y: i32) -> Module {
+        self.grid[self.coord_to_index(x, y)]
     }
 
-    pub fn get_mut(&mut self, r: i32, c: i32) -> &mut Module {
-        let index = self.coord_to_index(r, c);
+    pub fn get_mut(&mut self, x: i32, y: i32) -> &mut Module {
+        let index = self.coord_to_index(x, y);
         &mut self.grid[index]
     }
 
-    pub fn set(&mut self, r: i32, c: i32, module: Module) {
-        *self.get_mut(r, c) = module;
+    pub fn set(&mut self, x: i32, y: i32, module: Module) {
+        *self.get_mut(x, y) = module;
     }
 }
 
@@ -196,14 +196,14 @@ impl QR {
         }
     }
 
-    fn draw_finder_pattern_at(&mut self, r: i32, c: i32) {
-        let (dr_left, dr_right) = if r > 0 { (-3, 4) } else { (-4, 3) };
-        let (dc_top, dc_bottom) = if c > 0 { (-3, 4) } else { (-4, 3) };
-        for i in dr_left..=dr_right {
-            for j in dc_top..=dc_bottom {
+    fn draw_finder_pattern_at(&mut self, x: i32, y: i32) {
+        let (left, right) = if x > 0 { (-3, 4) } else { (-4, 3) };
+        let (top, bottom) = if y > 0 { (-3, 4) } else { (-4, 3) };
+        for i in left..=right {
+            for j in top..=bottom {
                 self.set(
-                    r + i,
-                    c + j,
+                    x + i,
+                    y + j,
                     match (i, j) {
                         (4 | -4, _) | (_, 4 | -4) => Module::Func(Color::White),
                         (3 | -3, _) | (_, 3 | -3) => Module::Func(Color::Black),
@@ -263,22 +263,22 @@ impl QR {
             Version::Micro(_) => (0, w - 1),
             Version::Normal(_) => (6, w - 9),
         };
-        self.draw_line(off, 8, off, last);
-        self.draw_line(8, off, last, off);
+        self.draw_line(8, off, last, off); // Horizontal
+        self.draw_line(off, 8, off, last); // Vertical
     }
 
-    fn draw_line(&mut self, r1: i32, c1: i32, r2: i32, c2: i32) {
-        debug_assert!(r1 == r2 || c1 == c2, "Line is neither vertical nor horizontal");
+    fn draw_line(&mut self, x1: i32, y1: i32, x2: i32, y2: i32) {
+        debug_assert!(x1 == x2 || y1 == y2, "Line is neither vertical nor horizontal");
 
-        if r1 == r2 {
-            for j in c1..=c2 {
+        if x1 == x2 {
+            for j in y1..=y2 {
                 let m = if j & 1 == 0 { Color::Black } else { Color::White };
-                self.set(r1, j, Module::Func(m));
+                self.set(x1, j, Module::Func(m));
             }
         } else {
-            for i in r1..=r2 {
+            for i in x1..=x2 {
                 let m = if i & 1 == 0 { Color::Black } else { Color::White };
-                self.set(i, c1, Module::Func(m));
+                self.set(i, y1, Module::Func(m));
             }
         }
     }
@@ -327,23 +327,23 @@ mod timing_pattern_tests {
 impl QR {
     fn draw_alignment_patterns(&mut self) {
         let poses = self.ver.alignment_pattern();
-        for &r in poses {
-            for &c in poses {
-                self.draw_alignment_pattern_at(r, c)
+        for &x in poses {
+            for &y in poses {
+                self.draw_alignment_pattern_at(x, y)
             }
         }
     }
 
-    fn draw_alignment_pattern_at(&mut self, r: i32, c: i32) {
+    fn draw_alignment_pattern_at(&mut self, x: i32, y: i32) {
         let w = self.w as i32;
-        if (r == 6 && (c == 6 || c - w == -7)) || (r - w == -7 && c == 6) {
+        if (x == 6 && (y == 6 || y == w - 7)) || (x == w - 7 && y == 6) {
             return;
         }
         for i in -2..=2 {
             for j in -2..=2 {
                 self.set(
-                    r + i,
-                    c + j,
+                    x + i,
+                    y + j,
                     match (i, j) {
                         (-2 | 2, _) | (_, -2 | 2) | (0, 0) => Module::Func(Color::Black),
                         _ => Module::Func(Color::White),
@@ -570,7 +570,7 @@ impl QR {
                     Module::Format(Color::Black),
                     &FORMAT_INFO_COORDS_QR_SIDE,
                 );
-                self.set(-8, 8, Module::Format(Color::Black));
+                self.set(8, -8, Module::Format(Color::Black));
             }
         }
     }
@@ -608,11 +608,11 @@ impl QR {
         coords: &[(i32, i32)],
     ) {
         let mut mask = 1 << (bit_len - 1);
-        for (r, c) in coords {
+        for &(x, y) in coords {
             if number & mask == 0 {
-                self.set(*r, *c, off_clr);
+                self.set(x, y, off_clr);
             } else {
-                self.set(*r, *c, on_clr);
+                self.set(x, y, on_clr);
             }
             mask >>= 1;
         }
@@ -810,8 +810,8 @@ impl QR {
         match self.pal {
             Palette::Mono => self.draw_payload(payload),
             Palette::Poly => {
-                self.set(-8, 8, Module::Format(Color::White));
-                self.draw_color_payload(payload)
+                self.set(8, -8, Module::Format(Color::White));
+                self.draw_payload_rgb(payload)
             }
         }
 
@@ -820,51 +820,55 @@ impl QR {
         debug_assert!(!self.grid[..ver_sz].contains(&Module::Empty), "Empty module found in debug");
     }
 
-    fn draw_payload(&mut self, payload: BitStream) {
+    fn draw_payload(&mut self, mut payload: BitStream) {
         let mut coords = EncRegionIter::new(self.ver);
-        for bit in payload {
+        let cap = self.ver.channel_codewords();
+        let bit_cap = cap << 3;
+
+        for (x, y) in coords.by_ref().take(bit_cap) {
+            let bit = payload.take_bit().unwrap();
             let module = Module::Data(if bit { Color::Black } else { Color::White });
-            for (r, c) in coords.by_ref() {
-                if matches!(self.get(r, c), Module::Empty) {
-                    self.set(r, c, module);
-                    break;
-                }
-            }
+            debug_assert_eq!(
+                self.get(x, y),
+                Module::Empty,
+                "Coordinate ({x}, {y}) is not empty for version {}",
+                *self.ver
+            );
+            self.set(x, y, module);
         }
         self.fill_remainder_bits(&mut coords);
     }
 
-    fn draw_color_payload(&mut self, mut payload: BitStream) {
+    fn draw_payload_rgb(&mut self, mut payload: BitStream) {
         let chan_cap = self.ver.channel_codewords();
         let chan_bit_cap = chan_cap << 3;
+
         debug_assert_eq!(
             chan_cap * 3,
             payload.len() >> 3,
             "Channel capacity {chan_cap} is not equal to 1/3rd of codewords sz {}",
             payload.len() >> 3
         );
+
         let mut coords = EncRegionIter::new(self.ver).cycle();
         for chan in (0..=2).rev() {
-            for bit in Iterator::take(&mut payload, chan_bit_cap) {
-                for (r, c) in coords.by_ref() {
-                    match self.get_mut(r, c) {
-                        Module::Empty => {
-                            let clr = if bit { Color::Black } else { Color::Red };
-                            let module = Module::Data(clr);
-                            self.set(r, c, module);
-                            break;
-                        }
-                        Module::Data(clr) => {
-                            let mut byte = *clr as u8;
-                            if !bit {
-                                byte |= 1 << chan;
-                            }
-                            let clr = Color::try_from(byte).unwrap();
-                            self.set(r, c, Module::Data(clr));
-                            break;
-                        }
-                        _ => (),
+            for (x, y) in coords.by_ref().take(chan_bit_cap) {
+                let bit = payload.take_bit().unwrap();
+                match self.get_mut(x, y) {
+                    Module::Empty => {
+                        let clr = if bit { Color::Black } else { Color::Red };
+                        let module = Module::Data(clr);
+                        self.set(x, y, module);
                     }
+                    Module::Data(clr) => {
+                        let mut byte = *clr as u8;
+                        if !bit {
+                            byte |= 1 << chan;
+                        }
+                        let clr = Color::try_from(byte).unwrap();
+                        self.set(x, y, Module::Data(clr));
+                    }
+                    _ => (),
                 }
             }
             self.fill_remainder_bits(&mut coords);
@@ -873,9 +877,9 @@ impl QR {
 
     fn fill_remainder_bits(&mut self, coords: impl Iterator<Item = (i32, i32)>) {
         let n = self.ver.remainder_bits();
-        for (r, c) in coords.take(n).by_ref() {
-            if matches!(self.get(r, c), Module::Empty) {
-                self.set(r, c, Module::Data(Color::White));
+        for (x, y) in coords.take(n).by_ref() {
+            if matches!(self.get(x, y), Module::Empty) {
+                self.set(x, y, Module::Data(Color::White));
             }
         }
     }
@@ -884,11 +888,11 @@ impl QR {
         self.mask = Some(pattern);
         let mask_fn = pattern.mask_functions();
         let w = self.w as i32;
-        for r in 0..w {
-            for c in 0..w {
-                if mask_fn(r, c) {
-                    if let Module::Data(clr) = self.get(r, c) {
-                        self.set(r, c, Module::Data(!clr))
+        for x in 0..w {
+            for y in 0..w {
+                if mask_fn(x, y) {
+                    if let Module::Data(clr) = self.get(x, y) {
+                        self.set(x, y, Module::Data(!clr))
                     }
                 }
             }
@@ -939,45 +943,69 @@ impl QR {
         let total_sz = qz_sz + qr_sz + qz_sz;
 
         let mut canvas = RgbImage::new(total_sz, total_sz);
-        for i in 0..total_sz {
-            for j in 0..total_sz {
-                if i < qz_sz || i >= qz_sz + qr_sz || j < qz_sz || j >= qz_sz + qr_sz {
-                    canvas.put_pixel(j, i, Rgb([255, 255, 255]));
+        for y in 0..total_sz {
+            // Quiet zone
+            if y < qz_sz || y >= qz_sz + qr_sz {
+                for x in 0..total_sz {
+                    canvas.put_pixel(x, y, Rgb([255, 255, 255]));
+                }
+                continue;
+            }
+
+            let qy = (y - qz_sz) / module_sz;
+
+            for x in 0..total_sz {
+                // Quiet zone
+                if x < qz_sz || x >= qz_sz + qr_sz {
+                    canvas.put_pixel(x, y, Rgb([255, 255, 255]));
                     continue;
                 }
-                let r = (i - qz_sz) / module_sz;
-                let c = (j - qz_sz) / module_sz;
 
-                let clr = match self.get(r as i32, c as i32) {
+                let qx = (x - qz_sz) / module_sz;
+
+                let clr = match self.get(qx as i32, qy as i32) {
                     Module::Func(c) | Module::Format(c) | Module::Version(c) | Module::Data(c) => c,
-                    Module::Empty => panic!("Empty module found at: {r} {c}"),
+                    Module::Empty => panic!("Empty module found at: {x} {y}"),
                 };
 
-                canvas.put_pixel(j, i, clr.into());
+                canvas.put_pixel(x, y, clr.into());
             }
         }
 
         canvas
     }
 
+    #[cfg(test)]
     pub fn to_str(&self, module_sz: usize) -> String {
         let qz_sz = if let Version::Normal(_) = self.ver { 4 } else { 2 } * module_sz;
         let qr_sz = self.w * module_sz;
         let total_sz = qz_sz + qr_sz + qz_sz;
 
         let mut canvas = String::new();
-        for i in 0..total_sz {
-            for j in 0..total_sz {
-                if i < qz_sz || i >= qz_sz + qr_sz || j < qz_sz || j >= qz_sz + qr_sz {
+        for y in 0..total_sz {
+            // Quiet zone
+            if y < qz_sz || y >= qz_sz + qr_sz {
+                for x in 0..total_sz {
+                    canvas.push('█');
+                }
+                canvas.push('\n');
+                continue;
+            }
+
+            let qy = (y - qz_sz) / module_sz;
+
+            for x in 0..total_sz {
+                // Quiet zone
+                if x < qz_sz || x >= qz_sz + qr_sz {
                     canvas.push('█');
                     continue;
                 }
-                let r = ((i - qz_sz) / module_sz) as i32;
-                let c = ((j - qz_sz) / module_sz) as i32;
+                let qx = ((x - qz_sz) / module_sz) as i32;
+                let qy = ((y - qz_sz) / module_sz) as i32;
 
-                let clr = match self.get(r, c) {
+                let clr = match self.get(qx, qy) {
                     Module::Func(c) | Module::Format(c) | Module::Version(c) | Module::Data(c) => c,
-                    Module::Empty => panic!("Empty module found at: {r} {c}"),
+                    Module::Empty => panic!("Empty module found at: {x} {y}"),
                 };
                 canvas.push(clr.select('█', ' '));
             }

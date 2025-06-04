@@ -179,7 +179,7 @@ impl QRBuilder<'_> {
         Ok(qr)
     }
 
-    pub(crate) fn blockify(data: &[u8], ver: Version, ecl: ECLevel) -> [Option<Block>; 256] {
+    pub(crate) fn blockify(data: &[u8], ver: Version, ecl: ECLevel) -> Vec<Block> {
         // b1s = block1_size, b1c = block1_count
         let (b1s, b1c, b2s, b2c) = ver.data_codewords_per_block(ecl);
         let ec_len = ver.ecc_per_block(ecl);
@@ -194,17 +194,17 @@ impl QRBuilder<'_> {
             tot_sz
         );
 
-        let mut blks: [Option<Block>; 256] = [None; 256];
+        let mut blks = Vec::with_capacity(256);
         data[..b1_tot_sz]
             .chunks(b1s)
             .enumerate()
-            .for_each(|(i, d)| blks[i] = Some(Block::new(d, b1s + ec_len)));
+            .for_each(|(i, d)| blks.push(Block::new(d, b1s + ec_len)));
 
         if b2s > 0 {
             data[b1_tot_sz..]
                 .chunks(b2s)
                 .enumerate()
-                .for_each(|(i, d)| blks[i + b1c] = Some(Block::new(d, b2s + ec_len)));
+                .for_each(|(i, d)| blks.push(Block::new(d, b2s + ec_len)));
         }
 
         blks
@@ -226,16 +226,11 @@ impl QRBuilder<'_> {
         (ec_bytes - p) / 2
     }
 
-    pub(crate) fn interleave_into(blks: &[Option<Block>], out: &mut BitStream) {
+    pub(crate) fn interleave_into(blks: &[Block], out: &mut BitStream) {
         // Interleaving data codewords
-        let max_len = blks
-            .iter()
-            .filter_map(Option::as_ref)
-            .map(Block::data_len)
-            .max()
-            .expect("Blocks is empty");
+        let max_len = blks.iter().map(Block::data_len).max().expect("Blocks is empty");
         for i in 0..max_len {
-            for bl in blks.iter().filter_map(Option::as_ref) {
+            for bl in blks.iter() {
                 if let Some(b) = bl.data().get(i) {
                     out.push_byte(*b)
                 }
@@ -243,9 +238,9 @@ impl QRBuilder<'_> {
         }
 
         // Interleaving ec codewords
-        let ec_len = blks[0].unwrap().ec_len();
+        let ec_len = blks[0].ec_len();
         for i in 0..ec_len {
-            for bl in blks.iter().filter_map(Option::as_ref) {
+            for bl in blks.iter() {
                 if let Some(b) = bl.ecc().get(i) {
                     out.push_byte(*b)
                 }
@@ -267,8 +262,8 @@ mod builder_tests {
         let msg = b" [\x0bx\xd1r\xdcMC@\xec\x11\xec\x11\xec\x11";
         let exp_ecc = [b"\xc4\x23\x27\x77\xeb\xd7\xe7\xe2\x5d\x17"];
         let blks = QRBuilder::blockify(msg, Version::Normal(1), ECLevel::M);
-        assert_eq!(blks.iter().filter(|b| Option::is_some(b)).count(), exp_ecc.len());
-        for (i, b) in blks.iter().filter_map(Option::as_ref).enumerate() {
+        assert_eq!(blks.len(), exp_ecc.len());
+        for (i, b) in blks.iter().enumerate() {
             assert_eq!(b.ecc(), *exp_ecc[i]);
         }
     }
@@ -285,8 +280,8 @@ mod builder_tests {
             b"\xeb\x9f\x05\xad\x18\x93\x3b\x21\x6a\x28\xff\xac\x52\x02\x83\x20\xb2\xec",
         ];
         let blks = QRBuilder::blockify(msg, Version::Normal(5), ECLevel::Q);
-        assert_eq!(blks.iter().filter(|b| Option::is_some(b)).count(), exp_ecc.len());
-        for (i, b) in blks.iter().filter_map(Option::as_ref).enumerate() {
+        assert_eq!(blks.len(), exp_ecc.len());
+        for (i, b) in blks.iter().enumerate() {
             assert_eq!(b.ecc(), *exp_ecc[i]);
         }
     }
@@ -294,8 +289,8 @@ mod builder_tests {
     #[test]
     fn test_interleave() {
         let data = [vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9, 0]];
-        let mut blks: [Option<Block>; 256] = [None; 256];
-        data.iter().enumerate().for_each(|(i, b)| blks[i] = Some(Block::new(b, 6)));
+        let mut blks: Vec<Block> = Vec::with_capacity(256);
+        data.iter().enumerate().for_each(|(i, b)| blks.push(Block::new(b, 6)));
         let mut ilvd = BitStream::new(256);
         QRBuilder::interleave_into(&blks, &mut ilvd);
         let exp_ilvd = vec![1, 4, 7, 2, 5, 8, 3, 6, 9, 0];
