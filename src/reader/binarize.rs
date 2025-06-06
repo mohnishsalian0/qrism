@@ -174,20 +174,20 @@ impl Binarize for RgbImage {
         for i in 0..len {
             let (mn, mx) = (min[i], max[i]);
             for c in 0..3 {
-                if mx[c] - mn[c] <= 24 {
-                    avg[i][c] = (mn[c] as usize) / 2;
-                    if i > wsteps && i % wsteps > 0 {
-                        // Average of neighbors 2 * (x-1, y), (x, y-1), (x-1, y-1)
-                        let ng_avg =
-                            (2 * avg[i - 1][c] + avg[i - wsteps][c] + avg[i - wsteps - 1][c]) / 4;
-                        if mn[c] < ng_avg as u8 {
-                            avg[i][c] = ng_avg;
-                        }
-                    }
-                } else {
-                    // Convert 8×8 sum to average (divide by 64)
-                    avg[i][c] >>= block_area_pow;
-                }
+                // if mx[c] - mn[c] <= 24 {
+                //     avg[i][c] = (mn[c] as usize) / 2;
+                //     if i > wsteps && i % wsteps > 0 {
+                //         // Average of neighbors 2 * (x-1, y), (x, y-1), (x-1, y-1)
+                //         let ng_avg =
+                //             (2 * avg[i - 1][c] + avg[i - wsteps][c] + avg[i - wsteps - 1][c]) / 4;
+                //         if mn[c] < ng_avg as u8 {
+                //             avg[i][c] = ng_avg;
+                //         }
+                //     }
+                // } else {
+                // Convert 8×8 sum to average (divide by 64)
+                avg[i][c] >>= block_area_pow;
+                // }
             }
         }
 
@@ -342,20 +342,20 @@ impl Binarize for GrayImage {
         let hsteps = hsteps as usize;
         let block_area_pow = 2 * block_pow;
         for i in 0..len {
-            let (mn, mx) = min_max[i];
-            if mx - mn <= 24 {
-                avg[i] = (mn as usize) / 2;
-                if i > wsteps && i % wsteps > 0 {
-                    // Average of neighbors 2 * (x-1, y), (x, y-1), (x-1, y-1)
-                    let ng_avg = (2 * avg[i - 1] + avg[i - wsteps] + avg[i - wsteps - 1]) / 4;
-                    if mn < ng_avg as u8 {
-                        avg[i] = ng_avg;
-                    }
-                }
-            } else {
-                // Convert 8×8 sum to average (divide by 64)
-                avg[i] >>= block_area_pow;
-            }
+            // let (mn, mx) = min_max[i];
+            // if mx - mn <= 24 {
+            //     avg[i] = (mn as usize) / 2;
+            //     if i > wsteps && i % wsteps > 0 {
+            //         // Average of neighbors 2 * (x-1, y), (x, y-1), (x-1, y-1)
+            //         let ng_avg = (2 * avg[i - 1] + avg[i - wsteps] + avg[i - wsteps - 1]) / 4;
+            //         if mn < ng_avg as u8 {
+            //             avg[i] = ng_avg;
+            //         }
+            //     }
+            // } else {
+            // Convert 8×8 sum to average (divide by 64)
+            avg[i] >>= block_area_pow;
+            // }
         }
 
         // Calculates threshold for each block
