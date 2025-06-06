@@ -201,13 +201,14 @@ mod reader_tests {
             utils::geometry::{BresenhamLine, Line, X, Y},
         };
 
-        let inp_path = std::path::Path::new("benches/dataset/detection/close/image008.jpg");
+        let inp_path = std::path::Path::new("benches/dataset/detection/monitor/image001.jpg");
         // let inp_path = std::path::Path::new("assets/cleaned.png");
         let img = image::open(inp_path).unwrap().to_luma8();
         let mut bin_img = BinaryImage::prepare(&img);
-        bin_img.save(std::path::Path::new("assets/inp.png")).unwrap();
 
-        let mut out_img = image::open(inp_path).unwrap().to_rgb8();
+        let out_path = std::path::Path::new("assets/inp.png");
+        bin_img.save(out_path).unwrap();
+        let mut out_img = image::open(out_path).unwrap().to_rgb8();
 
         // let finders = locate_finders(&mut bin_img);
         // finders.iter().for_each(|f| f.highlight(&mut out_img));

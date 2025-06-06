@@ -13,10 +13,10 @@
 [qrcode-2/28-0] PASSED
 [qrcode-2/28-90] PASSED
 [qrcode-2/28-180] PASSED
-[qrcode-2/28-270] PASSED
-[qrcode-2/29-0] PASSED
-[qrcode-2/29-90] Too many errors[qrcode-2/29-180] Too many errors[qrcode-2/29-270] PASSED
-[qrcode-2/15-0] PASSED
+[qrcode-2/28-270] QR not found[qrcode-2/29-0] PASSED
+[qrcode-2/29-90] PASSED
+[qrcode-2/29-180] PASSED
+[qrcode-2/29-270] TooManyError[qrcode-2/15-0] PASSED
 [qrcode-2/15-90] PASSED
 [qrcode-2/15-180] PASSED
 [qrcode-2/15-270] PASSED
@@ -63,11 +63,11 @@
 [qrcode-2/23-0] PASSED
 [qrcode-2/23-90] PASSED
 [qrcode-2/23-180] PASSED
-[qrcode-2/23-270] Too many errors[qrcode-2/27-0] PASSED
+[qrcode-2/23-270] TooManyError[qrcode-2/27-0] PASSED
 [qrcode-2/27-90] PASSED
 [qrcode-2/27-180] PASSED
 [qrcode-2/27-270] PASSED
-[qrcode-2/33-0] Unexpected mode bits: 13[qrcode-2/33-90] Unexpected mode bits: 13[qrcode-2/33-180] Unexpected mode bits: 13[qrcode-2/33-270] Unexpected mode bits: 13[qrcode-2/32-0] PASSED
+[qrcode-2/33-0] InvalidMode(13)[qrcode-2/33-90] InvalidMode(13)[qrcode-2/33-180] InvalidMode(13)[qrcode-2/33-270] InvalidMode(13)[qrcode-2/32-0] PASSED
 [qrcode-2/32-90] PASSED
 [qrcode-2/32-180] PASSED
 [qrcode-2/32-270] PASSED
@@ -84,12 +84,12 @@
 [qrcode-2/30-180] PASSED
 [qrcode-2/30-270] PASSED
 [qrcode-2/24-0] PASSED
-[qrcode-2/24-90] Too many errors[qrcode-2/24-180] PASSED
+[qrcode-2/24-90] PASSED
+[qrcode-2/24-180] PASSED
 [qrcode-2/24-270] PASSED
-[qrcode-2/25-0] Too many errors[qrcode-2/25-90] PASSED
-[qrcode-2/25-180] PASSED
-[qrcode-2/25-270] PASSED
-[qrcode-2/31-0] PASSED
+[qrcode-2/25-0] PASSED
+[qrcode-2/25-90] TooManyError[qrcode-2/25-180] PASSED
+[qrcode-2/25-270] TooManyError[qrcode-2/31-0] PASSED
 [qrcode-2/31-90] PASSED
 [qrcode-2/31-180] PASSED
 [qrcode-2/31-270] PASSED
@@ -101,7 +101,9 @@
 [qrcode-2/4-90] PASSED
 [qrcode-2/4-180] PASSED
 [qrcode-2/4-270] PASSED
-[qrcode-2/5-0] Too many errors[qrcode-2/5-90] Too many errors[qrcode-2/5-180] Too many errors[qrcode-2/5-270] Too many errors[qrcode-2/7-0] PASSED
+[qrcode-2/5-0] PASSED
+[qrcode-2/5-90] QR not found[qrcode-2/5-180] QR not found[qrcode-2/5-270] PASSED
+[qrcode-2/7-0] PASSED
 [qrcode-2/7-90] PASSED
 [qrcode-2/7-180] PASSED
 [qrcode-2/7-270] PASSED
@@ -197,11 +199,11 @@
 [qrcode-5/1-90] PASSED
 [qrcode-5/1-180] PASSED
 [qrcode-5/1-270] PASSED
-[qrcode-4/48-0] Too many errors[qrcode-4/48-90] PASSED
+[qrcode-4/48-0] TooManyError[qrcode-4/48-90] PASSED
 [qrcode-4/48-180] PASSED
 [qrcode-4/48-270] PASSED
-[qrcode-4/8-0] Too many errors[qrcode-4/8-90] Too many errors[qrcode-4/8-180] Too many errors[qrcode-4/8-270] Too many errors[qrcode-4/9-0] Invalid format info detected[qrcode-4/9-90] Invalid format info detected[qrcode-4/9-180] Invalid format info detected[qrcode-4/9-270] Invalid format info detected[qrcode-4/14-0] PASSED
-[qrcode-4/14-90] Too many errors[qrcode-4/14-180] Too many errors[qrcode-4/14-270] Too many errors[qrcode-4/28-0] PASSED
+[qrcode-4/8-0] TooManyError[qrcode-4/8-90] TooManyError[qrcode-4/8-180] TooManyError[qrcode-4/8-270] TooManyError[qrcode-4/9-0] InvalidFormatInfo[qrcode-4/9-90] InvalidFormatInfo[qrcode-4/9-180] InvalidFormatInfo[qrcode-4/9-270] InvalidFormatInfo[qrcode-4/14-0] PASSED
+[qrcode-4/14-90] TooManyError[qrcode-4/14-180] TooManyError[qrcode-4/14-270] TooManyError[qrcode-4/28-0] PASSED
 [qrcode-4/28-90] PASSED
 [qrcode-4/28-180] PASSED
 [qrcode-4/28-270] PASSED
@@ -222,11 +224,11 @@
 [qrcode-4/16-180] PASSED
 [qrcode-4/16-270] PASSED
 [qrcode-4/12-0] PASSED
-[qrcode-4/12-90] Too many errors[qrcode-4/12-180] Too many errors[qrcode-4/12-270] Too many errors[qrcode-4/13-0] Too many errors[qrcode-4/13-90] Too many errors[qrcode-4/13-180] Too many errors[qrcode-4/13-270] Too many errors[qrcode-4/39-0] PASSED
+[qrcode-4/12-90] TooManyError[qrcode-4/12-180] TooManyError[qrcode-4/12-270] TooManyError[qrcode-4/13-0] TooManyError[qrcode-4/13-90] TooManyError[qrcode-4/13-180] TooManyError[qrcode-4/13-270] TooManyError[qrcode-4/39-0] PASSED
 [qrcode-4/39-90] PASSED
 [qrcode-4/39-180] PASSED
 [qrcode-4/39-270] PASSED
-[qrcode-4/11-0] Too many errors[qrcode-4/11-90] Too many errors[qrcode-4/11-180] Too many errors[qrcode-4/11-270] Too many errors[qrcode-4/10-0] Too many errors[qrcode-4/10-90] Too many errors[qrcode-4/10-180] Too many errors[qrcode-4/10-270] Too many errors[qrcode-4/38-0] PASSED
+[qrcode-4/11-0] TooManyError[qrcode-4/11-90] TooManyError[qrcode-4/11-180] TooManyError[qrcode-4/11-270] TooManyError[qrcode-4/10-0] TooManyError[qrcode-4/10-90] TooManyError[qrcode-4/10-180] TooManyError[qrcode-4/10-270] TooManyError[qrcode-4/38-0] PASSED
 [qrcode-4/38-90] PASSED
 [qrcode-4/38-180] PASSED
 [qrcode-4/38-270] PASSED
@@ -242,7 +244,7 @@
 [qrcode-4/20-90] PASSED
 [qrcode-4/20-180] PASSED
 [qrcode-4/20-270] PASSED
-[qrcode-4/34-0] Too many errors[qrcode-4/34-90] Too many errors[qrcode-4/34-180] Too many errors[qrcode-4/34-270] PASSED
+[qrcode-4/34-0] TooManyError[qrcode-4/34-90] TooManyError[qrcode-4/34-180] TooManyError[qrcode-4/34-270] PASSED
 [qrcode-4/22-0] PASSED
 [qrcode-4/22-90] PASSED
 [qrcode-4/22-180] PASSED
@@ -263,7 +265,7 @@
 [qrcode-4/27-90] PASSED
 [qrcode-4/27-180] PASSED
 [qrcode-4/27-270] PASSED
-[qrcode-4/33-0] Invalid format info detected[qrcode-4/33-90] Invalid format info detected[qrcode-4/33-180] Invalid format info detected[qrcode-4/33-270] Invalid format info detected[qrcode-4/32-0] Too many errors[qrcode-4/32-90] Too many errors[qrcode-4/32-180] Too many errors[qrcode-4/32-270] Too many errors[qrcode-4/26-0] PASSED
+[qrcode-4/33-0] InvalidFormatInfo[qrcode-4/33-90] InvalidFormatInfo[qrcode-4/33-180] InvalidFormatInfo[qrcode-4/33-270] InvalidFormatInfo[qrcode-4/32-0] TooManyError[qrcode-4/32-90] TooManyError[qrcode-4/32-180] TooManyError[qrcode-4/32-270] TooManyError[qrcode-4/26-0] PASSED
 [qrcode-4/26-90] PASSED
 [qrcode-4/26-180] PASSED
 [qrcode-4/26-270] PASSED
@@ -271,7 +273,7 @@
 [qrcode-4/18-90] PASSED
 [qrcode-4/18-180] PASSED
 [qrcode-4/18-270] PASSED
-[qrcode-4/30-0] Too many errors[qrcode-4/30-90] Too many errors[qrcode-4/30-180] Too many errors[qrcode-4/30-270] Too many errors[qrcode-4/24-0] PASSED
+[qrcode-4/30-0] TooManyError[qrcode-4/30-90] TooManyError[qrcode-4/30-180] TooManyError[qrcode-4/30-270] TooManyError[qrcode-4/24-0] PASSED
 [qrcode-4/24-90] PASSED
 [qrcode-4/24-180] PASSED
 [qrcode-4/24-270] PASSED
@@ -279,12 +281,12 @@
 [qrcode-4/25-90] PASSED
 [qrcode-4/25-180] PASSED
 [qrcode-4/25-270] PASSED
-[qrcode-4/31-0] Too many errors[qrcode-4/31-90] Too many errors[qrcode-4/31-180] Too many errors[qrcode-4/31-270] Too many errors[qrcode-4/19-0] PASSED
+[qrcode-4/31-0] TooManyError[qrcode-4/31-90] TooManyError[qrcode-4/31-180] TooManyError[qrcode-4/31-270] TooManyError[qrcode-4/19-0] PASSED
 [qrcode-4/19-90] PASSED
 [qrcode-4/19-180] PASSED
 [qrcode-4/19-270] PASSED
-[qrcode-4/4-0] Too many errors[qrcode-4/4-90] PASSED
-[qrcode-4/4-180] Too many errors[qrcode-4/4-270] Too many errors[qrcode-4/42-0] PASSED
+[qrcode-4/4-0] TooManyError[qrcode-4/4-90] PASSED
+[qrcode-4/4-180] TooManyError[qrcode-4/4-270] TooManyError[qrcode-4/42-0] PASSED
 [qrcode-4/42-90] PASSED
 [qrcode-4/42-180] PASSED
 [qrcode-4/42-270] PASSED
@@ -292,11 +294,11 @@
 [qrcode-4/43-90] PASSED
 [qrcode-4/43-180] PASSED
 [qrcode-4/43-270] PASSED
-[qrcode-4/5-0] Too many errors[qrcode-4/5-90] Too many errors[qrcode-4/5-180] Too many errors[qrcode-4/5-270] Too many errors[qrcode-4/41-0] Too many errors[qrcode-4/41-90] Too many errors[qrcode-4/41-180] Too many errors[qrcode-4/41-270] Too many errors[qrcode-4/7-0] PASSED
+[qrcode-4/5-0] TooManyError[qrcode-4/5-90] TooManyError[qrcode-4/5-180] TooManyError[qrcode-4/5-270] TooManyError[qrcode-4/41-0] TooManyError[qrcode-4/41-90] TooManyError[qrcode-4/41-180] TooManyError[qrcode-4/41-270] TooManyError[qrcode-4/7-0] PASSED
 [qrcode-4/7-90] PASSED
 [qrcode-4/7-180] PASSED
 [qrcode-4/7-270] PASSED
-[qrcode-4/6-0] Too many errors[qrcode-4/6-90] Too many errors[qrcode-4/6-180] Too many errors[qrcode-4/6-270] Too many errors[qrcode-4/40-0] PASSED
+[qrcode-4/6-0] TooManyError[qrcode-4/6-90] TooManyError[qrcode-4/6-180] TooManyError[qrcode-4/6-270] TooManyError[qrcode-4/40-0] PASSED
 [qrcode-4/40-90] PASSED
 [qrcode-4/40-180] PASSED
 [qrcode-4/40-270] PASSED
@@ -338,7 +340,7 @@
 [qrcode-3/9-270] PASSED
 [qrcode-3/14-0] PASSED
 [qrcode-3/14-90] PASSED
-[qrcode-3/14-180] Too many errors[qrcode-3/14-270] PASSED
+[qrcode-3/14-180] TooManyError[qrcode-3/14-270] PASSED
 [qrcode-3/28-0] PASSED
 [qrcode-3/28-90] PASSED
 [qrcode-3/28-180] PASSED
@@ -354,9 +356,9 @@
 [qrcode-3/17-0] PASSED
 [qrcode-3/17-90] PASSED
 [qrcode-3/17-180] PASSED
-[qrcode-3/17-270] Too many errors[qrcode-3/16-0] PASSED
+[qrcode-3/17-270] TooManyError[qrcode-3/16-0] PASSED
 [qrcode-3/16-90] PASSED
-[qrcode-3/16-180] Too many errors[qrcode-3/16-270] Too many errors[qrcode-3/12-0] PASSED
+[qrcode-3/16-180] TooManyError[qrcode-3/16-270] TooManyError[qrcode-3/12-0] PASSED
 [qrcode-3/12-90] PASSED
 [qrcode-3/12-180] PASSED
 [qrcode-3/12-270] PASSED
@@ -396,7 +398,7 @@
 [qrcode-3/34-90] PASSED
 [qrcode-3/34-180] PASSED
 [qrcode-3/34-270] PASSED
-[qrcode-3/22-0] Too many errors[qrcode-3/22-90] Too many errors[qrcode-3/22-180] Too many errors[qrcode-3/22-270] Too many errors[qrcode-3/36-0] PASSED
+[qrcode-3/22-0] TooManyError[qrcode-3/22-90] TooManyError[qrcode-3/22-180] TooManyError[qrcode-3/22-270] TooManyError[qrcode-3/36-0] PASSED
 [qrcode-3/36-90] PASSED
 [qrcode-3/36-180] PASSED
 [qrcode-3/36-270] PASSED
@@ -404,7 +406,7 @@
 [qrcode-3/37-90] PASSED
 [qrcode-3/37-180] PASSED
 [qrcode-3/37-270] PASSED
-[qrcode-3/23-0] QR not found[qrcode-3/23-90] Invalid version info detected[qrcode-3/23-180] QR not found[qrcode-3/23-270] QR not found[qrcode-3/27-0] PASSED
+[qrcode-3/23-0] QR not found[qrcode-3/23-90] InvalidVersionInfo[qrcode-3/23-180] QR not found[qrcode-3/23-270] QR not found[qrcode-3/27-0] PASSED
 [qrcode-3/27-90] PASSED
 [qrcode-3/27-180] PASSED
 [qrcode-3/27-270] PASSED
@@ -449,7 +451,7 @@
 [qrcode-3/4-180] PASSED
 [qrcode-3/4-270] PASSED
 [qrcode-3/42-0] PASSED
-[qrcode-3/42-90] Too many errors[qrcode-3/42-180] PASSED
+[qrcode-3/42-90] TooManyError[qrcode-3/42-180] PASSED
 [qrcode-3/42-270] PASSED
 [qrcode-3/5-0] PASSED
 [qrcode-3/5-90] PASSED
@@ -544,9 +546,7 @@
 [qrcode-6/1-270] PASSED
 [qrcode-1/8-0] PASSED
 [qrcode-1/8-90] PASSED
-[qrcode-1/8-180] PASSED
-[qrcode-1/8-270] PASSED
-[qrcode-1/9-0] PASSED
+[qrcode-1/8-180] TooManyError[qrcode-1/8-270] TooManyError[qrcode-1/9-0] PASSED
 [qrcode-1/9-90] PASSED
 [qrcode-1/9-180] PASSED
 [qrcode-1/9-270] PASSED

@@ -1,6 +1,7 @@
 use image::imageops::{self};
 use image::{open, GrayImage};
 use qrism::reader::binarize::BinaryImage;
+use rqrr::PreparedImage;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::path::Path;
@@ -114,12 +115,12 @@ fn test_qr_detection() {
                         .entry(parent.clone())
                         .or_default()
                         .entry(angle.to_string())
-                        .or_default() += elapsed.as_millis();
+                        .or_default() += elapsed.as_micros();
                     *time
                         .entry("total".to_string())
                         .or_default()
                         .entry(angle.to_string())
-                        .or_default() += elapsed.as_millis();
+                        .or_default() += elapsed.as_micros();
 
                     let msg = msg.lines().map(String::from).collect::<Vec<_>>();
 
@@ -145,7 +146,7 @@ fn test_qr_detection() {
                     };
                 }
                 Err(e) => {
-                    write!(out_file, "{}", e).unwrap();
+                    write!(out_file, "{:?}", e).unwrap();
                     continue;
                 }
             }
@@ -156,7 +157,7 @@ fn test_qr_detection() {
     let rows = ["qrcode-1", "qrcode-2", "qrcode-3", "qrcode-4", "qrcode-5", "qrcode-6", "total"];
     let columns = ["Angles", "0", "90", "180", "270", "total"];
 
-    // Print results table
+    // Calculate total for each column
     println!("Success result for 720 images:");
     for v in passed.values_mut() {
         let total_for_folder = v.values().sum::<u128>();
@@ -198,7 +199,7 @@ fn parse_expected_result(path: &Path) -> Vec<Vec<f64>> {
 }
 
 fn test_get_corners() {
-    let img_path = Path::new("benches/dataset/detection/rotations/image001.jpg");
+    let img_path = Path::new("benches/dataset/detection/monitor/image001.jpg");
 
     // Corresponding expected result file
     let exp_res_path = img_path.with_extension("txt");
@@ -246,6 +247,7 @@ fn test_get_corners() {
 fn benchmark_detection() {
     let dataset_dir = "benches/dataset/detection";
     let mut results: HashMap<String, HashMap<String, f64>> = HashMap::new();
+    let mut runtimes: HashMap<String, Vec<u128>> = HashMap::new();
     let mut last_folder = "None".to_string();
 
     for entry in WalkDir::new(dataset_dir).into_iter().filter_map(Result::ok).filter(is_image_file)
@@ -266,20 +268,28 @@ fn benchmark_detection() {
         // Benchmark image
         let gray = load_grayscale(img_path).unwrap();
         let start = Instant::now();
-        let symbols = QRReader::get_corners(gray);
+        let mut symbols = QRReader::get_corners(gray);
         let time = start.elapsed().as_millis();
 
-        *score.entry("time".to_string()).or_default() += time as f64;
+        runtimes.entry(parent.to_string()).or_default().push(time);
 
         // Comparing results if detection succesful
         let mut true_pos = 0;
         let mut false_pos = 0;
-        for corners in symbols.iter() {
-            if exp_symbols.iter().any(|exp_corners| {
-                exp_corners.iter().zip(corners).all(|(&a, &e)| (a - e).abs() * 10.0 <= e)
-            }) {
-                true_pos += 1;
-            } else {
+        for symbol in symbols.iter_mut() {
+            let mut corners = *symbol;
+            let mut matched = false;
+            for _ in 0..4 {
+                if exp_symbols.iter().any(|exp_corners| {
+                    exp_corners.iter().zip(corners).all(|(a, e)| (*a - e).abs() * 10.0 <= e)
+                }) {
+                    true_pos += 1;
+                    matched = true;
+                    break;
+                }
+                corners.rotate_left(2);
+            }
+            if !matched {
                 false_pos += 1;
             }
         }
@@ -287,7 +297,9 @@ fn benchmark_detection() {
         *score.entry("false_pos".to_string()).or_default() += false_pos as f64;
         *score.entry("false_neg".to_string()).or_default() += (exp_symbols.len() - true_pos) as f64;
     }
-    for (_k, v) in results.iter_mut() {
+
+    let mut total: HashMap<String, f64> = HashMap::new();
+    for (k, v) in results.iter_mut() {
         let true_pos = *v.get("true_pos").unwrap();
         let false_pos = *v.get("false_pos").unwrap();
         let false_neg = *v.get("false_neg").unwrap();
@@ -296,10 +308,36 @@ fn benchmark_detection() {
         let recall = true_pos / (true_pos + false_neg);
         let fscore = 2.0 * precision * recall / (precision + recall);
 
-        *v.entry("precision".to_string()).or_default() = precision;
-        *v.entry("recall".to_string()).or_default() = recall;
-        *v.entry("fscore".to_string()).or_default() = fscore;
+        v.insert("precision".to_string(), precision);
+        v.insert("recall".to_string(), recall);
+        v.insert("fscore".to_string(), fscore);
+
+        let runtime = runtimes.get_mut(k).unwrap();
+        runtime.sort_unstable();
+        let median_time = if runtime.len() % 2 == 1 {
+            runtime[runtime.len() / 2] as f64
+        } else {
+            let mid = runtime.len() / 2;
+            (runtime[mid - 1] as f64 + runtime[mid] as f64) / 2.0
+        };
+        v.insert("median_time".to_string(), median_time);
+
+        *total.entry("true_pos".to_string()).or_default() += true_pos;
+        *total.entry("false_pos".to_string()).or_default() += false_pos;
+        *total.entry("false_neg".to_string()).or_default() += false_neg;
+        *total.entry("precision".to_string()).or_default() += precision;
+        *total.entry("recall".to_string()).or_default() += recall;
+        *total.entry("fscore".to_string()).or_default() += fscore;
+        *total.entry("median_time".to_string()).or_default() += median_time;
     }
+
+    let count = (results.len() - 1) as f64;
+    *total.entry("precision".to_string()).or_default() /= count;
+    *total.entry("recall".to_string()).or_default() /= count;
+    *total.entry("fscore".to_string()).or_default() /= count;
+    *total.entry("median_time".to_string()).or_default() /= count;
+
+    results.insert("total".to_string(), total);
 
     let rows = [
         "blurred",
@@ -309,13 +347,16 @@ fn benchmark_detection() {
         "curved",
         "damaged",
         "glare",
+        "high_version",
         "lots",
         "monitor",
         "nominal",
         "noncompliant",
         "pathological",
+        "perspective",
         "rotations",
         "shadows",
+        "total",
     ];
     let columns = [
         "Heurictics",
@@ -325,14 +366,14 @@ fn benchmark_detection() {
         "precision",
         "recall",
         "fscore",
-        "time",
+        "median_time",
     ];
 
     print_table(&results, &rows, &columns);
 }
 
 fn main() {
-    benchmark_detection();
     // test_get_corners();
-    // test_qr_detection();
+    // benchmark_detection();
+    test_qr_detection();
 }

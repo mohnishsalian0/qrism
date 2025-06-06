@@ -84,14 +84,16 @@ pub trait Binarize {
     fn binarize(&self) -> Vec<Pixel>;
 }
 
+// TODO: Handle small image edge cases
 impl Binarize for RgbImage {
     fn binarize(&self) -> Vec<Pixel> {
         let (w, h) = self.dimensions();
-        let block_size = 1 << IMAGE_BLOCK_POWER;
-        let mask = (1 << IMAGE_BLOCK_POWER) - 1;
+        let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
+        let block_size = 1 << block_pow;
+        let mask = (1 << block_pow) - 1;
 
-        let wsteps = (w + mask) >> IMAGE_BLOCK_POWER;
-        let hsteps = (h + mask) >> IMAGE_BLOCK_POWER;
+        let wsteps = (w + mask) >> block_pow;
+        let hsteps = (h + mask) >> block_pow;
         let len = (wsteps * hsteps) as usize;
 
         let mut avg = vec![[0usize; 3]; len];
@@ -103,9 +105,9 @@ impl Binarize for RgbImage {
         // Round w and h to skips these pixels
         let (wr, hr) = (w & !mask, h & !mask);
         for y in 0..hr {
-            let row_off = (y >> IMAGE_BLOCK_POWER) * wsteps;
+            let row_off = (y >> block_pow) * wsteps;
             for x in 0..wr {
-                let idx = (row_off + (x >> IMAGE_BLOCK_POWER)) as usize;
+                let idx = (row_off + (x >> block_pow)) as usize;
 
                 let px = self.get_pixel(x, y);
                 for c in 0..3 {
@@ -119,7 +121,7 @@ impl Binarize for RgbImage {
         // Sum of 8x8 pixels for fractional blocks (if exists) on the right edge
         if w & mask != 0 {
             for y in 0..hr {
-                let idx = (((y >> IMAGE_BLOCK_POWER) + 1) * wsteps - 1) as usize;
+                let idx = (((y >> block_pow) + 1) * wsteps - 1) as usize;
                 for x in w - block_size..w {
                     let px = self.get_pixel(x, y);
                     for c in 0..3 {
@@ -136,7 +138,7 @@ impl Binarize for RgbImage {
             let last_row = wsteps * (hsteps - 1);
             for y in h - block_size..h {
                 for x in 0..wr {
-                    let idx = (last_row + (x >> IMAGE_BLOCK_POWER)) as usize;
+                    let idx = (last_row + (x >> block_pow)) as usize;
 
                     let px = self.get_pixel(x, y);
                     for c in 0..3 {
@@ -168,7 +170,7 @@ impl Binarize for RgbImage {
         // case take average of them.
         let wsteps = wsteps as usize;
         let hsteps = hsteps as usize;
-        let block_area_pow = 2 * IMAGE_BLOCK_POWER;
+        let block_area_pow = 2 * block_pow;
         for i in 0..len {
             let (mn, mx) = (min[i], max[i]);
             for c in 0..3 {
@@ -234,13 +236,13 @@ impl Binarize for RgbImage {
         let mut res = vec![Pixel::Unvisited(Color::Black); (w * h) as usize];
         for y in 0..h {
             let row_off = y * w;
-            let thresh_row_off = (y as usize >> IMAGE_BLOCK_POWER) * wsteps;
+            let thresh_row_off = (y as usize >> block_pow) * wsteps;
             for x in 0..w {
                 let p = self.get_pixel(x, y);
 
                 let idx = (row_off + x) as usize;
 
-                let xsteps = x as usize >> IMAGE_BLOCK_POWER;
+                let xsteps = x as usize >> block_pow;
                 let thresh_idx = thresh_row_off + xsteps;
 
                 let mut color = Color::Black;
@@ -263,11 +265,12 @@ impl Binarize for RgbImage {
 impl Binarize for GrayImage {
     fn binarize(&self) -> Vec<Pixel> {
         let (w, h) = self.dimensions();
-        let block_size = 1 << IMAGE_BLOCK_POWER;
-        let mask = (1 << IMAGE_BLOCK_POWER) - 1;
+        let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
+        let block_size = 1 << block_pow;
+        let mask = (1 << block_pow) - 1;
 
-        let wsteps = (w + mask) >> IMAGE_BLOCK_POWER;
-        let hsteps = (h + mask) >> IMAGE_BLOCK_POWER;
+        let wsteps = (w + mask) >> block_pow;
+        let hsteps = (h + mask) >> block_pow;
         let len = (wsteps * hsteps) as usize;
 
         // Calculates block average
@@ -279,9 +282,9 @@ impl Binarize for GrayImage {
         // Round w and h to skips these pixels
         let (wr, hr) = (w & !mask, h & !mask);
         for y in 0..hr {
-            let row_off = (y >> IMAGE_BLOCK_POWER) * wsteps;
+            let row_off = (y >> block_pow) * wsteps;
             for x in 0..wr {
-                let idx = (row_off + (x >> IMAGE_BLOCK_POWER)) as usize;
+                let idx = (row_off + (x >> block_pow)) as usize;
 
                 let p = self.get_pixel(x, y)[0];
                 avg[idx] += p as usize;
@@ -293,7 +296,7 @@ impl Binarize for GrayImage {
         // Sum of 8x8 pixels for fractional blocks (if exists) on the right edge
         if w & mask != 0 {
             for y in 0..hr {
-                let idx = (((y >> IMAGE_BLOCK_POWER) + 1) * wsteps - 1) as usize;
+                let idx = (((y >> block_pow) + 1) * wsteps - 1) as usize;
                 for x in w - block_size..w {
                     let p = self.get_pixel(x, y)[0];
 
@@ -309,7 +312,7 @@ impl Binarize for GrayImage {
             let last_row = wsteps * (hsteps - 1);
             for y in h - block_size..h {
                 for x in 0..wr {
-                    let idx = (last_row + (x >> IMAGE_BLOCK_POWER)) as usize;
+                    let idx = (last_row + (x >> block_pow)) as usize;
 
                     let p = self.get_pixel(x, y)[0];
                     avg[idx] += p as usize;
@@ -337,7 +340,7 @@ impl Binarize for GrayImage {
         // case take average of them.
         let wsteps = wsteps as usize;
         let hsteps = hsteps as usize;
-        let block_area_pow = 2 * IMAGE_BLOCK_POWER;
+        let block_area_pow = 2 * block_pow;
         for i in 0..len {
             let (mn, mx) = min_max[i];
             if mx - mn <= 24 {
@@ -394,13 +397,13 @@ impl Binarize for GrayImage {
         let mut res = vec![Pixel::Unvisited(Color::White); (w * h) as usize];
         for y in 0..h {
             let row_off = y * w;
-            let thresh_row_off = (y as usize >> IMAGE_BLOCK_POWER) * wsteps;
+            let thresh_row_off = (y as usize >> block_pow) * wsteps;
             for x in 0..w {
                 let p = self.get_pixel(x, y)[0];
 
                 let idx = (row_off + x) as usize;
 
-                let xsteps = x as usize >> IMAGE_BLOCK_POWER;
+                let xsteps = x as usize >> block_pow;
                 let thresh_idx = thresh_row_off + xsteps;
 
                 if p <= threshold[thresh_idx] {
@@ -618,7 +621,7 @@ impl BinaryImage {
 // Constants
 //------------------------------------------------------------------------------
 
-// Block size is 2^IMAGE_BLOCK_POWER
-const IMAGE_BLOCK_POWER: usize = 3;
+// Number of blocks along shorter dimension of image
+const BLOCK_COUNT: f64 = 20.0;
 
 const IMAGE_GRID_SIZE: usize = 5;
