@@ -8,7 +8,7 @@ use crate::reader::binarize::BinaryImage;
 // Point
 //------------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default, Hash)]
 pub struct Point {
     pub x: i32,
     pub y: i32,

@@ -35,8 +35,8 @@ pub struct Row {
 //------------------------------------------------------------------------------
 
 pub struct AreaAndCentreLocator {
-    sum_x: u32,
-    sum_y: u32,
+    sum_x: u64,
+    sum_y: u64,
     pub area: u32,
 }
 
@@ -66,8 +66,8 @@ impl Accumulator for AreaAndCentreLocator {
         let mid = left + right; // Not divided by 2 to avoid FP arithmetic. This 2 is accounted for
                                 // when calculating x and y in get_centre()
 
-        self.sum_x += mid * width;
-        self.sum_y += y * width;
+        self.sum_x += (mid * width) as u64;
+        self.sum_y += (y * width) as u64;
         self.area += width;
     }
 }

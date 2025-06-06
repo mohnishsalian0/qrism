@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::collections::HashSet;
 
 use crate::{metadata::Color, reader::utils::geometry::BresenhamLine};
 
@@ -238,7 +238,7 @@ mod finder_tests {
 // Groups finders in 3, which form potential symbols
 //------------------------------------------------------------------------------
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FinderGroup {
     pub finders: [Point; 3], // [BL, TL, TR]
     pub align: Point,        // Centre of provisional alignment pattern
@@ -296,10 +296,9 @@ impl FinderGroup {
 // ****************************
 // ****************************
 pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
-    let mut groups: Vec<FinderGroup> = Vec::new();
+    // Store all possible combinations of finders
+    let mut all_groups: Vec<FinderGroup> = Vec::new();
     let angle_threshold = 50f64.to_radians();
-    // let start = Instant::now();
-    // dbg!(start);
 
     for (i1, f1) in finders.iter().enumerate() {
         for (i2, f2) in finders.iter().enumerate() {
@@ -392,15 +391,25 @@ pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
                 let ver = (size as f64 - 15.0).floor() as u32 / 4;
                 let size = ver * 4 + 17;
                 let group = FinderGroup { finders, align: c4, mids, size, score };
-                groups.push(group);
+                all_groups.push(group);
             }
         }
     }
-    // dbg!(start.elapsed());
 
-    groups.sort_unstable_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
+    all_groups.sort_unstable_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
 
-    groups
+    // If a finder is in multiple groups, reject all groups except one with highest score
+    let mut res = Vec::with_capacity(finders.len() / 3);
+    let mut is_grouped = HashSet::with_capacity(finders.len());
+
+    for g in all_groups {
+        if g.finders.iter().all(|f| !is_grouped.contains(f)) {
+            is_grouped.extend(g.finders.iter().cloned());
+            res.push(g);
+        }
+    }
+
+    res
 }
 
 // Angle between AB & BC in radians

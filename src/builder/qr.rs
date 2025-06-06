@@ -905,7 +905,6 @@ impl QR {
 // Render
 //------------------------------------------------------------------------------
 
-// TODO: Write testcases
 impl QR {
     pub fn to_gray_image(&self, module_sz: u32) -> GrayImage {
         let qz_sz = if let Version::Normal(_) = self.ver { 4 } else { 2 } * module_sz;
@@ -1015,6 +1014,3 @@ impl QR {
         canvas
     }
 }
-
-// Global constants
-//------------------------------------------------------------------------------

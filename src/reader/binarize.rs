@@ -23,7 +23,6 @@ use image::ImageResult;
 pub enum Pixel {
     Visited(usize, Color), // Contains id of associated region
     Unvisited(Color),      // Default tag
-    Reserved(Color),       // Reserved pixels for functional patterns and infos
 }
 
 impl From<Pixel> for Color {
@@ -31,7 +30,6 @@ impl From<Pixel> for Color {
         match p {
             Pixel::Visited(_, c) => c,
             Pixel::Unvisited(c) => c,
-            Pixel::Reserved(c) => c,
         }
     }
 }
@@ -53,7 +51,7 @@ impl From<Luma<u8>> for Pixel {
 impl From<Pixel> for Rgb<u8> {
     fn from(p: Pixel) -> Self {
         match p {
-            Pixel::Visited(_, c) | Pixel::Unvisited(c) | Pixel::Reserved(c) => c.into(),
+            Pixel::Visited(_, c) | Pixel::Unvisited(c) => c.into(),
         }
     }
 }
@@ -89,9 +87,11 @@ pub trait Binarize {
 impl Binarize for RgbImage {
     fn binarize(&self) -> Vec<Pixel> {
         let (w, h) = self.dimensions();
+        let block_size = 1 << IMAGE_BLOCK_POWER;
+        let mask = (1 << IMAGE_BLOCK_POWER) - 1;
 
-        let wsteps = (w + 7) >> 3;
-        let hsteps = (h + 7) >> 3;
+        let wsteps = (w + mask) >> IMAGE_BLOCK_POWER;
+        let hsteps = (h + mask) >> IMAGE_BLOCK_POWER;
         let len = (wsteps * hsteps) as usize;
 
         let mut avg = vec![[0usize; 3]; len];
@@ -101,11 +101,12 @@ impl Binarize for RgbImage {
         // Calculate sum of 8x8 pixels for each block
         // Skip last few pixels which form fractional blocks. The last block will be computed later
         // Round w and h to skips these pixels
-        let (wr, hr) = (w & !0b111, h & !0b111);
+        let (wr, hr) = (w & !mask, h & !mask);
         for y in 0..hr {
-            let row_off = (y >> 3) * wsteps;
+            let row_off = (y >> IMAGE_BLOCK_POWER) * wsteps;
             for x in 0..wr {
-                let idx = (row_off + (x >> 3)) as usize;
+                let idx = (row_off + (x >> IMAGE_BLOCK_POWER)) as usize;
+
                 let px = self.get_pixel(x, y);
                 for c in 0..3 {
                     avg[idx][c] += px[c] as usize;
@@ -116,10 +117,10 @@ impl Binarize for RgbImage {
         }
 
         // Sum of 8x8 pixels for fractional blocks (if exists) on the right edge
-        if w & 0b111 != 0 {
+        if w & mask != 0 {
             for y in 0..hr {
-                let idx = (((y >> 3) + 1) * wsteps - 1) as usize;
-                for x in w - 8..w {
+                let idx = (((y >> IMAGE_BLOCK_POWER) + 1) * wsteps - 1) as usize;
+                for x in w - block_size..w {
                     let px = self.get_pixel(x, y);
                     for c in 0..3 {
                         avg[idx][c] += px[c] as usize;
@@ -131,11 +132,12 @@ impl Binarize for RgbImage {
         }
 
         // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom edge
-        if h & 0b111 != 0 {
+        if h & mask != 0 {
             let last_row = wsteps * (hsteps - 1);
-            for y in h - 8..h {
+            for y in h - block_size..h {
                 for x in 0..wr {
-                    let idx = (last_row + (x >> 3)) as usize;
+                    let idx = (last_row + (x >> IMAGE_BLOCK_POWER)) as usize;
+
                     let px = self.get_pixel(x, y);
                     for c in 0..3 {
                         avg[idx][c] += px[c] as usize;
@@ -147,9 +149,9 @@ impl Binarize for RgbImage {
         }
 
         // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom right corner
-        if w & 0b111 != 0 && h & 0b111 != 0 {
-            for y in h - 8..h {
-                for x in w - 8..w {
+        if w & mask != 0 && h & mask != 0 {
+            for y in h - block_size..h {
+                for x in w - block_size..w {
                     let px = self.get_pixel(x, y);
                     for c in 0..3 {
                         avg[len - 1][c] += px[c] as usize;
@@ -166,6 +168,7 @@ impl Binarize for RgbImage {
         // case take average of them.
         let wsteps = wsteps as usize;
         let hsteps = hsteps as usize;
+        let block_area_pow = 2 * IMAGE_BLOCK_POWER;
         for i in 0..len {
             let (mn, mx) = (min[i], max[i]);
             for c in 0..3 {
@@ -181,13 +184,15 @@ impl Binarize for RgbImage {
                     }
                 } else {
                     // Convert 8×8 sum to average (divide by 64)
-                    avg[i][c] >>= 6;
+                    avg[i][c] >>= block_area_pow;
                 }
             }
         }
 
         // Calculates threshold for blocks
-        let (maxx, maxy) = (wsteps - 2, hsteps - 2);
+        let half_grid = IMAGE_GRID_SIZE / 2;
+        let grid_area = IMAGE_GRID_SIZE * IMAGE_GRID_SIZE;
+        let (maxx, maxy) = (wsteps - half_grid, hsteps - half_grid);
         let mut threshold = vec![[0u8; 3]; wsteps * hsteps];
 
         for y in 0..hsteps {
@@ -196,23 +201,23 @@ impl Binarize for RgbImage {
                 let i = row_off + x;
 
                 // If y is near any boundary then copy the threshold above
-                if y > 0 && (y <= 2 || y >= maxy) {
+                if y > 0 && (y <= half_grid || y >= maxy) {
                     threshold[i] = threshold[i - wsteps];
                     continue;
                 }
 
                 // If x is near any boundary then copy the left threshold
-                if x > 0 && (x <= 2 || x >= maxx) {
+                if x > 0 && (x <= half_grid || x >= maxx) {
                     threshold[i] = threshold[i - 1];
                     continue;
                 }
 
-                let cx = std::cmp::max(x, 2);
-                let cy = std::cmp::max(y, 2);
+                let cx = std::cmp::max(x, half_grid);
+                let cy = std::cmp::max(y, half_grid);
                 let mut sum = [0usize; 3];
-                for ny in cy - 2..=cy + 2 {
+                for ny in cy - half_grid..=cy + half_grid {
                     let ni = ny * wsteps + cx;
-                    for a in &avg[ni - 2..=ni + 2] {
+                    for a in &avg[ni - half_grid..=ni + half_grid] {
                         for c in 0..3 {
                             sum[c] += a[c];
                         }
@@ -220,23 +225,22 @@ impl Binarize for RgbImage {
                 }
 
                 for (c, t) in threshold[i].iter_mut().enumerate() {
-                    *t = (sum[c] / 25) as u8;
+                    *t = (sum[c] / grid_area) as u8;
                 }
             }
         }
 
         // Initially mark all pixels as unvisited; will be used for flood fill later.
         let mut res = vec![Pixel::Unvisited(Color::Black); (w * h) as usize];
-
         for y in 0..h {
             let row_off = y * w;
-            let thresh_row_off = (y as usize >> 3) * wsteps;
+            let thresh_row_off = (y as usize >> IMAGE_BLOCK_POWER) * wsteps;
             for x in 0..w {
                 let p = self.get_pixel(x, y);
 
                 let idx = (row_off + x) as usize;
 
-                let xsteps = x as usize >> 3;
+                let xsteps = x as usize >> IMAGE_BLOCK_POWER;
                 let thresh_idx = thresh_row_off + xsteps;
 
                 let mut color = Color::Black;
@@ -252,7 +256,6 @@ impl Binarize for RgbImage {
                 }
             }
         }
-
         res
     }
 }
@@ -260,9 +263,11 @@ impl Binarize for RgbImage {
 impl Binarize for GrayImage {
     fn binarize(&self) -> Vec<Pixel> {
         let (w, h) = self.dimensions();
+        let block_size = 1 << IMAGE_BLOCK_POWER;
+        let mask = (1 << IMAGE_BLOCK_POWER) - 1;
 
-        let wsteps = (w + 7) >> 3;
-        let hsteps = (h + 7) >> 3;
+        let wsteps = (w + mask) >> IMAGE_BLOCK_POWER;
+        let hsteps = (h + mask) >> IMAGE_BLOCK_POWER;
         let len = (wsteps * hsteps) as usize;
 
         // Calculates block average
@@ -272,12 +277,11 @@ impl Binarize for GrayImage {
         // Divide image into blocks of 8x8 pixels and calculate sum of values for each block.
         // Skip last few pixels which form fractional blocks. The last block will be computed later
         // Round w and h to skips these pixels
-        let (wr, hr) = (w & !0b111, h & !0b111);
+        let (wr, hr) = (w & !mask, h & !mask);
         for y in 0..hr {
-            let row_off = (y >> 3) * wsteps;
+            let row_off = (y >> IMAGE_BLOCK_POWER) * wsteps;
             for x in 0..wr {
-                let xsteps = x >> 3;
-                let idx = (row_off + xsteps) as usize;
+                let idx = (row_off + (x >> IMAGE_BLOCK_POWER)) as usize;
 
                 let p = self.get_pixel(x, y)[0];
                 avg[idx] += p as usize;
@@ -287,10 +291,10 @@ impl Binarize for GrayImage {
         }
 
         // Sum of 8x8 pixels for fractional blocks (if exists) on the right edge
-        if w & 0b111 != 0 {
+        if w & mask != 0 {
             for y in 0..hr {
-                let idx = (((y >> 3) + 1) * wsteps - 1) as usize;
-                for x in w - 8..w {
+                let idx = (((y >> IMAGE_BLOCK_POWER) + 1) * wsteps - 1) as usize;
+                for x in w - block_size..w {
                     let p = self.get_pixel(x, y)[0];
 
                     avg[idx] += p as usize;
@@ -301,12 +305,11 @@ impl Binarize for GrayImage {
         }
 
         // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom edge
-        if h & 0b111 != 0 {
+        if h & mask != 0 {
             let last_row = wsteps * (hsteps - 1);
-            for y in h - 8..h {
+            for y in h - block_size..h {
                 for x in 0..wr {
-                    let xsteps = x >> 3;
-                    let idx = (last_row + xsteps) as usize;
+                    let idx = (last_row + (x >> IMAGE_BLOCK_POWER)) as usize;
 
                     let p = self.get_pixel(x, y)[0];
                     avg[idx] += p as usize;
@@ -317,11 +320,10 @@ impl Binarize for GrayImage {
         }
 
         // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom right corner
-        if w & 0b111 != 0 && h & 0b111 != 0 {
-            for y in h - 8..h {
-                for x in w - 8..w {
+        if w & mask != 0 && h & mask != 0 {
+            for y in h - block_size..h {
+                for x in w - block_size..w {
                     let p = self.get_pixel(x, y)[0];
-
                     avg[len - 1] += p as usize;
                     min_max[len - 1].0 = std::cmp::min(min_max[len - 1].0, p);
                     min_max[len - 1].1 = std::cmp::max(min_max[len - 1].1, p);
@@ -335,6 +337,7 @@ impl Binarize for GrayImage {
         // case take average of them.
         let wsteps = wsteps as usize;
         let hsteps = hsteps as usize;
+        let block_area_pow = 2 * IMAGE_BLOCK_POWER;
         for i in 0..len {
             let (mn, mx) = min_max[i];
             if mx - mn <= 24 {
@@ -348,11 +351,13 @@ impl Binarize for GrayImage {
                 }
             } else {
                 // Convert 8×8 sum to average (divide by 64)
-                avg[i] >>= 6;
+                avg[i] >>= block_area_pow;
             }
         }
 
         // Calculates threshold for each block
+        let half_grid = IMAGE_GRID_SIZE / 2;
+        let grid_area = IMAGE_GRID_SIZE * IMAGE_GRID_SIZE;
         let (maxx, maxy) = (wsteps - 2, hsteps - 2);
         let mut threshold = vec![0u8; wsteps * hsteps];
 
@@ -362,26 +367,26 @@ impl Binarize for GrayImage {
                 let i = row_off + x;
 
                 // If y is near any boundary then copy the threshold above
-                if y > 0 && (y <= 2 || y >= maxy) {
+                if y > 0 && (y <= half_grid || y >= maxy) {
                     threshold[i] = threshold[i - wsteps];
                     continue;
                 }
 
                 // If x is near any boundary then copy the left threshold
-                if x > 0 && (x <= 2 || x >= maxx) {
+                if x > 0 && (x <= half_grid || x >= maxx) {
                     threshold[i] = threshold[i - 1];
                     continue;
                 }
 
-                let cx = std::cmp::max(x, 2);
-                let cy = std::cmp::max(y, 2);
+                let cx = std::cmp::max(x, half_grid);
+                let cy = std::cmp::max(y, half_grid);
                 let mut sum = 0usize;
-                for ny in cy - 2..=cy + 2 {
+                for ny in cy - half_grid..=cy + half_grid {
                     let ni = ny * wsteps + cx;
-                    sum += avg[ni - 2..=ni + 2].iter().sum::<usize>();
+                    sum += avg[ni - half_grid..=ni + half_grid].iter().sum::<usize>();
                 }
 
-                threshold[i] = (sum / 25) as u8;
+                threshold[i] = (sum / grid_area) as u8;
             }
         }
 
@@ -389,13 +394,13 @@ impl Binarize for GrayImage {
         let mut res = vec![Pixel::Unvisited(Color::White); (w * h) as usize];
         for y in 0..h {
             let row_off = y * w;
-            let thresh_row_off = (y as usize >> 3) * wsteps;
+            let thresh_row_off = (y as usize >> IMAGE_BLOCK_POWER) * wsteps;
             for x in 0..w {
                 let p = self.get_pixel(x, y)[0];
 
                 let idx = (row_off + x) as usize;
 
-                let xsteps = x as usize >> 3;
+                let xsteps = x as usize >> IMAGE_BLOCK_POWER;
                 let thresh_idx = thresh_row_off + xsteps;
 
                 if p <= threshold[thresh_idx] {
@@ -403,7 +408,6 @@ impl Binarize for GrayImage {
                 }
             }
         }
-
         res
     }
 }
@@ -549,7 +553,6 @@ impl BinaryImage {
             Pixel::Visited(id, _) => {
                 Some(self.regions.get_mut(id).expect("No region found for visited pixel"))
             }
-            _ => None,
         }
     }
 
@@ -611,3 +614,11 @@ impl BinaryImage {
         acc
     }
 }
+
+// Constants
+//------------------------------------------------------------------------------
+
+// Block size is 2^IMAGE_BLOCK_POWER
+const IMAGE_BLOCK_POWER: usize = 3;
+
+const IMAGE_GRID_SIZE: usize = 5;

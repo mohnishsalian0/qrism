@@ -16,24 +16,24 @@ use qrism::{MaskPattern, QRBuilder};
 use rqrr::PreparedImage;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let data = "Well, hello there!";
-    let ver = Version::Normal(1); // Size
-    let ecl = ECLevel::L; // Error correction level
-    let pal = Palette::Mono; // Color scheme: Monochromatic (traditional qr) or Polychromatic
-    let mask = MaskPattern::new(5); // Mask pattern
+    // let data = "Well, hello there!";
+    // let ver = Version::Normal(1); // Size
+    // let ecl = ECLevel::L; // Error correction level
+    // let pal = Palette::Mono; // Color scheme: Monochromatic (traditional qr) or Polychromatic
+    // let mask = MaskPattern::new(5); // Mask pattern
 
     // QR Builder
-    let qrb = QRBuilder::new(data.as_bytes())
-        // .version(ver) // if not provided, finds smallest version to fit the data
-        .ec_level(ecl)
-        .palette(pal)
-        // .mask(mask) // If not provided, finds best mask based on score
-        .build()
-        .unwrap();
+    // let qrb = QRBuilder::new(data.as_bytes())
+    //     // .version(ver) // if not provided, finds smallest version to fit the data
+    //     .ec_level(ecl)
+    //     .palette(pal)
+    //     // .mask(mask) // If not provided, finds best mask based on score
+    //     .build()
+    //     .unwrap();
 
-    let img = qrb.to_image(3);
-    let path = Path::new("D:/Rust/images/test10.png");
-    img.save(path).unwrap();
+    // let img = qrb.to_image(3);
+    // let path = Path::new("D:/Rust/images/test10.png");
+    // img.save(path).unwrap();
 
     // QR Reader
     // let path = Path::new("assets/test7.png");
@@ -43,13 +43,25 @@ fn main() -> Result<(), Box<dyn Error>> {
     // println!("{msg}");
 
     // RQRR
-    let path = Path::new("assets/inp.png");
+    // let path = std::path::Path::new("benches/dataset/detection/monitor/image001.jpg");
+    // let img = image::open(path).unwrap().to_luma8();
+    // let mut img = PreparedImage::prepare(img);
+    // let grids = img.detect_grids();
+    // assert!(!grids.is_empty());
+    // let msg = grids[0].decode().unwrap();
+    // println!("Message: {msg:?}");
+
+    use imageproc::distance_transform::Norm;
+    use imageproc::morphology::{close, open};
+
+    // Fill white noise in black regions
+    let path = std::path::Path::new("assets/inp.png");
     let img = image::open(path).unwrap().to_luma8();
-    let mut img = PreparedImage::prepare(img);
-    let grids = img.detect_grids();
-    assert!(!grids.is_empty());
-    let msg = grids[0].decode().unwrap();
-    println!("Message: {msg:?}");
+    let closed = close(&img, Norm::L1, 1);
+
+    // Optionally remove white specks after
+    let cleaned = open(&closed, Norm::L1, 1);
+    cleaned.save("assets/cleaned.png").expect("Failed to save image");
 
     Ok(())
 }

@@ -64,9 +64,6 @@ mod qr_proptests {
 
 #[cfg(test)]
 mod qr_tests {
-    use std::time::Instant;
-
-    use image::imageops;
     use test_case::test_case;
 
     use qrism::{reader::binarize::BinaryImage, ECLevel, Palette, QRBuilder, QRReader, Version};
@@ -150,8 +147,21 @@ mod qr_tests {
         let qr =
             QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-        let path = std::path::Path::new("assets/built.png");
-        qr.save(path).unwrap();
+        let mut img = BinaryImage::prepare_rgb(&qr);
+        let mut symbols = QRReader::detect(&mut img);
+        let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
+
+        assert_eq!(data, decoded);
+    }
+
+    #[test]
+    fn test_qr_3() {
+        let data = "*0FK+/Y.3%.-Q*/+$.D:T++$.E*$%% $* 3GK *UMY+LY/7B* % P *4+%Q$$*B1MB *  *+*AU% 8Q$+Q8O*:S3J%+H++/6$/0*H+++ /*$O+::+$V/+%7M8/T1B $-+77$+2--:$ZP*.G33:$:*:*$ $*%++ *5+*$3%%*% *M%% %T *V %C%0UD%+.++3* SN$**QF*.+*QE50  :4O /T$/*%8%*  5  OS:$+*/1FAG.C %XS7VV+00ZR$*L*$$*:*TE *+ *W%4J$*.3*O$0+6$+3$-+%- *$ 0+T9-$.HET$%S S8LRV$%+LGQ*$.:ZU*+:4L$C  6K+ +/NB: *+ I/.%%%%7J%+*D$O.% C XF2 9/*UY:.*O/ $MAX:1 2Z2716W+Q++%.  D $9-%/+0V%.D M$..D$LB35K5 9YC%+C E +SIH$* K.*+%+S+6. $6  +$Z %J*%% + 4$*%J$+$..HA /S %$GE+A 8 4T+88$L*% O0B$A+%IO26Z+ U/*/Q*:4 :  5/$1+ H4$*V%HV%62*%+-6$+9C.$$  +*+7 :4%$:0J+C+.HU3$ 7*+$*/1GN QFF4*I*:%.N1*4Z%320$5%VBY :%+ 1J-N1 B8%D*X/Z**A.2Z8GB. %L+3U%2+%*9 *%TB+O$*:% :6V% %*RW *6*Y*J*AD2:R0-%-*C *$6% $:%KT%-*/L  %*$ 5$* %*FVXQSM8*:ZG*$%%$+:/%+C$ 2/L-TS%*6*X1$U+/%- LJP/:W4/$BB+8K%%%:+%O65/: V8+9$W OT .*QE I+/1C/+%+N+ZX2+6$.9$/%K$J91$+ +9$%/V+%+* P +%*: +*. $B +K84 . $A / :Y JRKZ DQM$5*S  1%0%%X%TJ6*Q P*%1:2:%%%*K* *:++%V$%*:K%$$*ER:/$2FY* *5 9X$% %%$%I$L/+$ *8Q  /%:+OB 7$00U$$$%$%$$  6:U4K%/ WK.+4 : *%$ +* .2++*%$6$A*  4$A: W  %:$D/+$A-7 6L:2 +*0 .Y 7%Q $*$C5 .0*%*-$.  B$ -  %%BS:+*4$+**+2J%+U  %9WV $W %*N1++* *$$O%/.*/W*-U $Q-%Y+9U7*+% XX$SJ 8N6:++C/.OHT*5.*$/*:-S*%8Q/-* 2 % +Y8+**%6% %J..A:U/$%ROPHM:P3P*$ $X*/ +ZAF * *J.7$$H32/$*D%P.$:0% $T25/$XACQ8$92ZA*T. NP$ 9Q$4/BO*%PZ*3$* O 1..+ $F*WFDIT-*%F   19908$%%*.*   7%45: $4$*%%4G8$N %4:*: *O*C $+.Y0$$% K Q0%%%: %0%P+% +Q$ +$/*$  A+28+*3:Y*T* *./UP7+++KO +  Y 2UX%75%%%$N/1 E*X **%%B%$4 J5: G$* +P T+/ :T  KI*/*03O.*.  +*C%/ .%*D- -+   EB.YB$TV8 %8S7E .+%%K%%+B$Q3 68E+2C/+-$%5%*$$F D*6X*$ P%5 S% /+H9 $.$$*$E+*I DN6*5W/5E**%$*S- +% X4.X$Q-8*.+O%9.++3 +3**5/T.$:++%3XF*U:8T*3M % $.%V**$A*$**%$5721+89 GZ $6*$X$5MSN*%+Z% H4A%$%$:* $M++Q++K1*J29LA7%L+..0:   +1GGI+%%  Y$6*$* 0 :% QRS+Z$ %$4-*S0:  6$ /I%FVFRIF:* EG /6%2%% *A$XA*3*/ /8*W%M W $BL $ T4G/%*P-X10/*+/+%$*.5.A 5 Q*. 13.W +A+F ** IM.M R3  $I+-VT 4 %$%-+  +:+ P%LA++2+$%$A8+L$** /91  EF*$%$+$%G T3 **N+9BDA+  .*H%M.$G*I$+  5*L: .*5/*6% $*DE F2U+ $2*3-U*H/F4MFBB-$0P$  9M9Y8PHA%8 Y8*Z:: +%+** %%.+  2H2D3%PJ*Y%: .$E**N$/X**7*$$/%/+7**$1L:L:W2 /2P PM$S*+6$. $+ ***K%S::W:: % F *M6+** 9$94$ +K %$*/J*+L+$K$$$P2E64TJO 9O%*Z2/  8 - : %+.R1$3 +N 7+5%8.*$+5%8+* /O1  /:7V/W$+T2  X%S-+  $IE+**.WO %%*3 G +:%%OKO6$ 26$+F.$%%.A$6G %%*$%K++$ E*6* W $9 Q$+F8% *Z +$$9/.*$8%+ADEFQYU%$I U$$%$I++N$4 0*$:*%+%  L3  W$U 9% XR*BB+$".to_string();
+        let ecl = ECLevel::H;
+        let pal = Palette::Poly;
+
+        let qr =
+            QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
         let mut img = BinaryImage::prepare_rgb(&qr);
         let mut symbols = QRReader::detect(&mut img);
@@ -161,132 +171,21 @@ mod qr_tests {
     }
 
     #[test]
-    #[ignore]
-    fn test_qr_detection() {
-        use std::io::Write;
+    fn test_qr_4() {
+        let data = "585627067124432801036103098250466587082098029070289300241937719552437691575758733990547740427060786150911824925218003093789713212340411443393453215736157098813647870370509699666994642172773053091686025211301162247120566590041376085629647328730765988396689756357154425367242929221144994350535936221971939862436426382195503314392694830527873017681509101063367239953387016735772250128493546221677430709324753049832805787576927081397983420929208781413727502534110683825359131552802354813122716205595937448260030931653748316829394915867465670210517662573074777412441734453277711863202037758141390937485469501821225579494064439085907172027191340811777551424268728445718136306108402432567238996727775132716127240779175063531852394713818093707330300955495233249170660080756396523604545527328928195380162726259100822815594225239691049083204542665311151952515630445918551258222995302755008018593184200107470441720219199158988429795069275279042168214162459235148763271872680724594555599146074347024055268560549240864096855985858687549424188464728754234506826883995610401307977214772508022291788532304307729364126297258902907158750269554024753572118965890761497045194839854960544561556625280899085580947630085874600874209662749852830163793054862534236587544555353618781309788942121079535132463075630530068641084725536491919282641198144657547101028410410474490649931208989584229601468833705028509118635595372780151790414330642".to_string();
+        let ecl = ECLevel::H;
+        let pal = Palette::Poly;
 
-        let file_counts = [20, 36, 42, 48, 19, 15]; // Count of qrs in 6 folders
-        let total = file_counts.iter().sum::<u32>();
-        let mut passed_table = vec![[0; 4]; file_counts.len()];
-        let mut bench_table = vec![[0; 4]; file_counts.len()];
-        let mut out_file = std::fs::File::create("tests/images/result1.txt").unwrap();
+        let qr =
+            QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-        for (i, file_count) in file_counts.iter().enumerate() {
-            let folder_id = i + 1;
+        let path = std::path::Path::new("assets/built.png");
+        qr.save(path).unwrap();
 
-            for qr_id in 1..=*file_count {
-                let img_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.png");
-                let img_path = std::path::Path::new(&img_path_str);
-                let img = image::open(img_path).unwrap().to_luma8();
+        let mut img = BinaryImage::prepare_rgb(&qr);
+        let mut symbols = QRReader::detect(&mut img);
+        let (_meta, decoded) = symbols[0].decode().unwrap();
 
-                for (j, angle) in [0, 90, 180, 270].iter().enumerate() {
-                    let img = match angle {
-                        90 => imageops::rotate90(&img),
-                        180 => imageops::rotate180(&img),
-                        270 => imageops::rotate270(&img),
-                        _ => img.clone(),
-                    };
-
-                    write!(out_file, "[{}-{}-{}] ", folder_id, qr_id, angle).unwrap();
-
-                    let start = Instant::now();
-                    let mut img = BinaryImage::prepare(&img);
-                    let mut symbols = QRReader::detect(&mut img);
-
-                    if symbols.is_empty() {
-                        write!(out_file, "QR not found").unwrap();
-                        continue;
-                    }
-
-                    match symbols[0].decode() {
-                        Ok((_meta, msg)) => {
-                            let elapsed = start.elapsed();
-                            bench_table[i][j] += elapsed.as_millis();
-
-                            let msg = msg.replace("\r\n", "\n");
-                            let exp_msg_path_str =
-                                format!("tests/images/qrcode-{folder_id}/{qr_id}.txt");
-                            let exp_msg_path = std::path::Path::new(&exp_msg_path_str);
-                            let exp_msg = std::fs::read_to_string(exp_msg_path).unwrap();
-                            let exp_msg = exp_msg.replace("\r\n", "\n");
-
-                            if msg == exp_msg {
-                                passed_table[i][j] += 1;
-                                write!(out_file, "PASSED").unwrap();
-                            } else {
-                                write!(out_file, "DECODED").unwrap();
-                            };
-                        }
-                        Err(e) => {
-                            write!(out_file, "{}", e).unwrap();
-                            continue;
-                        }
-                    }
-                }
-                writeln!(out_file).unwrap();
-            }
-        }
-
-        // Print results table
-        println!("Result for {} test images:", total * 4);
-        println!("=============================================================");
-        println!("|Folder   |0        |90       |180      |270      |Total    |");
-        println!("=============================================================");
-        let mut passed_per_angle = [0; 4];
-        let mut passed_per_folder = vec![0; file_counts.len()];
-        for (i, row) in passed_table.iter().enumerate() {
-            let mut line = format!("|{:<9}|", i + 1).to_string();
-            for (j, p) in row.iter().enumerate() {
-                line.push_str(&format!("{p:<9}|"));
-                passed_per_folder[i] += p;
-                passed_per_angle[j] += p;
-            }
-            line.push_str(&format!("{:<9}|", passed_per_folder[i]));
-            println!("{line}");
-        }
-        println!("=============================================================");
-        let mut line = "|Total    |".to_string();
-        for p in passed_per_angle {
-            line.push_str(&format!("{p:<9}|"));
-        }
-        let total_passed = passed_per_angle.iter().sum::<u32>();
-        line.push_str(&format!("{total_passed:<9}|"));
-        println!("{line}");
-        println!("=============================================================");
-        println!();
-
-        // Print bench table
-        println!("Benchmark for {} test images:", total * 4);
-        println!("=============================================================");
-        println!("|Folder   |0        |90       |180      |270      |Average  |");
-        println!("=============================================================");
-        let mut time_per_angle = [0; 4];
-        let mut time_per_folder = vec![0; file_counts.len()];
-        for (i, row) in bench_table.iter().enumerate() {
-            let mut line = format!("|{:<9}|", i + 1).to_string();
-            for (j, t) in row.iter().enumerate() {
-                let avg_t = t / passed_table[i][j] as u128;
-                line.push_str(&format!("{avg_t:<9}|"));
-                // line.push_str(&format!("{t:<9}|"));
-                time_per_folder[i] += t;
-                time_per_angle[j] += t;
-            }
-            let avg_folder = time_per_folder[i] / passed_per_folder[i] as u128;
-            line.push_str(&format!("{:<9}|", avg_folder));
-            // line.push_str(&format!("{:<9}|", time_per_folder[i]));
-            println!("{line}");
-        }
-        println!("=============================================================");
-        let mut line = "|Total    |".to_string();
-        for (i, p) in time_per_angle.iter().enumerate() {
-            let avg_angle = p / passed_per_angle[i] as u128;
-            line.push_str(&format!("{:<9}|", avg_angle));
-            // line.push_str(&format!("{:<9}|", p));
-        }
-        let overall_avg_time = time_per_angle.iter().sum::<u128>() / total_passed as u128;
-        // let overall_avg_time = time_per_angle.iter().sum::<u128>();
-        line.push_str(&format!("{:<9}|", overall_avg_time));
-        println!("{line}");
-        println!("=============================================================");
+        assert_eq!(data, decoded);
     }
 }

@@ -4,12 +4,9 @@ mod symbol;
 mod utils;
 
 use finder::{group_finders, locate_finders, FinderGroup};
-use image::{
-    imageops::{resize, FilterType},
-    GrayImage, ImageBuffer, Pixel as ImgPixel,
-};
+use image::GrayImage;
 
-use crate::{ec::Block, utils::QRResult};
+use crate::ec::Block;
 use binarize::BinaryImage;
 use symbol::{Symbol, SymbolLocation};
 
@@ -23,8 +20,7 @@ impl QRReader {
     }
 
     #[cfg(feature = "benchmark")]
-    pub fn get_corners(img: GrayImage) -> QRResult<Vec<[f64; 8]>> {
-        let img = downscale(img);
+    pub fn get_corners(img: GrayImage) -> Vec<[f64; 8]> {
         let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
@@ -34,34 +30,28 @@ impl QRReader {
         for sym in symbols {
             let sz = sym.ver.width() as f64;
 
-            let bl = sym.raw_map(0.0, sz)?;
-            let tl = sym.raw_map(0.0, 0.0)?;
-            let tr = sym.raw_map(sz, 0.0)?;
-            let br = sym.raw_map(sz, sz)?;
+            let bl = match sym.raw_map(0.0, sz) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let tl = match sym.raw_map(0.0, 0.0) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let tr = match sym.raw_map(sz, 0.0) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let br = match sym.raw_map(sz, sz) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+
             symbol_corners.push([bl.0, bl.1, tl.0, tl.1, tr.0, tr.1, br.0, br.1])
         }
 
-        Ok(symbol_corners)
+        symbol_corners
     }
-}
-
-// Downscales image if bigger than 1000px x 1000px
-fn downscale<I>(img: ImageBuffer<I, Vec<I::Subpixel>>) -> ImageBuffer<I, Vec<I::Subpixel>>
-where
-    I: ImgPixel<Subpixel = u8> + 'static,
-{
-    let (max_w, max_h) = (1000, 1000);
-    let (w, h) = img.dimensions();
-
-    if w <= max_w && h <= max_h {
-        return img;
-    }
-
-    let scale = f32::min(max_w as f32 / w as f32, max_h as f32 / h as f32);
-    let new_w = (w as f32 * scale).round() as u32;
-    let new_h = (h as f32 * scale).round() as u32;
-
-    resize(&img, new_w, new_h, FilterType::Triangle)
 }
 
 fn detect(img: &mut BinaryImage) -> Vec<Symbol> {
@@ -113,19 +103,12 @@ fn deinterleave(data: &[u8], blk_info: (usize, usize, usize, usize), ec_len: usi
 #[cfg(test)]
 mod reader_tests {
 
-    use std::path::Path;
-
-    use image::{
-        imageops::{resize, FilterType},
-        open, GrayImage, ImageBuffer, Pixel,
-    };
-
     use super::QRReader;
 
     use crate::{
         builder::QRBuilder,
         metadata::{ECLevel, Palette, Version},
-        reader::{binarize::BinaryImage, deinterleave, detect},
+        reader::{binarize::BinaryImage, deinterleave},
         utils::BitStream,
         MaskPattern,
     };
@@ -199,55 +182,11 @@ mod reader_tests {
     #[test]
     #[ignore]
     fn decode_debugger() {
-        let (folder_id, qr_id) = (4, 11);
-
-        let qr_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.png");
-        let qr_path = std::path::Path::new(&qr_path_str);
-        let img = image::open(qr_path).unwrap().to_luma8();
+        let inp_path = std::path::Path::new("benches/dataset/detection/rotations/image001.jpg");
+        let img = image::open(&inp_path).unwrap().to_luma8();
         let mut img = BinaryImage::prepare(&img);
         let mut symbols = QRReader::detect(&mut img);
         let (_meta, msg) = symbols[0].decode().expect("Failed to read QR");
-        let msg = msg.replace("\r\n", "\n");
-
-        let msg_path_str = format!("tests/images/qrcode-{folder_id}/{qr_id}.txt");
-        let msg_path = std::path::Path::new(&msg_path_str);
-        let exp_msg = std::fs::read_to_string(msg_path).unwrap();
-        let exp_msg = exp_msg.replace("\r\n", "\n");
-
-        assert_eq!(msg, exp_msg);
-    }
-
-    fn load_grayscale<P: AsRef<Path>>(path: P) -> Option<GrayImage> {
-        match open(&path) {
-            Ok(img) => {
-                let gray = img.to_luma8();
-                let downscaled = downscale(gray);
-                Some(downscaled)
-            }
-            Err(e) => {
-                eprintln!("Failed to open {}: {}", path.as_ref().display(), e);
-                None
-            }
-        }
-    }
-
-    // Downscales image if bigger than 1000px x 1000px
-    fn downscale<I>(img: ImageBuffer<I, Vec<I::Subpixel>>) -> ImageBuffer<I, Vec<I::Subpixel>>
-    where
-        I: Pixel<Subpixel = u8> + 'static,
-    {
-        let (max_w, max_h) = (2000, 2000);
-        let (w, h) = img.dimensions();
-
-        if w <= max_w && h <= max_h {
-            return img;
-        }
-
-        let scale = f32::min(max_w as f32 / w as f32, max_h as f32 / h as f32);
-        let new_w = (w as f32 * scale).round() as u32;
-        let new_h = (h as f32 * scale).round() as u32;
-
-        resize(&img, new_w, new_h, FilterType::Triangle)
     }
 
     #[test]
@@ -257,31 +196,27 @@ mod reader_tests {
         use super::{binarize::BinaryImage, finder::locate_finders, locate_symbols, QRReader};
         #[allow(unused_imports)]
         use crate::reader::{
+            detect,
             finder::group_finders,
             utils::geometry::{BresenhamLine, Line, X, Y},
         };
 
-        // let inp = "benches/dataset/detection/lots/image002.jpg".to_string();
-        let inp = "assets/inp.png".to_string();
-        let img = image::open(inp).unwrap().to_luma8();
-        // let img = load_grayscale(inp).unwrap();
-        // img.save(Path::new("assets/inp.img"));
+        let inp_path = std::path::Path::new("benches/dataset/detection/close/image008.jpg");
+        // let inp_path = std::path::Path::new("assets/cleaned.png");
+        let img = image::open(inp_path).unwrap().to_luma8();
         let mut bin_img = BinaryImage::prepare(&img);
-        let path = std::path::Path::new("assets/inp.png");
-        bin_img.save(path).unwrap();
+        bin_img.save(std::path::Path::new("assets/inp.png")).unwrap();
 
-        let mut out_img = image::open(path).unwrap().to_rgb8();
+        let mut out_img = image::open(inp_path).unwrap().to_rgb8();
 
-        let finders = locate_finders(&mut bin_img);
+        // let finders = locate_finders(&mut bin_img);
         // finders.iter().for_each(|f| f.highlight(&mut out_img));
 
-        let groups = group_finders(&bin_img, &finders);
-        groups.iter().for_each(|g| g.highlight(&mut out_img));
+        // let groups = group_finders(&bin_img, &finders);
+        // groups.iter().for_each(|g| g.highlight(&mut out_img));
 
-        // let symbols = locate_symbols(&mut bin_img, groups);
-        //
-        // let symbols = detect(&mut bin_img);
-        // symbols[0].highlight(&mut out_img);
+        let symbols = detect(&mut bin_img);
+        symbols.iter().for_each(|s| s.highlight(&mut out_img));
 
         let out = std::path::Path::new("assets/out.png");
         out_img.save(out).unwrap();

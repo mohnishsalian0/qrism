@@ -32,7 +32,7 @@ mod reader {
     }
 
     fn take_header(inp: &mut BitStream, ver: Version) -> QRResult<(Mode, usize)> {
-        let mode_bits = inp.take_bits(4).ok_or(QRError::CorruptDataSegment)?;
+        let mode_bits = inp.take_bits(4).unwrap_or(0);
 
         let mode = match mode_bits {
             0 => Mode::Terminator,
