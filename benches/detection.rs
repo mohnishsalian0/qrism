@@ -1,4 +1,4 @@
-use rayon::{prelude::*, ThreadPoolBuilder};
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -56,7 +56,7 @@ fn test_get_corners() {
     println!("Recall: {}", recall);
 }
 
-fn benchmark(dataset_dir: &Path, rows: &[&str], cols: &[&str]) {
+fn benchmark(dataset_dir: &Path) {
     let image_paths: Vec<_> = WalkDir::new(dataset_dir)
         .into_iter()
         .filter_map(Result::ok)
@@ -68,8 +68,8 @@ fn benchmark(dataset_dir: &Path, rows: &[&str], cols: &[&str]) {
     let runtimes = Arc::new(Mutex::new(HashMap::<String, Vec<u128>>::new()));
 
     image_paths.par_iter().for_each(|img_path| {
+        let path_str = img_path.to_str().unwrap();
         let parent = get_parent(img_path);
-        println!("Reading {:?}...", img_path);
 
         let exp_path = img_path.with_extension("txt");
         let exp_symbols = parse_expected_bounds_result(&exp_path);
@@ -91,12 +91,14 @@ fn benchmark(dataset_dir: &Path, rows: &[&str], cols: &[&str]) {
                 }) {
                     true_pos += 1;
                     matched = true;
+                    println!("\x1b[1;32m[PASS]\x1b[0m {}", path_str);
                     break;
                 }
                 corners.rotate_left(2);
             }
             if !matched {
                 false_pos += 1;
+                println!("\x1b[1;31m[FAIL]\x1b[0m {}", path_str);
             }
         }
 
@@ -156,32 +158,8 @@ fn benchmark(dataset_dir: &Path, rows: &[&str], cols: &[&str]) {
 
     results.insert("total".to_string(), total);
 
-    print_table(&results, rows, cols);
-}
-
-fn main() {
-    ThreadPoolBuilder::new().num_threads(8).build_global().unwrap();
-
-    let dataset_dir = std::path::Path::new("benches/dataset/detection");
-    let rows = [
-        "blurred",
-        "bright_spots",
-        "brightness",
-        "close",
-        "curved",
-        "damaged",
-        "glare",
-        "high_version",
-        "lots",
-        "monitor",
-        "nominal",
-        "noncompliant",
-        "pathological",
-        "perspective",
-        "rotations",
-        "shadows",
-        "total",
-    ];
+    let mut rows = results.keys().map(|s| s.as_str()).collect::<Vec<_>>();
+    rows.sort_unstable();
     let cols = [
         "Heurictics",
         "true_pos",
@@ -193,8 +171,14 @@ fn main() {
         "median_time",
     ];
 
+    print_table(&results, &rows, &cols);
+}
+
+fn main() {
+    let dataset_dir = std::path::Path::new("benches/dataset/detection");
+
     let start = Instant::now();
     // test_get_corners();
-    benchmark(dataset_dir, &rows, &cols);
+    benchmark(dataset_dir);
     println!("time elapsed: {:?}", start.elapsed());
 }

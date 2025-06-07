@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use image::{GenericImageView, Pixel as ImgPixel, Rgb, RgbImage};
+use image::{GenericImageView, Luma, Pixel as ImgPixel, Rgb, RgbImage};
 
 use crate::metadata::Color;
 
@@ -54,19 +54,10 @@ pub struct Region {
     pub is_finder: bool,
 }
 
-// Binarize trait for rgb & grayscale image
-// Steps:
-// 1. Divides image into blocks of 8x8 pixels. Note: For the last fractional block is, the
-//    last 8 pixels are considered. So few pixels might overlap with last 2 blocks
-// 2. Calculates average of each block
-// 3. Calculates the threshold for each block by averaging 5x5 block around the current block if
-//    the block is near an edge or a corner, the window is shifted accordingly.
-// 4. Sets pixel value as false if less than or equal to threshold, else true
-// Note: If the pixel value is equal to threshold, it is set as false for the edge case when
-// threshold is 0 in which case the pixel should be false/black
+// Block stats
 //------------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct Stat {
     avg: usize,
     min: u8,
@@ -85,6 +76,26 @@ impl Stat {
     }
 }
 
+// Binarize trait for pixel type in image crate
+//------------------------------------------------------------------------------
+
+pub trait Binarize {
+    fn binarize(value: u8) -> Color;
+}
+
+impl Binarize for Rgb<u8> {
+    fn binarize(value: u8) -> Color {
+        Color::try_from(value).unwrap()
+    }
+}
+
+impl Binarize for Luma<u8> {
+    fn binarize(value: u8) -> Color {
+        let value = value != 0;
+        Color::from(value)
+    }
+}
+
 // Image type for reader
 //------------------------------------------------------------------------------
 
@@ -97,10 +108,19 @@ pub struct BinaryImage {
 }
 
 impl BinaryImage {
+    // Steps:
+    // 1. Divides image into blocks of 8x8 pixels. Note: For the last fractional block is, the
+    //    last 8 pixels are considered. So few pixels might overlap with last 2 blocks
+    // 2. Calculates average of each block
+    // 3. Calculates the threshold for each block by averaging 5x5 block around the current block if
+    //    the block is near an edge or a corner, the window is shifted accordingly.
+    // 4. Sets pixel value as false if less than or equal to threshold, else true
+    // Note: If the pixel value is equal to threshold, it is set as false for the edge case when
+    // threshold is 0 in which case the pixel should be false/black
     pub fn binarize<I>(img: &I) -> Self
     where
         I: GenericImageView,
-        I::Pixel: ImgPixel<Subpixel = u8>,
+        I::Pixel: ImgPixel<Subpixel = u8> + Binarize,
     {
         let (w, h) = img.dimensions();
         let chan_count = I::Pixel::CHANNEL_COUNT as usize;
@@ -112,7 +132,7 @@ impl BinaryImage {
         let hsteps = (h + mask) >> block_pow;
         let len = (wsteps * hsteps) as usize;
 
-        let mut stats = vec![vec![Stat::new(); chan_count]; len];
+        let mut stats = vec![[Stat::new(); 4]; len];
 
         // Calculate sum of 8x8 pixels for each block
         // Skip last few pixels which form fractional blocks. The last block will be computed later
@@ -202,7 +222,7 @@ impl BinaryImage {
         let half_grid = IMAGE_GRID_SIZE / 2;
         let grid_area = IMAGE_GRID_SIZE * IMAGE_GRID_SIZE;
         let (maxx, maxy) = (wsteps - half_grid, hsteps - half_grid);
-        let mut threshold = vec![vec![0u8; chan_count]; wsteps * hsteps];
+        let mut threshold = vec![[0u8; 4]; wsteps * hsteps];
 
         for y in 0..hsteps {
             let row_off = y * wsteps;
@@ -211,29 +231,29 @@ impl BinaryImage {
 
                 // If y is near any boundary then copy the threshold above
                 if y > 0 && (y <= half_grid || y >= maxy) {
-                    threshold[i] = threshold[i - wsteps].clone();
+                    threshold[i] = threshold[i - wsteps];
                     continue;
                 }
 
                 // If x is near any boundary then copy the left threshold
                 if x > 0 && (x <= half_grid || x >= maxx) {
-                    threshold[i] = threshold[i - 1].clone();
+                    threshold[i] = threshold[i - 1];
                     continue;
                 }
 
                 let cx = std::cmp::max(x, half_grid);
                 let cy = std::cmp::max(y, half_grid);
-                let mut sum = vec![0usize; chan_count];
+                let mut sum = [0usize; 4];
                 for ny in cy - half_grid..=cy + half_grid {
                     let ni = ny * wsteps + cx;
                     for px_stat in &stats[ni - half_grid..=ni + half_grid] {
-                        for (i, chan_stat) in px_stat.iter().enumerate() {
+                        for (i, chan_stat) in px_stat.iter().take(chan_count).enumerate() {
                             sum[i] += chan_stat.avg;
                         }
                     }
                 }
 
-                for (c, t) in threshold[i].iter_mut().enumerate() {
+                for (c, t) in threshold[i].iter_mut().take(chan_count).enumerate() {
                     *t = (sum[c] / grid_area) as u8;
                 }
             }
@@ -248,19 +268,17 @@ impl BinaryImage {
                 let p = img.get_pixel(x, y);
 
                 let idx = (row_off + x) as usize;
-
                 let xsteps = x as usize >> block_pow;
                 let thresh_idx = thresh_row_off + xsteps;
 
-                let white = &vec![255; chan_count];
-                let mut np = *<I::Pixel>::from_slice(white);
-                for (i, &val) in p.channels().iter().enumerate() {
-                    if val <= threshold[thresh_idx][i] {
-                        np.channels_mut()[i] = 0;
+                let mut color_byte = 0;
+                for (i, &val) in p.channels().iter().rev().enumerate() {
+                    if val > threshold[thresh_idx][i] {
+                        color_byte |= 1 << i;
                     }
                 }
-                let color = Color::try_from_pixel(&np).unwrap();
 
+                let color = <I::Pixel>::binarize(color_byte);
                 if color != Color::White {
                     buffer[idx] = Pixel::Unvisited(color);
                 }

@@ -367,6 +367,16 @@ impl TryFrom<u8> for Color {
     }
 }
 
+impl From<bool> for Color {
+    fn from(value: bool) -> Self {
+        if value {
+            Color::White
+        } else {
+            Color::Black
+        }
+    }
+}
+
 impl Not for Color {
     type Output = Self;
     fn not(self) -> Self::Output {
@@ -414,32 +424,6 @@ impl TryFrom<Color> for Luma<u8> {
 }
 
 impl Color {
-    // WARN: Output will be wrong for BGR type
-    pub fn try_from_pixel<P>(value: &P) -> QRResult<Self>
-    where
-        P: Pixel<Subpixel = u8>,
-    {
-        let channels = value.channels();
-
-        match channels {
-            // Luma
-            [0] => Ok(Color::Black),
-            [255] => Ok(Color::White),
-
-            // Rgb
-            [0, 0, 0] => Ok(Color::Black),
-            [255, 0, 0] => Ok(Color::Red),
-            [0, 255, 0] => Ok(Color::Green),
-            [0, 0, 255] => Ok(Color::Blue),
-            [255, 255, 0] => Ok(Color::Yellow),
-            [255, 0, 255] => Ok(Color::Magenta),
-            [0, 255, 255] => Ok(Color::Cyan),
-            [255, 255, 255] => Ok(Color::White),
-
-            _ => Err(QRError::InvalidColor),
-        }
-    }
-
     pub fn to_bits(self) -> [bool; 3] {
         let byte = self as u8;
         let r = byte & 0b100 != 0;
