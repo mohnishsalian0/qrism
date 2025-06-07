@@ -3,8 +3,9 @@ use std::cmp::PartialOrd;
 use std::fmt::{Debug, Display};
 use std::ops::{Deref, Not};
 
-use image::{Luma, Rgb};
+use image::{Luma, Pixel, Rgb};
 
+use super::utils::{QRError, QRResult};
 use super::{codec::Mode, mask::MaskPattern};
 
 // Metadata
@@ -400,11 +401,32 @@ impl From<Color> for Rgb<u8> {
     }
 }
 
-impl TryFrom<Rgb<u8>> for Color {
+impl TryFrom<Color> for Luma<u8> {
     type Error = ();
 
-    fn try_from(value: Rgb<u8>) -> Result<Self, Self::Error> {
-        match value.0 {
+    fn try_from(value: Color) -> Result<Self, Self::Error> {
+        match value {
+            Color::Black => Ok(Luma([0])),
+            Color::White => Ok(Luma([255])),
+            _ => Err(()),
+        }
+    }
+}
+
+impl Color {
+    // WARN: Output will be wrong for BGR type
+    pub fn try_from_pixel<P>(value: &P) -> QRResult<Self>
+    where
+        P: Pixel<Subpixel = u8>,
+    {
+        let channels = value.channels();
+
+        match channels {
+            // Luma
+            [0] => Ok(Color::Black),
+            [255] => Ok(Color::White),
+
+            // Rgb
             [0, 0, 0] => Ok(Color::Black),
             [255, 0, 0] => Ok(Color::Red),
             [0, 255, 0] => Ok(Color::Green),
@@ -413,24 +435,11 @@ impl TryFrom<Rgb<u8>> for Color {
             [255, 0, 255] => Ok(Color::Magenta),
             [0, 255, 255] => Ok(Color::Cyan),
             [255, 255, 255] => Ok(Color::White),
-            _ => Err(()), // Not an exact match for any known Color
+
+            _ => Err(QRError::InvalidColor),
         }
     }
-}
 
-impl TryFrom<Luma<u8>> for Color {
-    type Error = ();
-
-    fn try_from(value: Luma<u8>) -> Result<Self, Self::Error> {
-        match value[0] {
-            0 => Ok(Color::Black),
-            255 => Ok(Color::White),
-            _ => Err(()), // Not an exact match for any known Color
-        }
-    }
-}
-
-impl Color {
     pub fn to_bits(self) -> [bool; 3] {
         let byte = self as u8;
         let r = byte & 0b100 != 0;

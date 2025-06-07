@@ -189,37 +189,37 @@ mod reader_tests {
     //     let (_meta, msg) = symbols[0].decode().expect("Failed to read QR");
     // }
 
-    // #[test]
-    // #[ignore]
-    // fn detect_debugger() {
-    //     #[allow(unused_imports)]
-    //     use super::{binarize::BinaryImage, finder::locate_finders, locate_symbols, QRReader};
-    //     #[allow(unused_imports)]
-    //     use crate::reader::{
-    //         detect,
-    //         finder::group_finders,
-    //         utils::geometry::{BresenhamLine, Line, X, Y},
-    //     };
-    //
-    //     let inp_path = std::path::Path::new("benches/dataset/detection/monitor/image001.jpg");
-    //     // let inp_path = std::path::Path::new("assets/cleaned.png");
-    //     let img = image::open(inp_path).unwrap().to_luma8();
-    //     let mut bin_img = BinaryImage::binarize(&img);
-    //
-    //     let out_path = std::path::Path::new("assets/inp.png");
-    //     bin_img.save(out_path).unwrap();
-    //     let mut out_img = image::open(out_path).unwrap().to_rgb8();
-    //
-    //     // let finders = locate_finders(&mut bin_img);
-    //     // finders.iter().for_each(|f| f.highlight(&mut out_img));
-    //
-    //     // let groups = group_finders(&bin_img, &finders);
-    //     // groups.iter().for_each(|g| g.highlight(&mut out_img));
-    //
-    //     let symbols = detect(&mut bin_img);
-    //     symbols.iter().for_each(|s| s.highlight(&mut out_img));
-    //
-    //     let out = std::path::Path::new("assets/out.png");
-    //     out_img.save(out).unwrap();
-    // }
+    #[test]
+    #[ignore]
+    fn detect_debugger() {
+        #[allow(unused_imports)]
+        use super::{binarize::BinaryImage, finder::locate_finders, locate_symbols, QRReader};
+        #[allow(unused_imports)]
+        use crate::reader::{
+            detect,
+            finder::group_finders,
+            utils::geometry::{BresenhamLine, Line, X, Y},
+        };
+
+        let inp_path = std::path::Path::new("benches/dataset/blackbox/qrcode-1/1.png");
+        // let inp_path = std::path::Path::new("assets/cleaned.png");
+        let img = image::open(inp_path).unwrap().to_luma8();
+        let mut bin_img = BinaryImage::binarize(&img);
+
+        let out_path = std::path::Path::new("assets/inp.png");
+        bin_img.save(out_path).unwrap();
+        let mut out_img = image::open(out_path).unwrap().to_rgb8();
+
+        // let finders = locate_finders(&mut bin_img);
+        // finders.iter().for_each(|f| f.highlight(&mut out_img));
+
+        // let groups = group_finders(&bin_img, &finders);
+        // groups.iter().for_each(|g| g.highlight(&mut out_img));
+
+        let symbols = detect(&mut bin_img);
+        symbols.iter().for_each(|s| s.highlight(&mut out_img));
+
+        let out = std::path::Path::new("assets/out.png");
+        out_img.save(out).unwrap();
+    }
 }

@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use image::{GenericImageView, Luma, Pixel as ImgPixel, Rgb, RgbImage};
+use image::{GenericImageView, Pixel as ImgPixel, Rgb, RgbImage};
 
 use crate::metadata::Color;
 
@@ -31,20 +31,6 @@ impl From<Pixel> for Color {
             Pixel::Visited(_, c) => c,
             Pixel::Unvisited(c) => c,
         }
-    }
-}
-
-impl From<Rgb<u8>> for Pixel {
-    fn from(p: Rgb<u8>) -> Self {
-        let color = Color::try_from(p).unwrap();
-        Pixel::Unvisited(color)
-    }
-}
-
-impl From<Luma<u8>> for Pixel {
-    fn from(p: Luma<u8>) -> Self {
-        let color = Color::try_from(p).unwrap();
-        Pixel::Unvisited(color)
     }
 }
 
@@ -254,7 +240,7 @@ impl BinaryImage {
         }
 
         // Initially mark all pixels as unvisited; will be used for flood fill later.
-        let mut buffer = vec![Pixel::Unvisited(Color::Black); (w * h) as usize];
+        let mut buffer = vec![Pixel::Unvisited(Color::White); (w * h) as usize];
         for y in 0..h {
             let row_off = y * w;
             let thresh_row_off = (y as usize >> block_pow) * wsteps;
@@ -266,15 +252,16 @@ impl BinaryImage {
                 let xsteps = x as usize >> block_pow;
                 let thresh_idx = thresh_row_off + xsteps;
 
-                let mut color = Color::Black;
+                let white = &vec![255; chan_count];
+                let mut np = *<I::Pixel>::from_slice(white);
                 for (i, &val) in p.channels().iter().enumerate() {
-                    if val > threshold[thresh_idx][i] {
-                        let byte = color as u8 | 1 << (2 - i);
-                        color = Color::try_from(byte).unwrap();
+                    if val <= threshold[thresh_idx][i] {
+                        np.channels_mut()[i] = 0;
                     }
                 }
+                let color = Color::try_from_pixel(&np).unwrap();
 
-                if color != Color::Black {
+                if color != Color::White {
                     buffer[idx] = Pixel::Unvisited(color);
                 }
             }
