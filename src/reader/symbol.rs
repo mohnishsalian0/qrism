@@ -458,7 +458,7 @@ mod symbol_tests {
         let img = qr.to_image(10);
         let exp_anchors = [(75, 75), (335, 75), (305, 305), (75, 335)];
 
-        let mut img = BinaryImage::prepare_rgb(&img);
+        let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -561,7 +561,7 @@ mod symbol_infos_tests {
             QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare_rgb(&img);
+        let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -584,7 +584,7 @@ mod symbol_infos_tests {
         qr.set(4, 8, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare_rgb(&img);
+        let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -608,7 +608,7 @@ mod symbol_infos_tests {
         qr.set(4, 8, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare_rgb(&img);
+        let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -637,7 +637,7 @@ mod symbol_infos_tests {
         qr.set(8, -5, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare_rgb(&img);
+        let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -654,7 +654,7 @@ mod symbol_infos_tests {
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare_rgb(&img);
+        let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -675,7 +675,7 @@ mod symbol_infos_tests {
         qr.set(5, -11, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare_rgb(&img);
+        let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -697,7 +697,7 @@ mod symbol_infos_tests {
         qr.set(4, -9, Module::Format(Color::White));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare_rgb(&img);
+        let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -724,7 +724,7 @@ mod symbol_infos_tests {
         qr.set(-9, 4, Module::Format(Color::White));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::prepare_rgb(&img);
+        let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&img, &finders);
         let symbols = locate_symbols(&mut img, groups);
