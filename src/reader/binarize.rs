@@ -80,6 +80,25 @@ pub struct Region {
 // threshold is 0 in which case the pixel should be false/black
 //------------------------------------------------------------------------------
 
+#[derive(Debug, Clone)]
+struct Stat {
+    avg: usize,
+    min: u8,
+    max: u8,
+}
+
+impl Stat {
+    pub fn new() -> Self {
+        Self { avg: 0, min: u8::MAX, max: u8::MIN }
+    }
+
+    pub fn accumulate(&mut self, val: u8) {
+        self.avg += val as usize;
+        self.min = std::cmp::min(self.min, val);
+        self.max = std::cmp::max(self.max, val);
+    }
+}
+
 // Image type for reader
 //------------------------------------------------------------------------------
 
@@ -98,7 +117,7 @@ impl BinaryImage {
         I::Pixel: ImgPixel<Subpixel = u8>,
     {
         let (w, h) = img.dimensions();
-        let chan_count = img.get_pixel(0, 0).channels().len();
+        let chan_count = I::Pixel::CHANNEL_COUNT as usize;
         let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
         let block_size = 1 << block_pow;
         let mask = (1 << block_pow) - 1;
@@ -107,9 +126,7 @@ impl BinaryImage {
         let hsteps = (h + mask) >> block_pow;
         let len = (wsteps * hsteps) as usize;
 
-        let mut avg = vec![vec![0usize; chan_count]; len];
-        let mut min = vec![vec![u8::MAX; chan_count]; len];
-        let mut max = vec![vec![u8::MIN; chan_count]; len];
+        let mut stats = vec![vec![Stat::new(); chan_count]; len];
 
         // Calculate sum of 8x8 pixels for each block
         // Skip last few pixels which form fractional blocks. The last block will be computed later
@@ -122,9 +139,7 @@ impl BinaryImage {
 
                 let px = img.get_pixel(x, y);
                 for (i, &val) in px.channels().iter().enumerate() {
-                    avg[idx][i] += val as usize;
-                    min[idx][i] = std::cmp::min(min[idx][i], val);
-                    max[idx][i] = std::cmp::max(max[idx][i], val);
+                    stats[idx][i].accumulate(val);
                 }
             }
         }
@@ -136,9 +151,7 @@ impl BinaryImage {
                 for x in w - block_size..w {
                     let px = img.get_pixel(x, y);
                     for (i, &val) in px.channels().iter().enumerate() {
-                        avg[idx][i] += val as usize;
-                        min[idx][i] = std::cmp::min(min[idx][i], val);
-                        max[idx][i] = std::cmp::max(max[idx][i], val);
+                        stats[idx][i].accumulate(val);
                     }
                 }
             }
@@ -153,9 +166,7 @@ impl BinaryImage {
 
                     let px = img.get_pixel(x, y);
                     for (i, &val) in px.channels().iter().enumerate() {
-                        avg[idx][i] += val as usize;
-                        min[idx][i] = std::cmp::min(min[idx][i], val);
-                        max[idx][i] = std::cmp::max(max[idx][i], val);
+                        stats[idx][i].accumulate(val);
                     }
                 }
             }
@@ -167,9 +178,7 @@ impl BinaryImage {
                 for x in w - block_size..w {
                     let px = img.get_pixel(x, y);
                     for (i, &val) in px.channels().iter().enumerate() {
-                        avg[len - 1][i] += val as usize;
-                        min[len - 1][i] = std::cmp::min(min[len - 1][i], val);
-                        max[len - 1][i] = std::cmp::max(max[len - 1][i], val);
+                        stats[len - 1][i].accumulate(val);
                     }
                 }
             }
@@ -183,21 +192,22 @@ impl BinaryImage {
         let hsteps = hsteps as usize;
         let block_area_pow = 2 * block_pow;
         for i in 0..len {
-            let (mn, mx) = (&min[i], &max[i]);
-            for c in 0..chan_count {
-                if mx[c] - mn[c] <= 24 {
-                    avg[i][c] = (mn[c] as usize) / 2;
+            for j in 0..chan_count {
+                if stats[i][j].max - stats[i][j].min <= 24 {
+                    stats[i][j].avg = (stats[i][j].min as usize) / 2;
                     if i > wsteps && i % wsteps > 0 {
                         // Average of neighbors 2 * (x-1, y), (x, y-1), (x-1, y-1)
-                        let ng_avg =
-                            (2 * avg[i - 1][c] + avg[i - wsteps][c] + avg[i - wsteps - 1][c]) / 4;
-                        if mn[c] < ng_avg as u8 {
-                            avg[i][c] = ng_avg;
+                        let left = stats[i - 1][j].avg;
+                        let top = stats[i - wsteps][j].avg;
+                        let top_left = stats[i - wsteps - 1][j].avg;
+                        let ng_avg = (2 * left + top + top_left) / 4;
+                        if stats[i][j].min < ng_avg as u8 {
+                            stats[i][j].avg = ng_avg;
                         }
                     }
                 } else {
-                    // Convert 8×8 sum to average (divide by 64)
-                    avg[i][c] >>= block_area_pow;
+                    // Convert block sum to average (divide by 64)
+                    stats[i][j].avg >>= block_area_pow;
                 }
             }
         }
@@ -230,9 +240,9 @@ impl BinaryImage {
                 let mut sum = vec![0usize; chan_count];
                 for ny in cy - half_grid..=cy + half_grid {
                     let ni = ny * wsteps + cx;
-                    for a in &avg[ni - half_grid..=ni + half_grid] {
-                        for c in 0..chan_count {
-                            sum[c] += a[c];
+                    for px_stat in &stats[ni - half_grid..=ni + half_grid] {
+                        for (i, chan_stat) in px_stat.iter().enumerate() {
+                            sum[i] += chan_stat.avg;
                         }
                     }
                 }
@@ -269,6 +279,7 @@ impl BinaryImage {
                 }
             }
         }
+
         let regions = Vec::with_capacity(100);
         Self { buffer, regions, w, h }
     }
