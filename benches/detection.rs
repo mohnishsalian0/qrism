@@ -67,7 +67,7 @@ fn benchmark(dataset_dir: &Path) {
     let results = Arc::new(Mutex::new(HashMap::<String, HashMap<String, f64>>::new()));
     let runtimes = Arc::new(Mutex::new(HashMap::<String, Vec<u128>>::new()));
 
-    image_paths.iter().for_each(|img_path| {
+    image_paths.par_iter().for_each(|img_path| {
         let path_str = img_path.to_str().unwrap();
         let parent = get_parent(img_path);
 

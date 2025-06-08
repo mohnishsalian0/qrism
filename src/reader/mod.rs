@@ -3,7 +3,7 @@ mod finder;
 mod symbol;
 mod utils;
 
-use std::time::Instant;
+use std::{collections::HashSet, time::Instant};
 
 use finder::{group_finders, locate_finders, FinderGroup};
 use image::GrayImage;
@@ -18,13 +18,16 @@ impl QRReader {
     pub fn detect(img: &mut BinaryImage) -> Vec<Symbol> {
         let start = Instant::now();
         let finders = locate_finders(img);
-        println!("Finder: {}", start.elapsed().as_millis());
+        println!("Findr: {}", start.elapsed().as_millis());
+
         let start = Instant::now();
         let groups = group_finders(img, &finders);
-        println!("Grouping: {}", start.elapsed().as_millis());
+        println!("Group: {}", start.elapsed().as_millis());
+
         let start = Instant::now();
         let symbols = locate_symbols(img, groups);
-        println!("Symbol: {}", start.elapsed().as_millis());
+        println!("Symbl: {}", start.elapsed().as_millis());
+
         symbols
     }
 
@@ -82,10 +85,16 @@ fn detect(img: &mut BinaryImage) -> Vec<Symbol> {
 }
 
 fn locate_symbols(img: &mut BinaryImage, groups: Vec<FinderGroup>) -> Vec<Symbol> {
+    let mut is_grouped = HashSet::new();
     let mut sym_locs = Vec::with_capacity(20);
     for mut g in groups {
+        if g.finders.iter().any(|f| is_grouped.contains(f)) {
+            continue;
+        }
+
         if let Some(sl) = SymbolLocation::locate(img, &mut g) {
             sym_locs.push(sl);
+            is_grouped.extend(g.finders);
         }
     }
     sym_locs.into_iter().map(|sl| Symbol::new(img, sl)).collect::<_>()
@@ -129,7 +138,7 @@ mod reader_tests {
     use crate::{
         builder::QRBuilder,
         metadata::{ECLevel, Palette, Version},
-        reader::{binarize::BinaryImage, deinterleave},
+        reader::{binarize::BinaryImage, deinterleave, utils::geometry::Point},
         utils::BitStream,
         MaskPattern,
     };
@@ -200,15 +209,15 @@ mod reader_tests {
         assert_eq!(msg, exp_msg, "Incorrect data read from qr image");
     }
 
-    // #[test]
-    // #[ignore]
-    // fn decode_debugger() {
-    //     let inp_path = std::path::Path::new("benches/dataset/detection/rotations/image001.jpg");
-    //     let img = image::open(inp_path).unwrap().to_luma8();
-    //     let mut img = BinaryImage::binarize(&img);
-    //     let mut symbols = QRReader::detect(&mut img);
-    //     let (_meta, msg) = symbols[0].decode().expect("Failed to read QR");
-    // }
+    #[test]
+    #[ignore]
+    fn decode_debugger() {
+        let inp_path = std::path::Path::new("benches/dataset/blackbox/qrcode-1/4.png");
+        let img = image::open(inp_path).unwrap().to_luma8();
+        let mut img = BinaryImage::binarize(&img);
+        let mut symbols = QRReader::detect(&mut img);
+        let (_meta, msg) = symbols[0].decode().expect("Failed to read QR");
+    }
 
     #[test]
     #[ignore]
@@ -222,7 +231,7 @@ mod reader_tests {
             utils::geometry::{BresenhamLine, Line, X, Y},
         };
 
-        let inp_path = std::path::Path::new("benches/dataset/detection/bright_spots/image001.jpg");
+        let inp_path = std::path::Path::new("benches/dataset/blackbox/qrcode-1/11.png");
         // let inp_path = std::path::Path::new("assets/cleaned.png");
         let img = image::open(inp_path).unwrap().to_luma8();
         let mut bin_img = BinaryImage::binarize(&img);
@@ -235,6 +244,7 @@ mod reader_tests {
         // finders.iter().for_each(|f| f.highlight(&mut out_img));
 
         // let groups = group_finders(&bin_img, &finders);
+        // groups[0].finders[1].highlight(&mut out_img);
         // groups.iter().for_each(|g| g.highlight(&mut out_img));
 
         let symbols = detect(&mut bin_img);

@@ -153,7 +153,7 @@ fn verify_and_mark_finder(
 
     // If pixel has been visited, check if regions is already marked as finder
     if matches!(img.get(s, y), Some(Pixel::Visited(..))) {
-        let stone = img.get_region((s, y))?;
+        let stone = img.get_region((s, y));
 
         // Exit if stone is already made a candidate from previous iterations
         if stone.is_finder {
@@ -173,8 +173,8 @@ fn verify_and_mark_finder(
         return None;
     };
 
-    let stone = img.get_region((s, y))?.clone();
-    let ring = img.get_region((r, y))?.clone();
+    let stone = img.get_region((s, y)).clone();
+    let ring = img.get_region((r, y)).clone();
 
     // Check if left and right pts are not connected through same region
     // The id in Pixel::Visited makes the pixels unique
@@ -188,8 +188,8 @@ fn verify_and_mark_finder(
         return None;
     }
 
-    img.get_region((r, y)).unwrap().is_finder = true;
-    img.get_region((s, y)).unwrap().is_finder = true;
+    img.get_region((r, y)).is_finder = true;
+    img.get_region((s, y)).is_finder = true;
 
     Some(stone.centre)
 }
@@ -243,9 +243,6 @@ mod finder_tests {
 #[derive(Debug, Clone)]
 pub struct FinderGroup {
     pub finders: [Point; 3], // [BL, TL, TR]
-    pub align: Point,        // Centre of provisional alignment pattern
-    pub mids: [Point; 6],    // [BLR, BLU, TLB, TLR, TRL, TRD]. Mid pts of edges
-    pub size: u32,           // Grid size of potential qr
     pub score: f64,          // Timing pattern score + Estimate mod count score
 }
 
@@ -254,10 +251,6 @@ impl FinderGroup {
     pub fn highlight(&self, img: &mut RgbImage) {
         for f in self.finders.iter() {
             f.highlight(img);
-        }
-        self.align.highlight(img);
-        for m in self.mids.iter() {
-            m.highlight(img);
         }
     }
 }
@@ -300,7 +293,7 @@ impl FinderGroup {
 pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
     // Store all possible combinations of finders
     let mut all_groups: Vec<FinderGroup> = Vec::new();
-    let angle_threshold = 50f64.to_radians();
+    let right_angle = 90f64.to_radians();
 
     for (i1, f1) in finders.iter().enumerate() {
         for (i2, f2) in finders.iter().enumerate() {
@@ -308,91 +301,48 @@ pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
                 continue;
             }
 
-            let m12 = match find_edge_mid(img, f1, f2) {
-                Some(pt) => pt,
-                None => continue,
-            };
-            let m21 = match find_edge_mid(img, f2, f1) {
-                Some(pt) => pt,
-                None => continue,
-            };
-
             for (i3, f3) in finders.iter().enumerate() {
                 if i3 <= i2 || i3 == i1 {
                     continue;
                 }
 
-                if angle(f2, f1, f3) < angle_threshold {
-                    continue;
-                }
-
-                let m13 = match find_edge_mid(img, f1, f3) {
-                    Some(pt) => pt,
-                    None => continue,
-                };
-                let m31 = match find_edge_mid(img, f3, f1) {
-                    Some(pt) => pt,
-                    None => continue,
-                };
-
-                // Compute provisional location of alignment centre (c4)
-                let dx = f2.x - f1.x;
-                let dy = f2.y - f1.y;
-                let c4 = Point { x: f3.x + dx, y: f3.y + dy };
-
-                // Skip if intersection pt is outside the image
-                if c4.x < 0 || c4.x as u32 >= img.w || c4.y < 0 || c4.y as u32 >= img.h {
-                    continue;
-                }
-
-                let m24 = match find_edge_mid(img, f2, &c4) {
-                    Some(pt) => pt,
-                    None => continue,
-                };
-                let m34 = match find_edge_mid(img, f3, &c4) {
-                    Some(pt) => pt,
-                    None => continue,
-                };
+                // let m24 = match find_edge_mid(img, f2, &c4) { Some(pt) => pt,
+                //     None => continue,
+                // };
+                // let m34 = match find_edge_mid(img, f3, &c4) {
+                //     Some(pt) => pt,
+                //     None => continue,
+                // };
 
                 // Calculate score
-                let t12 = measure_timing_patterns(img, &m13, &m24);
-                let t13 = measure_timing_patterns(img, &m12, &m34);
+                // let t12 = measure_timing_patterns(img, &m13, &m24);
+                // let t13 = measure_timing_patterns(img, &m12, &m34);
 
-                // Closeness of the 2 timing patterns
-                let symmetry_score = ((t12 as f64 / t13 as f64) - 1.0).abs();
+                let d12 = f1.dist_sq(f2);
+                let d13 = f1.dist_sq(f3);
 
-                // Skip if one timing pattern is more than twice as long as the other
-                if symmetry_score > 1.0 {
+                // Closeness of the dist of bl and tr finders from tl finder
+                let symmetry_score = ((d12 as f64 / d13 as f64) - 1.0).abs();
+
+                // Skip if dist is over 80% of the other dist
+                if symmetry_score > 0.8 {
                     continue;
                 }
 
-                // Estimate module count from c1 to c2
-                let est_mod_count12 = estimate_mod_count(f1, &m12, f2, &m21);
-                let mod_score12 = ((est_mod_count12 / (t12 + 6) as f64) - 1.0).abs();
-
-                // Skip if one is more than twice as long as the other
-                if mod_score12 > 1.0 {
+                // Angle of c2-c1-c3
+                let angle = angle(f2, f1, f3);
+                let angle_score = ((angle / right_angle) - 1.0).abs();
+                if angle_score > 0.5 {
                     continue;
                 }
 
-                // Estimate module count from c1 to c3
-                let est_mod_count13 = estimate_mod_count(f1, &m13, f3, &m31);
-                let mod_score13 = ((est_mod_count13 / (t13 + 6) as f64) - 1.0).abs();
-
-                // Skip if one is more than twice as long as the other
-                if mod_score13 > 1.0 {
-                    continue;
-                }
-
-                let score = symmetry_score + mod_score12 + mod_score13;
+                let score = symmetry_score + angle_score;
 
                 // Create and push group into groups
                 let finders = [*f3, *f1, *f2];
-                let mids = [m34, m31, m13, m12, m21, m24];
-                let size = std::cmp::max(t12, t13) + 13;
-                let ver = (size as f64 - 15.0).floor() as u32 / 4;
-                let size = ver * 4 + 17;
-                let group = FinderGroup { finders, align: c4, mids, size, score };
+                // let ver = (size as f64 - 15.0).floor() as u32 / 4;
+                // let size = ver * 4 + 17;
+                let group = FinderGroup { finders, score };
                 all_groups.push(group);
             }
         }
@@ -400,18 +350,7 @@ pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
 
     all_groups.sort_unstable_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
 
-    // If a finder is in multiple groups, reject all groups except one with highest score
-    let mut res = Vec::with_capacity(finders.len() / 3);
-    let mut is_grouped = HashSet::with_capacity(finders.len());
-
-    for g in all_groups {
-        if g.finders.iter().all(|f| !is_grouped.contains(f)) {
-            is_grouped.extend(g.finders.iter().cloned());
-            res.push(g);
-        }
-    }
-
-    res
+    all_groups
 }
 
 // Angle between AB & BC in radians
@@ -430,81 +369,6 @@ fn angle(a: &Point, b: &Point, c: &Point) -> f64 {
     let cos_theta = (dot / (mag_ab * mag_cb)).clamp(-1.0, 1.0);
 
     cos_theta.acos()
-}
-
-fn find_edge_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point> {
-    let dx = (to.x - from.x).abs();
-    let dy = (to.y - from.y).abs();
-    if dx > dy {
-        mid_scan::<X>(img, from, to)
-    } else {
-        mid_scan::<Y>(img, from, to)
-    }
-}
-
-fn mid_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point>
-where
-    BresenhamLine<A>: Iterator<Item = Point>,
-{
-    let mut flips = 0;
-    let mut buffer = Vec::with_capacity(100);
-    let px = img.get_at_point(from).unwrap();
-    let mut last = Color::from(*px);
-    let line = BresenhamLine::<A>::new(from, to);
-
-    for p in line {
-        let px = img.get_at_point(&p).unwrap();
-        let color = Color::from(*px);
-
-        if color != last {
-            flips += 1;
-            last = color;
-            if flips == 3 {
-                let idx = buffer.len() * 6 / 7;
-                let mid = buffer[idx];
-                // let mid = buffer[buffer.len() / 2];
-                return Some(mid);
-            }
-        }
-
-        buffer.push(p);
-    }
-
-    None
-}
-
-pub fn measure_timing_patterns(img: &BinaryImage, from: &Point, to: &Point) -> u32 {
-    let dx = (to.x - from.x).abs();
-    let dy = (to.y - from.y).abs();
-
-    if dx > dy {
-        timing_scan::<X>(img, from, to)
-    } else {
-        timing_scan::<Y>(img, from, to)
-    }
-}
-
-fn timing_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> u32
-where
-    BresenhamLine<A>: Iterator<Item = Point>,
-{
-    let mut transitions = [0, 0, 0];
-    let px = img.get_at_point(from).unwrap();
-    let mut last = Color::from(*px).to_bits();
-    let line = BresenhamLine::<A>::new(from, to);
-
-    for p in line {
-        let px = img.get_at_point(&p).unwrap();
-        let color = Color::from(*px).to_bits();
-        for i in 0..3 {
-            if color[i] != last[i] {
-                transitions[i] += 1;
-                last[i] = color[i];
-            }
-        }
-    }
-
-    *transitions.iter().min().unwrap()
 }
 
 fn estimate_mod_count(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {

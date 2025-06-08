@@ -377,7 +377,7 @@ impl BinaryImage {
         Ok(())
     }
 
-    pub(crate) fn get_region(&mut self, src: (u32, u32)) -> Option<&mut Region> {
+    pub(crate) fn get_region(&mut self, src: (u32, u32)) -> &mut Region {
         let px = self.get(src.0, src.1).unwrap();
 
         match px {
@@ -397,10 +397,10 @@ impl BinaryImage {
 
                 self.regions.push(new_reg);
 
-                Some(self.regions.get_mut(reg_id).expect("Region not found after saving"))
+                self.regions.get_mut(reg_id).expect("Region not found after saving")
             }
             Pixel::Visited(id, _) => {
-                Some(self.regions.get_mut(id).expect("No region found for visited pixel"))
+                self.regions.get_mut(id).expect("No region found for visited pixel")
             }
         }
     }

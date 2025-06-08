@@ -2,7 +2,7 @@ use super::{
     binarize::{BinaryImage, Pixel},
     finder::FinderGroup,
     utils::{
-        geometry::{Point, Slope},
+        geometry::{Axis, BresenhamLine, Point, Slope},
         homography::Homography,
     },
 };
@@ -43,7 +43,38 @@ impl SymbolLocation {
         let mut c0 = group.finders[0];
         let c1 = group.finders[1];
         let mut c2 = group.finders[2];
-        let mut align_centre = group.align;
+
+        // Compute provisional location of alignment centre (c4)
+        let dx = c2.x - c1.x;
+        let dy = c2.y - c1.y;
+        let mut align = Point { x: c0.x + dx, y: c0.y + dy };
+
+        // Skip if intersection pt is outside the image
+        if align.x < 0 || align.x as u32 >= img.w || align.y < 0 || align.y as u32 >= img.h {
+            return None;
+        }
+
+        // Measure timing pattern from c1 to c2
+        let m10 = find_edge_mid(img, &c1, &c0)?;
+        let m23 = find_edge_mid(img, &c2, &align)?;
+        let t12 = measure_timing_patterns(img, &m10, &m23);
+
+        // Measure timing pattern from c1 to c3
+        let m12 = find_edge_mid(img, &c1, &c2)?;
+        let m03 = find_edge_mid(img, &c0, &align)?;
+        let t13 = measure_timing_patterns(img, &m12, &m03);
+
+        // Closeness of horizontal and vertical timing patterns
+        let timing_score = ((t12 as f64 / t13 as f64) - 1.0).abs();
+        if timing_score > 0.8 {
+            return None;
+        }
+
+        // Provisional width and version
+        let size = std::cmp::max(t12, t13) + 13;
+        let ver = (size as f64 - 15.0).floor() as u32 / 4;
+        let size = ver * 4 + 17;
+        let ver = Version::from_grid_size(size as usize)?;
 
         // Hypotenuse slope
         let mut hm = Slope { dx: c2.x - c0.x, dy: c2.y - c0.y };
@@ -52,33 +83,119 @@ impl SymbolLocation {
         if (c1.y - c0.y) * hm.dx - (c1.x - c0.x) * hm.dy > 0 {
             group.finders.swap(0, 2);
             std::mem::swap(&mut c0, &mut c2);
-            group.mids.reverse();
-            hm.dx = -hm.dx;
-            hm.dy = -hm.dy;
+            hm.dx *= -1;
+            hm.dy *= -1;
         }
 
-        // Getting provisional version
-        let ver = Version::from_grid_size(group.size as usize)?;
-
-        // For versions greater than 1 a more robust algorithm to locate align centre.
+        // For versions greater than 1, a more robust algorithm to locate align centre.
         // First, locate provisional centre from mid 1 with distance of c1 from mid 4.
         // Spiral out of provisional align pt to identify potential pt. Then compare the area of
         // black region with estimate module size to confirm alignment stone. Finally, locate the
         // centre of the stone.
         if *ver != 1 {
-            let dx = group.mids[4].x - c1.x;
-            let dy = group.mids[4].y - c1.y;
-            let seed = Point { x: group.mids[1].x + dx, y: group.mids[1].y + dy };
+            let m01 = find_edge_mid(img, &c0, &c1)?;
+            let m21 = find_edge_mid(img, &c2, &c1)?;
+            let dx = m21.x - c1.x;
+            let dy = m21.y - c1.y;
+            let seed = Point { x: m01.x + dx, y: m01.y + dy };
 
-            align_centre = locate_alignment_pattern(img, group, seed)?;
+            // Calculate estimate width of module
+            let hor_w = c0.dist_sq(&m03);
+            let ver_w = c2.dist_sq(&m23);
+            let mod_w = ((hor_w + ver_w) as f64 / 2.0).sqrt() / 3.0;
+
+            // Calculate estimate area of module
+            let m0 = Slope::new(&c0, &m03);
+            let m1 = Slope::new(&c2, &m23);
+            let area = m0.cross(&m1).unsigned_abs() / 9;
+
+            dbg!(1);
+            align = locate_alignment_pattern(img, group, seed, mod_w, area)?;
         }
+        dbg!(2);
 
-        let h = setup_homography(img, group, align_centre, ver)?;
+        let h = setup_homography(img, group, align, ver)?;
 
-        let anchors = [c1, c2, align_centre, c0];
+        dbg!(3);
+        let anchors = [c1, c2, align, c0];
 
         Some(Self { h, anchors, ver })
     }
+}
+
+fn find_edge_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point> {
+    let dx = (to.x - from.x).abs();
+    let dy = (to.y - from.y).abs();
+    if dx > dy {
+        mid_scan::<X>(img, from, to)
+    } else {
+        mid_scan::<Y>(img, from, to)
+    }
+}
+
+fn mid_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point>
+where
+    BresenhamLine<A>: Iterator<Item = Point>,
+{
+    let mut flips = 0;
+    let mut buffer = Vec::with_capacity(100);
+    let px = img.get_at_point(from).unwrap();
+    let mut last = Color::from(*px);
+    let line = BresenhamLine::<A>::new(from, to);
+
+    for p in line {
+        let px = img.get_at_point(&p).unwrap();
+        let color = Color::from(*px);
+
+        if color != last {
+            flips += 1;
+            last = color;
+            if flips == 3 {
+                let idx = buffer.len() * 6 / 7;
+                let mid = buffer[idx];
+                // let mid = buffer[buffer.len() / 2];
+                return Some(mid);
+            }
+        }
+
+        buffer.push(p);
+    }
+
+    None
+}
+
+pub fn measure_timing_patterns(img: &BinaryImage, from: &Point, to: &Point) -> u32 {
+    let dx = (to.x - from.x).abs();
+    let dy = (to.y - from.y).abs();
+
+    if dx > dy {
+        timing_scan::<X>(img, from, to)
+    } else {
+        timing_scan::<Y>(img, from, to)
+    }
+}
+
+fn timing_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> u32
+where
+    BresenhamLine<A>: Iterator<Item = Point>,
+{
+    let mut transitions = [0, 0, 0];
+    let px = img.get_at_point(from).unwrap();
+    let mut last = Color::from(*px).to_bits();
+    let line = BresenhamLine::<A>::new(from, to);
+
+    for p in line {
+        let px = img.get_at_point(&p).unwrap();
+        let color = Color::from(*px).to_bits();
+        for i in 0..3 {
+            if color[i] != last[i] {
+                transitions[i] += 1;
+                last[i] = color[i];
+            }
+        }
+    }
+
+    *transitions.iter().min().unwrap()
 }
 
 // Symbol
@@ -129,7 +246,7 @@ impl<'a> Symbol<'a> {
 
     pub fn get(&self, x: i32, y: i32) -> Option<&Pixel> {
         let (xp, yp) = self.wrap_coord(x, y);
-        let pt = self.map(xp as f64 + 0.5, yp as f64 + 0.5).unwrap();
+        let pt = self.map(xp as f64 + 0.5, yp as f64 + 0.5).ok()?;
         self.img.get_at_point(&pt)
     }
 
@@ -206,20 +323,13 @@ fn locate_alignment_pattern(
     img: &mut BinaryImage,
     group: &FinderGroup,
     mut seed: Point,
+    mod_w: f64,
+    area: u32,
 ) -> Option<Point> {
     let (w, h) = (img.w, img.h);
-    let pattern = [1.0, 1.0, 1.0];
-
-    // Calculate estimate width of module
-    let hor_w = group.finders[0].dist_sq(&group.mids[0]);
-    let ver_w = group.finders[2].dist_sq(&group.mids[5]);
-    let mod_w = ((hor_w + ver_w) as f64 / 2.0).sqrt() / 3.0;
     let mod_w_i32 = mod_w as i32;
-
-    // Calculate estimate area of module
-    let m0 = Slope::new(&group.finders[0], &group.mids[0]);
-    let m1 = Slope::new(&group.finders[2], &group.mids[5]);
-    let threshold = m0.cross(&m1).unsigned_abs() * 2 / 9;
+    let threshold = area * 2;
+    let pattern = [1.0, 1.0, 1.0];
 
     // Directional increment for x & y: [right, down, left, up]
     const DX: [i32; 4] = [1, 0, -1, 0];
@@ -239,10 +349,8 @@ fn locate_alignment_pattern(
                 let color = Color::from(*px);
 
                 if x < w && y < h && color == Color::Black {
-                    let (reg_centre, reg_area) = match img.get_region((x, y)) {
-                        Some(reg) => (reg.centre, reg.area),
-                        None => continue,
-                    };
+                    let reg = img.get_region((x, y));
+                    let (reg_centre, reg_area) = (reg.centre, reg.area);
 
                     if !rejected.contains(&reg_centre) {
                         // Check if region area is roughly equal to mod area with 100% tolerance
@@ -279,7 +387,7 @@ fn setup_homography(
     align_centre: Point,
     ver: Version,
 ) -> Option<Homography> {
-    let size = group.size as f64;
+    let size = ver.width() as f64;
     let br_off = if *ver == 1 { 3.5 } else { 6.5 };
     let src = [(3.5, 3.5), (size - 3.5, 3.5), (size - br_off, size - br_off), (3.5, size - 3.5)];
 
@@ -290,8 +398,6 @@ fn setup_homography(
     let dst = [c1, c2, ca, c0];
 
     let initial_h = Homography::compute(src, dst).ok()?;
-
-    let ver = Version::from_grid_size(group.size as usize)?;
 
     jiggle_homography(img, initial_h, ver)
 }
@@ -413,7 +519,10 @@ fn cell_fitness(img: &BinaryImage, hm: &Homography, x: i32, y: i32) -> i32 {
 
     for dy in OFFSETS.iter() {
         for dx in OFFSETS.iter() {
-            let pt = hm.map(x as f64 + dx, y as f64 + dy).unwrap();
+            let pt = match hm.map(x as f64 + dx, y as f64 + dy) {
+                Ok(v) => v,
+                Err(_) => return 0,
+            };
             if let Some(px) = img.get_at_point(&pt) {
                 let color = Color::from(*px);
                 if color == white {
