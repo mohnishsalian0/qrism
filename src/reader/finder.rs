@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use crate::{metadata::Color, reader::utils::geometry::BresenhamLine};
 
 use super::{
-    binarize::BinaryImage,
+    binarize::{BinaryImage, Pixel},
     utils::{
         geometry::{Axis, Point, X, Y},
         verify_pattern,
@@ -151,14 +151,15 @@ fn verify_and_mark_finder(
 ) -> Option<Point> {
     let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
 
-    let stone = img.get_region((s, y))?;
+    // If pixel has been visited, check if regions is already marked as finder
+    if matches!(img.get(s, y), Some(Pixel::Visited(..))) {
+        let stone = img.get_region((s, y))?;
 
-    // Exit if stone is already made a candidate from previous iterations
-    if stone.is_finder {
-        return None;
+        // Exit if stone is already made a candidate from previous iterations
+        if stone.is_finder {
+            return None;
+        }
     }
-
-    let stone = stone.clone();
 
     let sx = r - (s - l) * 5 / 4;
     let seed = Point { x: sx as i32, y: datum.y as i32 };
@@ -172,6 +173,7 @@ fn verify_and_mark_finder(
         return None;
     };
 
+    let stone = img.get_region((s, y))?.clone();
     let ring = img.get_region((r, y))?.clone();
 
     // Check if left and right pts are not connected through same region

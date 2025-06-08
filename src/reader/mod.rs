@@ -3,6 +3,8 @@ mod finder;
 mod symbol;
 mod utils;
 
+use std::time::Instant;
+
 use finder::{group_finders, locate_finders, FinderGroup};
 use image::GrayImage;
 
@@ -14,17 +16,36 @@ pub struct QRReader();
 
 impl QRReader {
     pub fn detect(img: &mut BinaryImage) -> Vec<Symbol> {
+        let start = Instant::now();
         let finders = locate_finders(img);
+        println!("Finder: {}", start.elapsed().as_millis());
+        let start = Instant::now();
         let groups = group_finders(img, &finders);
-        locate_symbols(img, groups)
+        println!("Grouping: {}", start.elapsed().as_millis());
+        let start = Instant::now();
+        let symbols = locate_symbols(img, groups);
+        println!("Symbol: {}", start.elapsed().as_millis());
+        symbols
     }
 
     #[cfg(feature = "benchmark")]
     pub fn get_corners(img: GrayImage) -> Vec<[f64; 8]> {
+        //FIXME:
+        let start = Instant::now();
         let mut img = BinaryImage::binarize(&img);
+        println!("Binry: {}", start.elapsed().as_millis());
+
+        let start = Instant::now();
         let finders = locate_finders(&mut img);
+        println!("Findr: {}", start.elapsed().as_millis());
+
+        let start = Instant::now();
         let groups = group_finders(&img, &finders);
+        println!("Group: {}", start.elapsed().as_millis());
+
+        let start = Instant::now();
         let symbols = locate_symbols(&mut img, groups);
+        println!("Symbl: {}", start.elapsed().as_millis());
 
         let mut symbol_corners = Vec::with_capacity(20);
         for sym in symbols {
@@ -201,7 +222,7 @@ mod reader_tests {
             utils::geometry::{BresenhamLine, Line, X, Y},
         };
 
-        let inp_path = std::path::Path::new("benches/dataset/blackbox/qrcode-1/1.png");
+        let inp_path = std::path::Path::new("benches/dataset/detection/bright_spots/image001.jpg");
         // let inp_path = std::path::Path::new("assets/cleaned.png");
         let img = image::open(inp_path).unwrap().to_luma8();
         let mut bin_img = BinaryImage::binarize(&img);
