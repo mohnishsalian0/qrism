@@ -54,6 +54,17 @@ impl SymbolLocation {
             return None;
         }
 
+        // Hypotenuse slope
+        let mut hm = Slope { dx: c2.x - c0.x, dy: c2.y - c0.y };
+
+        // Make sure the middle(datum) finder is top-left and not bottom-right
+        if (c1.y - c0.y) * hm.dx - (c1.x - c0.x) * hm.dy > 0 {
+            group.finders.swap(0, 2);
+            std::mem::swap(&mut c0, &mut c2);
+            hm.dx *= -1;
+            hm.dy *= -1;
+        }
+
         // Measure timing pattern from c1 to c2
         let m10 = find_edge_mid(img, &c1, &c0)?;
         let m23 = find_edge_mid(img, &c2, &align)?;
@@ -75,17 +86,6 @@ impl SymbolLocation {
         let ver = (size as f64 - 15.0).floor() as u32 / 4;
         let size = ver * 4 + 17;
         let ver = Version::from_grid_size(size as usize)?;
-
-        // Hypotenuse slope
-        let mut hm = Slope { dx: c2.x - c0.x, dy: c2.y - c0.y };
-
-        // Make sure the middle(datum) finder is top-left and not bottom-right
-        if (c1.y - c0.y) * hm.dx - (c1.x - c0.x) * hm.dy > 0 {
-            group.finders.swap(0, 2);
-            std::mem::swap(&mut c0, &mut c2);
-            hm.dx *= -1;
-            hm.dy *= -1;
-        }
 
         // For versions greater than 1, a more robust algorithm to locate align centre.
         // First, locate provisional centre from mid 1 with distance of c1 from mid 4.
@@ -109,14 +109,11 @@ impl SymbolLocation {
             let m1 = Slope::new(&c2, &m23);
             let area = m0.cross(&m1).unsigned_abs() / 9;
 
-            dbg!(1);
             align = locate_alignment_pattern(img, group, seed, mod_w, area)?;
         }
-        dbg!(2);
 
         let h = setup_homography(img, group, align, ver)?;
 
-        dbg!(3);
         let anchors = [c1, c2, align, c0];
 
         Some(Self { h, anchors, ver })

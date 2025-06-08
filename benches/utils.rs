@@ -55,6 +55,7 @@ where
     N: Display + Debug + Default,
 {
     let cell_w = 15;
+    let df = N::default();
     let divider = "-".repeat(columns.len() * (cell_w + 2) + 1);
 
     println!("{divider}");
@@ -70,7 +71,7 @@ where
         let mut row = format!("| {hr:<cell_w$}| ");
 
         for c in columns.iter().skip(1) {
-            let cell = r.get(&c.to_string()).unwrap();
+            let cell = r.get(&c.to_string()).unwrap_or(&df);
             row.push_str(&format!("{:<cell_w$.2}| ", cell));
         }
 

@@ -1,11 +1,9 @@
-use std::collections::HashSet;
-
-use crate::{metadata::Color, reader::utils::geometry::BresenhamLine};
+use crate::metadata::Color;
 
 use super::{
     binarize::{BinaryImage, Pixel},
     utils::{
-        geometry::{Axis, Point, X, Y},
+        geometry::{Point, Y},
         verify_pattern,
     },
 };
@@ -306,28 +304,11 @@ pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
                     continue;
                 }
 
-                // let m24 = match find_edge_mid(img, f2, &c4) { Some(pt) => pt,
-                //     None => continue,
-                // };
-                // let m34 = match find_edge_mid(img, f3, &c4) {
-                //     Some(pt) => pt,
-                //     None => continue,
-                // };
-
-                // Calculate score
-                // let t12 = measure_timing_patterns(img, &m13, &m24);
-                // let t13 = measure_timing_patterns(img, &m12, &m34);
-
                 let d12 = f1.dist_sq(f2);
                 let d13 = f1.dist_sq(f3);
 
                 // Closeness of the dist of bl and tr finders from tl finder
                 let symmetry_score = ((d12 as f64 / d13 as f64) - 1.0).abs();
-
-                // Skip if dist is over 80% of the other dist
-                if symmetry_score > 0.8 {
-                    continue;
-                }
 
                 // Angle of c2-c1-c3
                 let angle = angle(f2, f1, f3);
@@ -340,8 +321,6 @@ pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
 
                 // Create and push group into groups
                 let finders = [*f3, *f1, *f2];
-                // let ver = (size as f64 - 15.0).floor() as u32 / 4;
-                // let size = ver * 4 + 17;
                 let group = FinderGroup { finders, score };
                 all_groups.push(group);
             }
