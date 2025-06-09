@@ -39,10 +39,43 @@ pub struct SymbolLocation {
 }
 
 impl SymbolLocation {
+    // Below diagram shows the location of all centres and edge mid points
+    // referenced in the group finder function
+    // ****************************              ****************************
+    // ****************************              ****************************
+    // ****************************              ****************************
+    // ****                   *****              *****                   ****
+    // ****                   *****              *****                   ****
+    // ****                   *****              *****                   ****
+    // ****    ************   *****              *****   ************    ****
+    // ****    *****c1*****   *m12*              *m21*   *****c2*****    ****
+    // ****    ************   *****              *****   ************    ****
+    // ****                   *****              *****                   ****
+    // ****                   *****              *****                   ****
+    // ****                   *****              *****                   ****
+    // ****************************              ****************************
+    // ************m10*************              ************m24*************
+    // ****************************              ****************************
+    //
+    //
+    //
+    // ****************************
+    // ************m01*************
+    // ****************************
+    // ****                   *****
+    // ****                   *****
+    // ****                   *****
+    // ****    ************   *****
+    // ****    *****c0*****   *m03*                           c3
+    // ****    ************   *****
+    // ****                   *****
+    // ****                   *****
+    // ****                   *****
+    // ****************************
+    // ****************************
+    // ****************************
     pub fn locate(img: &mut BinaryImage, group: &mut FinderGroup) -> Option<SymbolLocation> {
-        let mut c0 = group.finders[0];
-        let c1 = group.finders[1];
-        let mut c2 = group.finders[2];
+        let [mut c0, c1, mut c2] = group.finders;
 
         // Compute provisional location of alignment centre (c4)
         let dx = c2.x - c1.x;
@@ -65,26 +98,21 @@ impl SymbolLocation {
             hm.dy *= -1;
         }
 
-        // Measure timing pattern from c1 to c2
-        let m10 = find_edge_mid(img, &c1, &c0)?;
-        let m23 = find_edge_mid(img, &c2, &align)?;
-        let t12 = measure_timing_patterns(img, &m10, &m23);
+        // Locating midpoints for finder edges which cross the lines connecting the centres. In
+        // other words the edges which don't lie on the boundary. These will be used as endpoints
+        // to measure timing patterns, and also to locate the provisional alignment centre for
+        // versions above 1.
+        let mids = [
+            find_edge_mid(img, &c0, &align)?,
+            find_edge_mid(img, &c0, &c1)?,
+            find_edge_mid(img, &c1, &c0)?,
+            find_edge_mid(img, &c1, &c2)?,
+            find_edge_mid(img, &c2, &c1)?,
+            find_edge_mid(img, &c2, &align)?,
+        ];
 
-        // Measure timing pattern from c1 to c3
-        let m12 = find_edge_mid(img, &c1, &c2)?;
-        let m03 = find_edge_mid(img, &c0, &align)?;
-        let t13 = measure_timing_patterns(img, &m12, &m03);
+        let size = verify_symbol_size(img, group, &mids)?;
 
-        // Closeness of horizontal and vertical timing patterns
-        let timing_score = ((t12 as f64 / t13 as f64) - 1.0).abs();
-        if timing_score > 0.8 {
-            return None;
-        }
-
-        // Provisional width and version
-        let size = std::cmp::max(t12, t13) + 13;
-        let ver = (size as f64 - 15.0).floor() as u32 / 4;
-        let size = ver * 4 + 17;
         let ver = Version::from_grid_size(size as usize)?;
 
         // For versions greater than 1, a more robust algorithm to locate align centre.
@@ -93,21 +121,19 @@ impl SymbolLocation {
         // black region with estimate module size to confirm alignment stone. Finally, locate the
         // centre of the stone.
         if *ver != 1 {
-            let m01 = find_edge_mid(img, &c0, &c1)?;
-            let m21 = find_edge_mid(img, &c2, &c1)?;
-            let dx = m21.x - c1.x;
-            let dy = m21.y - c1.y;
-            let seed = Point { x: m01.x + dx, y: m01.y + dy };
+            let dx = mids[4].x - c1.x;
+            let dy = mids[4].y - c1.y;
+            let seed = Point { x: mids[1].x + dx, y: mids[1].y + dy };
 
             // Calculate estimate width of module
-            let hor_w = c0.dist_sq(&m03);
-            let ver_w = c2.dist_sq(&m23);
+            let hor_w = c0.dist_sq(&mids[0]);
+            let ver_w = c2.dist_sq(&mids[5]);
             let mod_w = ((hor_w + ver_w) as f64 / 2.0).sqrt() / 3.0;
 
-            // Calculate estimate area of module
-            let m0 = Slope::new(&c0, &m03);
-            let m1 = Slope::new(&c2, &m23);
-            let area = m0.cross(&m1).unsigned_abs() / 9;
+            // Calculate estimate area of module by taking cross product of vectors
+            let v0 = Slope::new(&c0, &mids[0]);
+            let v1 = Slope::new(&c2, &mids[5]);
+            let area = v0.cross(&v1).unsigned_abs() / 9;
 
             align = locate_alignment_pattern(img, group, seed, mod_w, area)?;
         }
@@ -118,6 +144,52 @@ impl SymbolLocation {
 
         Some(Self { h, anchors, ver })
     }
+}
+
+// Validates the symbol and returns its size if valid. Validation involves:
+// 1. Ensuring the horizontal and vertical timing patterns are consistent.
+// 2. Verifying that the estimated number of modules along the center matches the timing patterns.
+fn verify_symbol_size(img: &BinaryImage, group: &FinderGroup, mids: &[Point; 6]) -> Option<u32> {
+    let [c0, c1, c2] = &group.finders;
+    let [m03, m01, m10, m12, m21, m23] = mids;
+    let threshold = 0.60;
+
+    // Measure timing pattern from c1 to c2
+    let t12 = measure_timing_patterns(img, m10, m23);
+
+    // Measure timing pattern from c1 to c3
+    let t13 = measure_timing_patterns(img, m12, m03);
+
+    // Closeness of horizontal and vertical timing patterns
+    let timing_score = ((t12 as f64 / t13 as f64) - 1.0).abs();
+    if timing_score > threshold {
+        return None;
+    }
+
+    // Estimate module count from c1 to c2
+    let est_mod_count12 = estimate_mod_count(c1, m12, c2, m21);
+    let mod_score12 = ((est_mod_count12 / (t12 + 6) as f64) - 1.0).abs();
+
+    // Skip if one is more than twice as long as the other
+    if mod_score12 > threshold {
+        return None;
+    }
+
+    // Estimate module count from c1 to c3
+    let est_mod_count13 = estimate_mod_count(c1, m10, c0, m01);
+    let mod_score13 = ((est_mod_count13 / (t13 + 6) as f64) - 1.0).abs();
+
+    // Skip if one is more than twice as long as the other
+    if mod_score13 > threshold {
+        return None;
+    }
+
+    // Provisional width and version
+    let size = std::cmp::max(t12, t13) + 13;
+    let ver = ((size as f64 - 15.0) / 4.0).floor() as u32;
+    let size = ver * 4 + 17;
+
+    Some(size)
 }
 
 fn find_edge_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point> {
@@ -193,6 +265,16 @@ where
     }
 
     *transitions.iter().min().unwrap()
+}
+
+fn estimate_mod_count(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {
+    let d1 = c1.dist_sq(m1);
+    let d2 = c2.dist_sq(m2);
+
+    let avg_d = ((d1 + d2) / 2) as f64;
+    let d12 = c1.dist_sq(c2) as f64;
+
+    (d12 * 9.0 / avg_d).sqrt()
 }
 
 // Symbol
@@ -277,9 +359,12 @@ impl<'a> Symbol<'a> {
     #[cfg(test)]
     pub fn highlight(&self, img: &mut RgbImage) {
         use super::utils::geometry::{BresenhamLine, X, Y};
+        use crate::reader::utils::rnd_rgb;
+
+        let color = rnd_rgb();
 
         for p in self.anchors.iter() {
-            p.highlight(img);
+            p.highlight(img, color);
         }
 
         let (w, h) = img.dimensions();
@@ -304,12 +389,12 @@ impl<'a> Symbol<'a> {
             if dx > dy {
                 let line = BresenhamLine::<X>::new(&a, &b);
                 for pt in line {
-                    pt.highlight(img);
+                    pt.highlight(img, color);
                 }
             } else {
                 let line = BresenhamLine::<Y>::new(&a, &b);
                 for pt in line {
-                    pt.highlight(img);
+                    pt.highlight(img, color);
                 }
             }
         }

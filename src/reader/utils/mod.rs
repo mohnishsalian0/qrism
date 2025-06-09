@@ -81,3 +81,30 @@ pub fn verify_pattern<A: Axis>(
 
     true
 }
+
+#[cfg(test)]
+pub fn rnd_rgb() -> image::Rgb<u8> {
+    let h = rand::random_range(0..360) as f64;
+    let s = 1.0f64;
+    let l = 0.5f64;
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+
+    let h_prime = h / 60.0;
+    let x = c * (1.0 - ((h_prime % 2.0) - 1.0).abs());
+    let (r1, g1, b1) = match h_prime as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+
+    let m = l - c / 2.0;
+
+    image::Rgb([
+        ((r1 + m) * 255.0).round() as u8,
+        ((g1 + m) * 255.0).round() as u8,
+        ((b1 + m) * 255.0).round() as u8,
+    ])
+}

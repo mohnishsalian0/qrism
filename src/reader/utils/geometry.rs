@@ -22,13 +22,13 @@ impl Point {
     }
 
     #[cfg(test)]
-    pub fn highlight(&self, img: &mut RgbImage) {
+    pub fn highlight(&self, img: &mut RgbImage, color: Rgb<u8>) {
         let (w, h) = img.dimensions();
         for i in [-1, 0, 1] {
             for j in [-1, 0, 1] {
                 let nx = ((self.x - i) as u32).min(w - 1);
                 let ny = ((self.y - j) as u32).min(h - 1);
-                img.put_pixel(nx, ny, Rgb([255, 0, 0]));
+                img.put_pixel(nx, ny, color);
             }
         }
     }
@@ -232,7 +232,7 @@ impl Line {
     }
 
     #[cfg(test)]
-    pub fn highlight(&self, img: &mut RgbImage) {
+    pub fn highlight(&self, img: &mut RgbImage, color: Rgb<u8>) {
         let dx = -self.b;
         let dy = self.a;
         let (w, h) = img.dimensions();
@@ -256,12 +256,12 @@ impl Line {
         if dx > dy {
             let line = BresenhamLine::<X>::new(&isecs[0], &isecs[1]);
             for pt in line {
-                pt.highlight(img);
+                pt.highlight(img, color);
             }
         } else {
             let line = BresenhamLine::<Y>::new(&isecs[0], &isecs[1]);
             for pt in line {
-                pt.highlight(img);
+                pt.highlight(img, color);
             }
         }
     }

@@ -231,7 +231,7 @@ mod reader_tests {
             utils::geometry::{BresenhamLine, Line, X, Y},
         };
 
-        let inp_path = std::path::Path::new("benches/dataset/blackbox/qrcode-1/11.png");
+        let inp_path = std::path::Path::new("benches/dataset/detection/lots/image001.jpg");
         // let inp_path = std::path::Path::new("assets/cleaned.png");
         let img = image::open(inp_path).unwrap().to_luma8();
         let mut bin_img = BinaryImage::binarize(&img);
@@ -241,10 +241,9 @@ mod reader_tests {
         let mut out_img = image::open(out_path).unwrap().to_rgb8();
 
         // let finders = locate_finders(&mut bin_img);
-        // finders.iter().for_each(|f| f.highlight(&mut out_img));
+        // finders.iter().for_each(|f| f.highlight(&mut out_img, image::Rgb([255, 0, 0])));
 
         // let groups = group_finders(&bin_img, &finders);
-        // groups[0].finders[1].highlight(&mut out_img);
         // groups.iter().for_each(|g| g.highlight(&mut out_img));
 
         let symbols = detect(&mut bin_img);

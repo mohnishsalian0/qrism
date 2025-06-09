@@ -464,6 +464,28 @@ impl BinaryImage {
     }
 }
 
+#[cfg(test)]
+mod binary_image_tests {
+    use super::BinaryImage;
+
+    #[test]
+    fn test_get_region() {
+        let inp_path = std::path::Path::new("benches/dataset/detection/lots/image001.jpg");
+        let img = image::open(inp_path).unwrap().to_luma8();
+        let mut bin_img = BinaryImage::binarize(&img);
+
+        let (w, h) = (bin_img.w, bin_img.h);
+
+        for x in 0..w {
+            for y in 0..h {
+                let _ = bin_img.get_region((x, y));
+            }
+        }
+
+        assert_eq!(bin_img.regions.len(), 100);
+    }
+}
+
 // Constants
 //------------------------------------------------------------------------------
 

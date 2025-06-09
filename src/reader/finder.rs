@@ -247,47 +247,15 @@ pub struct FinderGroup {
 impl FinderGroup {
     #[cfg(test)]
     pub fn highlight(&self, img: &mut RgbImage) {
+        use super::utils::rnd_rgb;
+
+        let color = rnd_rgb();
         for f in self.finders.iter() {
-            f.highlight(img);
+            f.highlight(img, color);
         }
     }
 }
 
-// Below diagram shows the location of all centres and edge mid points
-// referenced in the group finder function
-// ****************************              ****************************
-// ****************************              ****************************
-// ****************************              ****************************
-// ****                   *****              *****                   ****
-// ****                   *****              *****                   ****
-// ****                   *****              *****                   ****
-// ****    ************   *****              *****   ************    ****
-// ****    *****c1*****   *m12*              *m21*   *****c2*****    ****
-// ****    ************   *****              *****   ************    ****
-// ****                   *****              *****                   ****
-// ****                   *****              *****                   ****
-// ****                   *****              *****                   ****
-// ****************************              ****************************
-// ************m13*************              ************m24*************
-// ****************************              ****************************
-//
-//
-//
-// ****************************
-// ************m31*************
-// ****************************
-// ****                   *****
-// ****                   *****
-// ****                   *****
-// ****    ************   *****
-// ****    *****c3*****   *m34*                           c4
-// ****    ************   *****
-// ****                   *****
-// ****                   *****
-// ****                   *****
-// ****************************
-// ****************************
-// ****************************
 pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
     // Store all possible combinations of finders
     let mut all_groups: Vec<FinderGroup> = Vec::new();
@@ -308,7 +276,7 @@ pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
                 let d13 = f1.dist_sq(f3);
 
                 // Closeness of the dist of bl and tr finders from tl finder
-                let symmetry_score = ((d12 as f64 / d13 as f64) - 1.0).abs();
+                let symmetry_score = ((d12 as f64 / d13 as f64).sqrt() - 1.0).abs();
 
                 // Angle of c2-c1-c3
                 let angle = angle(f2, f1, f3);

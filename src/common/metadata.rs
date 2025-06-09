@@ -3,9 +3,8 @@ use std::cmp::PartialOrd;
 use std::fmt::{Debug, Display};
 use std::ops::{Deref, Not};
 
-use image::{Luma, Pixel, Rgb};
+use image::{Luma, Rgb};
 
-use super::utils::{QRError, QRResult};
 use super::{codec::Mode, mask::MaskPattern};
 
 // Metadata
