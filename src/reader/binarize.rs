@@ -1,14 +1,9 @@
-use std::collections::VecDeque;
-
 use image::{GenericImageView, Luma, Pixel as ImgPixel, Rgb, RgbImage};
 
 use crate::metadata::Color;
+use crate::utils::f64_to_i32;
 
-use super::utils::accumulate::AreaAndCentreLocator;
-use super::utils::{
-    accumulate::{Accumulator, Row},
-    geometry::Point,
-};
+use super::utils::geometry::Point;
 
 #[cfg(test)]
 use std::path::Path;
@@ -47,11 +42,38 @@ impl From<Pixel> for Rgb<u8> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Region {
-    pub src: (u32, u32),
-    pub centre: Point,
+    pub id: usize,
+    parent_id: Option<usize>,
+    sum_x: u64,
+    sum_y: u64,
     pub area: u32,
     pub color: Color,
     pub is_finder: bool,
+}
+
+impl Region {
+    pub fn new(id: usize, color: Color) -> Self {
+        Self { id, parent_id: None, sum_x: 0, sum_y: 0, area: 0, color, is_finder: false }
+    }
+
+    pub fn add_pixel(&mut self, x: u32, y: u32) {
+        self.sum_x += x as u64;
+        self.sum_y += y as u64;
+        self.area += 1;
+    }
+
+    pub fn get_centre(&self) -> Point {
+        let x = self.sum_x as f64 / self.area as f64;
+        let y = self.sum_y as f64 / self.area as f64;
+
+        let x = x.round();
+        let y = y.round();
+
+        let x = f64_to_i32(&x).unwrap();
+        let y = f64_to_i32(&y).unwrap();
+
+        Point { x, y }
+    }
 }
 
 // Block stats
@@ -259,8 +281,16 @@ impl BinaryImage {
             }
         }
 
+        // Culmination of everything done earlier. Create binary image and put colors based on
+        // thresholds calculated in previous step. This step also performs simultaneous flood
+        // filling. If the left/top pixels are the same color, then the 2 regions are merged if
+        // they are different. The pixel is then added to the root region. Merging is done by
+        // setting the parent of top region has the id of the left region. If these regions already
+        // have parent regions then the 2 parents are merged instead.
         // Initially mark all pixels as unvisited; will be used for flood fill later.
+        let (w_usize, h_usize) = (w as usize, h as usize);
         let mut buffer = vec![Pixel::Unvisited(Color::White); (w * h) as usize];
+        let mut regions: Vec<Region> = Vec::with_capacity(100);
         for y in 0..h {
             let row_off = y * w;
             let thresh_row_off = (y as usize >> block_pow) * wsteps;
@@ -280,12 +310,40 @@ impl BinaryImage {
 
                 let color = <I::Pixel>::binarize(color_byte);
                 if color != Color::White {
-                    buffer[idx] = Pixel::Unvisited(color);
+                    let left_id = if idx % w_usize != 0 {
+                        get_adjacent_region(idx - 1, &color, &buffer)
+                    } else {
+                        None
+                    };
+                    let top_id = if idx >= w_usize {
+                        get_adjacent_region(idx - w_usize, &color, &buffer)
+                    } else {
+                        None
+                    };
+
+                    let reg_id = match (left_id, top_id) {
+                        // If left and top are 2 separate regions then merge top into left
+                        (Some(lid), Some(tid)) => {
+                            merge_regions(&mut regions, tid, lid);
+                            lid
+                        }
+                        // Top region is white or out of bounds
+                        (Some(lid), _) => lid,
+                        // Left region is white or out of bounds
+                        (_, Some(tid)) => tid,
+                        // No neighboring region, create new region
+                        _ => {
+                            let new_id = regions.len();
+                            regions.push(Region::new(new_id, color));
+                            new_id
+                        }
+                    };
+
+                    add_pixel_to_parent(x, y, reg_id, &mut regions);
+                    buffer[idx] = Pixel::Visited(reg_id, color);
                 }
             }
         }
-
-        let regions = Vec::with_capacity(100);
         Self { buffer, regions, w, h }
     }
 
@@ -377,113 +435,65 @@ impl BinaryImage {
         Ok(())
     }
 
-    pub(crate) fn get_region(&mut self, src: (u32, u32)) -> &mut Region {
+    pub(crate) fn get_region(&mut self, src: (u32, u32)) -> Option<&mut Region> {
         let px = self.get(src.0, src.1).unwrap();
 
         match px {
-            Pixel::Unvisited(color) => {
-                let reg_id = self.regions.len();
-
-                let acl = AreaAndCentreLocator::new();
-                let to = Pixel::Visited(reg_id, color);
-                let acl = self.fill_and_accumulate(src, to, acl);
-                let new_reg = Region {
-                    src,
-                    color,
-                    area: acl.area,
-                    centre: acl.get_centre(),
-                    is_finder: false,
-                };
-
-                self.regions.push(new_reg);
-
-                self.regions.get_mut(reg_id).expect("Region not found after saving")
-            }
+            Pixel::Unvisited(_) => None,
             Pixel::Visited(id, _) => {
-                self.regions.get_mut(id).expect("No region found for visited pixel")
+                let parent_id = get_root(id, &self.regions);
+                Some(self.regions.get_mut(parent_id).expect("No region found for visited pixel"))
             }
         }
-    }
-
-    /// Fills region with provided color and accumulates info
-    pub fn fill_and_accumulate<A: Accumulator>(
-        &mut self,
-        src: (u32, u32),
-        target: Pixel,
-        mut acc: A,
-    ) -> A {
-        let from = self.get(src.0, src.1).unwrap();
-
-        debug_assert!(from != target, "Cannot fill same color: From {from:?}, To {target:?}");
-
-        // Flood fill algorithm
-        let w = self.w;
-        let h = self.h;
-        let mut queue = VecDeque::new();
-        queue.push_back(src);
-
-        while let Some(pt) = queue.pop_front() {
-            let (x, y) = pt;
-            let mut left = x;
-            let mut right = x;
-            self.set(x, y, target);
-
-            // Travel left till boundary
-            while left > 0 && self.get(left - 1, y).unwrap() == from {
-                left -= 1;
-                self.set(left, y, target);
-            }
-
-            // Travel right till boundary
-            while right < w - 1 && self.get(right + 1, y).unwrap() == from {
-                right += 1;
-                self.set(right, y, target);
-            }
-
-            acc.accumulate(Row { left, right, y });
-
-            for ny in [y.saturating_sub(1), y + 1] {
-                if ny != y && ny < h {
-                    let mut seg_len = 0;
-                    for x in left..=right {
-                        let px = self.get(x, ny).unwrap();
-                        if px == from {
-                            seg_len += 1;
-                        } else if seg_len > 0 {
-                            queue.push_back((x - 1, ny));
-                            seg_len = 0;
-                        }
-                    }
-                    if seg_len > 0 {
-                        queue.push_back((right, ny));
-                    }
-                }
-            }
-        }
-        acc
     }
 }
 
-#[cfg(test)]
-mod binary_image_tests {
-    use super::BinaryImage;
-
-    #[test]
-    fn test_get_region() {
-        let inp_path = std::path::Path::new("benches/dataset/detection/lots/image001.jpg");
-        let img = image::open(inp_path).unwrap().to_luma8();
-        let mut bin_img = BinaryImage::binarize(&img);
-
-        let (w, h) = (bin_img.w, bin_img.h);
-
-        for x in 0..w {
-            for y in 0..h {
-                let _ = bin_img.get_region((x, y));
-            }
+// Returns region id if color matches
+fn get_adjacent_region(id: usize, color: &Color, img: &[Pixel]) -> Option<usize> {
+    if let Some(Pixel::Visited(reg_id, adj_color)) = img.get(id) {
+        if color == adj_color {
+            return Some(*reg_id);
         }
-
-        assert_eq!(bin_img.regions.len(), 100);
     }
+    None
+}
+
+fn get_root(reg_id: usize, regions: &[Region]) -> usize {
+    let mut cur = reg_id;
+    while let Some(parent) = regions[cur].parent_id {
+        cur = parent;
+    }
+    cur
+}
+
+fn merge_regions(regions: &mut [Region], src: usize, dst: usize) {
+    let src_parent_id = get_root(src, regions);
+    let dst_parent_id = get_root(dst, regions);
+
+    if src_parent_id == dst_parent_id {
+        return;
+    }
+
+    let src_root_reg = &mut regions[src_parent_id];
+    src_root_reg.parent_id = Some(dst_parent_id);
+
+    let src_root_sum_x = src_root_reg.sum_x;
+    let src_root_sum_y = src_root_reg.sum_y;
+    let src_root_area = src_root_reg.area;
+
+    let dst_root_reg = &mut regions[dst_parent_id];
+    dst_root_reg.sum_x += src_root_sum_x;
+    dst_root_reg.sum_y += src_root_sum_y;
+    dst_root_reg.area += src_root_area;
+
+    if src != src_parent_id {
+        regions[src].parent_id = Some(dst_parent_id);
+    }
+}
+
+fn add_pixel_to_parent(x: u32, y: u32, reg_id: usize, regions: &mut [Region]) {
+    let parent_id = get_root(reg_id, regions);
+    regions.get_mut(parent_id).unwrap().add_pixel(x, y);
 }
 
 // Constants

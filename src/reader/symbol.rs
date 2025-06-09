@@ -431,8 +431,8 @@ fn locate_alignment_pattern(
                 let color = Color::from(*px);
 
                 if x < w && y < h && color == Color::Black {
-                    let reg = img.get_region((x, y));
-                    let (reg_centre, reg_area) = (reg.centre, reg.area);
+                    let reg = img.get_region((x, y)).unwrap();
+                    let (reg_centre, reg_area) = (reg.get_centre(), reg.area);
 
                     if !rejected.contains(&reg_centre) {
                         // Check if region area is roughly equal to mod area with 100% tolerance

@@ -151,7 +151,7 @@ fn verify_and_mark_finder(
 
     // If pixel has been visited, check if regions is already marked as finder
     if matches!(img.get(s, y), Some(Pixel::Visited(..))) {
-        let stone = img.get_region((s, y));
+        let stone = img.get_region((s, y)).unwrap();
 
         // Exit if stone is already made a candidate from previous iterations
         if stone.is_finder {
@@ -171,12 +171,13 @@ fn verify_and_mark_finder(
         return None;
     };
 
-    let stone = img.get_region((s, y)).clone();
-    let ring = img.get_region((r, y)).clone();
+    let left = img.get_region((l, y))?.clone();
+    let stone = img.get_region((s, y))?.clone();
+    let ring = img.get_region((r, y))?.clone();
 
     // Check if left and right pts are not connected through same region
     // The id in Pixel::Visited makes the pixels unique
-    if img.get(l, y) != img.get(r, y) {
+    if left.id != ring.id {
         return None;
     }
 
@@ -186,10 +187,10 @@ fn verify_and_mark_finder(
         return None;
     }
 
-    img.get_region((r, y)).is_finder = true;
-    img.get_region((s, y)).is_finder = true;
+    img.get_region((r, y))?.is_finder = true;
+    img.get_region((s, y))?.is_finder = true;
 
-    Some(stone.centre)
+    Some(stone.get_centre())
 }
 
 #[cfg(test)]
