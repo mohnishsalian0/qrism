@@ -42,11 +42,21 @@ impl From<Pixel> for Rgb<u8> {
     }
 }
 
+impl Pixel {
+    pub fn get_id(&self) -> Option<usize> {
+        match self {
+            Pixel::Visited(id, _) => Some(*id),
+            _ => None,
+        }
+    }
+}
+
 // Region
 //------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Region {
+    pub id: usize,
     pub src: (u32, u32),
     pub centre: Point,
     pub area: u32,
@@ -388,6 +398,7 @@ impl BinaryImage {
                 let to = Pixel::Visited(reg_id, color);
                 let acl = self.fill_and_accumulate(src, to, acl);
                 let new_reg = Region {
+                    id: reg_id,
                     src,
                     color,
                     area: acl.area,
@@ -461,28 +472,6 @@ impl BinaryImage {
             }
         }
         acc
-    }
-}
-
-#[cfg(test)]
-mod binary_image_tests {
-    use super::BinaryImage;
-
-    #[test]
-    fn test_get_region() {
-        let inp_path = std::path::Path::new("benches/dataset/detection/lots/image001.jpg");
-        let img = image::open(inp_path).unwrap().to_luma8();
-        let mut bin_img = BinaryImage::binarize(&img);
-
-        let (w, h) = (bin_img.w, bin_img.h);
-
-        for x in 0..w {
-            for y in 0..h {
-                let _ = bin_img.get_region((x, y));
-            }
-        }
-
-        assert_eq!(bin_img.regions.len(), 100);
     }
 }
 

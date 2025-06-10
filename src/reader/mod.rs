@@ -16,40 +16,18 @@ pub struct QRReader();
 
 impl QRReader {
     pub fn detect(img: &mut BinaryImage) -> Vec<Symbol> {
-        let start = Instant::now();
         let finders = locate_finders(img);
-        println!("Findr: {}", start.elapsed().as_millis());
-
-        let start = Instant::now();
         let groups = group_finders(img, &finders);
-        println!("Group: {}", start.elapsed().as_millis());
-
-        let start = Instant::now();
         let symbols = locate_symbols(img, groups);
-        println!("Symbl: {}", start.elapsed().as_millis());
-
         symbols
     }
 
     #[cfg(feature = "benchmark")]
-    pub fn get_corners(img: GrayImage) -> Vec<[f64; 8]> {
-        //FIXME:
-        let start = Instant::now();
+    pub fn get_corners(img: GrayImage) -> Vec<Vec<f64>> {
         let mut img = BinaryImage::binarize(&img);
-        println!("Binry: {}", start.elapsed().as_millis());
-
-        let start = Instant::now();
         let finders = locate_finders(&mut img);
-        println!("Findr: {}", start.elapsed().as_millis());
-
-        let start = Instant::now();
         let groups = group_finders(&img, &finders);
-        println!("Group: {}", start.elapsed().as_millis());
-
-        let start = Instant::now();
         let symbols = locate_symbols(&mut img, groups);
-        println!("Symbl: {}", start.elapsed().as_millis());
-
         let mut symbol_corners = Vec::with_capacity(20);
         for sym in symbols {
             let sz = sym.ver.width() as f64;
@@ -71,7 +49,7 @@ impl QRReader {
                 Err(_) => continue,
             };
 
-            symbol_corners.push([bl.0, bl.1, tl.0, tl.1, tr.0, tr.1, br.0, br.1])
+            symbol_corners.push(vec![bl.0, bl.1, tl.0, tl.1, tr.0, tr.1, br.0, br.1])
         }
 
         symbol_corners
@@ -86,7 +64,7 @@ fn detect(img: &mut BinaryImage) -> Vec<Symbol> {
 
 fn locate_symbols(img: &mut BinaryImage, groups: Vec<FinderGroup>) -> Vec<Symbol> {
     let mut is_grouped = HashSet::new();
-    let mut sym_locs = Vec::with_capacity(20);
+    let mut sym_locs = Vec::with_capacity(100);
     for mut g in groups {
         if g.finders.iter().any(|f| is_grouped.contains(f)) {
             continue;
@@ -231,8 +209,8 @@ mod reader_tests {
             utils::geometry::{BresenhamLine, Line, X, Y},
         };
 
-        let inp_path = std::path::Path::new("benches/dataset/detection/lots/image001.jpg");
-        // let inp_path = std::path::Path::new("assets/cleaned.png");
+        let inp_path = std::path::Path::new("benches/dataset/detection/high_version/image003.jpg");
+        // let inp_path = std::path::Path::new("assets/test12.png");
         let img = image::open(inp_path).unwrap().to_luma8();
         let mut bin_img = BinaryImage::binarize(&img);
 
@@ -241,12 +219,15 @@ mod reader_tests {
         let mut out_img = image::open(out_path).unwrap().to_rgb8();
 
         // let finders = locate_finders(&mut bin_img);
+        // dbg!(finders.len());
         // finders.iter().for_each(|f| f.highlight(&mut out_img, image::Rgb([255, 0, 0])));
 
         // let groups = group_finders(&bin_img, &finders);
+        // dbg!(groups.len());
         // groups.iter().for_each(|g| g.highlight(&mut out_img));
 
         let symbols = detect(&mut bin_img);
+        dbg!(symbols.len());
         symbols.iter().for_each(|s| s.highlight(&mut out_img));
 
         let out = std::path::Path::new("assets/out.png");

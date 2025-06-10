@@ -8,11 +8,81 @@ pub mod accumulate;
 pub mod geometry;
 pub mod homography;
 
-// Util function to verify a pattern along a line. This is used in 2 places; in finder locator
+// Util functions to verify a pattern along a line. This is used in 2 places; in finder locator
 // to verify 1:1:3:1:1 pattern, and in alignment locator to verify 1:1:1 pattern
 //------------------------------------------------------------------------------
 
-pub fn verify_pattern<A: Axis>(
+pub fn verify_finder_pattern(
+    img: &BinaryImage,
+    seed: &Point,
+    pattern: &[f64],
+    max_run: u32,
+) -> Option<(u32, u32)> {
+    let px = img.get_at_point(seed).unwrap();
+    let pat_len = pattern.len();
+
+    let mut run_len = vec![0; pat_len];
+    run_len[pat_len / 2] = 1;
+
+    // Count upward
+    let mut pos = *seed;
+    let mut flips = pat_len / 2;
+    let mut initial = Color::from(*px);
+    while run_len[flips] <= max_run {
+        pos.y -= 1;
+        if pos.y < 0 {
+            break;
+        }
+
+        let color = Color::from(*img.get_at_point(&pos).unwrap());
+        if initial != color {
+            if flips == 0 {
+                break;
+            }
+            initial = color;
+            flips -= 1;
+        }
+        run_len[flips] += 1;
+    }
+    let top = (pos.y + 1) as u32;
+
+    // Count downward
+    let mut pos = *seed;
+    let mut flips = pat_len / 2;
+    let mut initial = Color::from(*px);
+    while run_len[flips] <= max_run {
+        pos.y += 1;
+        if img.h == pos.y as u32 {
+            break;
+        }
+
+        let color = Color::from(*img.get_at_point(&pos).unwrap());
+        if initial != color {
+            if flips == pat_len - 1 {
+                break;
+            }
+            initial = color;
+            flips += 1;
+        }
+        run_len[flips] += 1;
+    }
+    let bottom = (pos.y - 1) as u32;
+
+    // Verify pattern with 95% tolerance. This was tuned to pass maximum number of test images
+    let avg = run_len.iter().sum::<u32>() as f64 / 7.0;
+    let tol = avg * PATTERN_TOLERANCE;
+
+    for (i, r) in pattern.iter().enumerate() {
+        let rl = run_len[i] as f64;
+        if rl < r * avg - tol || rl > r * avg + tol {
+            return None;
+        }
+    }
+
+    Some((top, bottom))
+}
+
+pub fn verify_alignment_pattern<A: Axis>(
     img: &BinaryImage,
     seed: &Point,
     pattern: &[f64],
@@ -69,8 +139,8 @@ pub fn verify_pattern<A: Axis>(
         run_len[flips] += 1;
     }
 
-    // Verify pattern with 80% tolerance. This was tuned to pass maximum number of test images
-    let tol = threshold * 0.8;
+    // Verify pattern with 95% tolerance. This was tuned to pass maximum number of test images
+    let tol = threshold * PATTERN_TOLERANCE;
 
     for (i, r) in pattern.iter().enumerate() {
         let rl = run_len[i] as f64;
@@ -108,3 +178,8 @@ pub fn rnd_rgb() -> image::Rgb<u8> {
         ((b1 + m) * 255.0).round() as u8,
     ])
 }
+
+// Global constants
+//------------------------------------------------------------------------------
+
+pub const PATTERN_TOLERANCE: f64 = 0.95;

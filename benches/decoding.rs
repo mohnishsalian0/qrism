@@ -40,7 +40,7 @@ fn benchmark(dataset_dir: &Path) {
             let mut symbols = QRReader::detect(&mut img);
 
             if symbols.is_empty() {
-                println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", path_str, angle);
+                // println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", path_str, angle);
                 continue;
             } else {
                 match symbols[0].decode() {
@@ -64,13 +64,13 @@ fn benchmark(dataset_dir: &Path) {
                                 .entry(angle.to_string())
                                 .or_default() += 1;
 
-                            println!("\x1b[1;32m[PASS]\x1b[0m {} at {}deg", path_str, angle);
+                            // println!("\x1b[1;32m[PASS]\x1b[0m {} at {}deg", path_str, angle);
                         } else {
-                            println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", path_str, angle);
+                            // println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", path_str, angle);
                         };
                     }
                     Err(_) => {
-                        println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", path_str, angle);
+                        // println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", path_str, angle);
                     }
                 }
             }

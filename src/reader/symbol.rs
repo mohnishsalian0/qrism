@@ -16,7 +16,7 @@ use crate::{
     },
     reader::utils::{
         geometry::{X, Y},
-        verify_pattern,
+        verify_alignment_pattern,
     },
     utils::{BitArray, BitStream, EncRegionIter, QRError, QRResult},
     ECLevel, MaskPattern, Palette, Version,
@@ -152,7 +152,6 @@ impl SymbolLocation {
 fn verify_symbol_size(img: &BinaryImage, group: &FinderGroup, mids: &[Point; 6]) -> Option<u32> {
     let [c0, c1, c2] = &group.finders;
     let [m03, m01, m10, m12, m21, m23] = mids;
-    let threshold = 0.60;
 
     // Measure timing pattern from c1 to c2
     let t12 = measure_timing_patterns(img, m10, m23);
@@ -162,7 +161,7 @@ fn verify_symbol_size(img: &BinaryImage, group: &FinderGroup, mids: &[Point; 6])
 
     // Closeness of horizontal and vertical timing patterns
     let timing_score = ((t12 as f64 / t13 as f64) - 1.0).abs();
-    if timing_score > threshold {
+    if timing_score > SYMBOL_HEURICTIC_THRESHOLD {
         return None;
     }
 
@@ -171,7 +170,7 @@ fn verify_symbol_size(img: &BinaryImage, group: &FinderGroup, mids: &[Point; 6])
     let mod_score12 = ((est_mod_count12 / (t12 + 6) as f64) - 1.0).abs();
 
     // Skip if one is more than twice as long as the other
-    if mod_score12 > threshold {
+    if mod_score12 > SYMBOL_HEURICTIC_THRESHOLD {
         return None;
     }
 
@@ -180,7 +179,7 @@ fn verify_symbol_size(img: &BinaryImage, group: &FinderGroup, mids: &[Point; 6])
     let mod_score13 = ((est_mod_count13 / (t13 + 6) as f64) - 1.0).abs();
 
     // Skip if one is more than twice as long as the other
-    if mod_score13 > threshold {
+    if mod_score13 > SYMBOL_HEURICTIC_THRESHOLD {
         return None;
     }
 
@@ -438,8 +437,20 @@ fn locate_alignment_pattern(
                         // Check if region area is roughly equal to mod area with 100% tolerance
                         // and crosscheck 1:1:1 ratio horizontally and vertically
                         if reg_area <= threshold
-                            && verify_pattern::<X>(img, &reg_centre, &pattern, mod_w, threshold)
-                            && verify_pattern::<Y>(img, &reg_centre, &pattern, mod_w, threshold)
+                            && verify_alignment_pattern::<X>(
+                                img,
+                                &reg_centre,
+                                &pattern,
+                                mod_w,
+                                threshold,
+                            )
+                            && verify_alignment_pattern::<Y>(
+                                img,
+                                &reg_centre,
+                                &pattern,
+                                mod_w,
+                                threshold,
+                            )
                         {
                             return Some(reg_centre);
                         } else {
@@ -1016,3 +1027,8 @@ mod reader_tests {
         assert_eq!(blks, exp_blks);
     }
 }
+
+// Global constants
+//------------------------------------------------------------------------------
+
+pub const SYMBOL_HEURICTIC_THRESHOLD: f64 = 0.5;

@@ -1,3 +1,5 @@
+use geo::{polygon, Area, BooleanOps, Coord, Polygon};
+use geo_booleanop::boolean::BooleanOp;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
@@ -9,52 +11,6 @@ use qrism::QRReader;
 
 mod utils;
 use utils::*;
-
-fn test_get_corners() {
-    let img_path = Path::new("benches/dataset/detection/monitor/image001.jpg");
-
-    // Corresponding expected result file
-    let exp_res_path = img_path.with_extension("txt");
-    let mut exp_symbols = Vec::new();
-
-    if let Ok(contents) = std::fs::read_to_string(&exp_res_path) {
-        // Collect all numbers from expected result
-        let numbers: Vec<f64> = contents
-            .lines()
-            .flat_map(|line| line.split_whitespace())
-            .filter_map(|s| s.parse::<f64>().ok())
-            .collect();
-
-        // Group into chunks of 8 (i.e., 4 points per QR)
-        for chunk in numbers.chunks(8) {
-            debug_assert!(chunk.len() == 8, "Less than 4 corners");
-            exp_symbols.push((*chunk).to_vec());
-        }
-    }
-
-    let img = image::open(img_path).unwrap().to_luma8();
-    let symbols = QRReader::get_corners(img);
-
-    let mut detected = 0;
-    let mut score = [0; 3];
-    for corners in symbols.iter() {
-        if exp_symbols.iter().any(|exp_corners| {
-            exp_corners.iter().zip(corners).all(|(&a, &e)| (a - e).abs() * 10.0 <= e)
-        }) {
-            detected += 1;
-        }
-    }
-    score[0] = detected;
-    score[1] = symbols.len() - detected;
-    score[2] = exp_symbols.len() - detected;
-
-    let precision = score[0] as f64 / (score[0] + score[1]) as f64;
-    let recall = score[0] as f64 / (score[0] + score[2]) as f64;
-
-    println!("Score: {:?}", score);
-    println!("Precision: {}", precision);
-    println!("Recall: {}", recall);
-}
 
 fn benchmark(dataset_dir: &Path) {
     let image_paths: Vec<_> = WalkDir::new(dataset_dir)
@@ -68,7 +24,6 @@ fn benchmark(dataset_dir: &Path) {
     let runtimes = Arc::new(Mutex::new(HashMap::<String, Vec<u128>>::new()));
 
     image_paths.par_iter().for_each(|img_path| {
-        let path_str = img_path.to_str().unwrap();
         let parent = get_parent(img_path);
 
         let exp_path = img_path.with_extension("txt");
@@ -77,30 +32,16 @@ fn benchmark(dataset_dir: &Path) {
         let gray = load_grayscale(img_path).unwrap();
 
         let start = Instant::now();
-        let mut symbols = QRReader::get_corners(gray);
+        let symbols = QRReader::get_corners(gray);
         let time = start.elapsed().as_millis();
 
-        let mut true_pos = 0;
-        let mut false_pos = 0;
-        for symbol in symbols.iter_mut() {
-            let mut corners = *symbol;
-            let mut matched = false;
-            for _ in 0..4 {
-                if exp_symbols.iter().any(|exp_corners| {
-                    exp_corners.iter().zip(corners).all(|(a, e)| (*a - e).abs() * 10.0 <= e)
-                }) {
-                    true_pos += 1;
-                    matched = true;
-                    println!("\x1b[1;32m[PASS]\x1b[0m {}", path_str);
-                    break;
-                }
-                corners.rotate_left(2);
-            }
-            if !matched {
-                false_pos += 1;
-                println!("\x1b[1;31m[FAIL]\x1b[0m {}", path_str);
-            }
-        }
+        // let true_pos = matched_areas(&symbols, &exp_symbols);
+        let true_pos = matched_corners(&symbols, &exp_symbols);
+        let false_pos = symbols.len() - true_pos;
+        let false_neg = exp_symbols.len() - true_pos;
+
+        let path_str = img_path.to_str().unwrap();
+        println!("\x1b[1;32m[PASSED {}/{}]\x1b[0m {}", true_pos, exp_symbols.len(), path_str);
 
         let mut results = results.lock().unwrap();
         let mut runtimes = runtimes.lock().unwrap();
@@ -108,7 +49,7 @@ fn benchmark(dataset_dir: &Path) {
         let score = results.entry(parent.clone()).or_default();
         *score.entry("true_pos".to_string()).or_default() += true_pos as f64;
         *score.entry("false_pos".to_string()).or_default() += false_pos as f64;
-        *score.entry("false_neg".to_string()).or_default() += (exp_symbols.len() - true_pos) as f64;
+        *score.entry("false_neg".to_string()).or_default() += false_neg as f64;
 
         runtimes.entry(parent).or_default().push(time);
     });
@@ -172,6 +113,101 @@ fn benchmark(dataset_dir: &Path) {
     ];
 
     print_table(&results, &rows, &cols);
+}
+
+fn matched_corners(actual: &[Vec<f64>], expected: &[Vec<f64>]) -> usize {
+    let mut matched = [false; 100];
+    let mut res = 0;
+    for actual_corners in actual.iter() {
+        let mut actual_corners = actual_corners.to_vec();
+        let mut best_score: f64 = f64::MAX;
+        let mut best_match: Option<usize> = None;
+        for (i, exp_corners) in expected.iter().enumerate() {
+            if matched[i] {
+                continue;
+            }
+            for _ in 0..4 {
+                if exp_corners.iter().zip(&actual_corners).all(|(a, e)| (*a - *e).abs() <= *e * 0.1)
+                {
+                    let score: f64 =
+                        exp_corners.iter().zip(&actual_corners).map(|(a, e)| (*a - *e).abs()).sum();
+                    if score < best_score {
+                        best_match = Some(i);
+                        best_score = score;
+                    }
+                }
+                actual_corners.rotate_left(2);
+            }
+        }
+        if let Some(bm) = best_match {
+            res += 1;
+            matched[bm] = true;
+        }
+    }
+    res
+}
+
+fn matched_areas(actual: &[Vec<f64>], expected: &[Vec<f64>]) -> usize {
+    let mut matched = [false; 100];
+    let actual = actual.to_vec();
+    let mut res = 0;
+    for actual_corners in actual.iter() {
+        if expected.iter().enumerate().any(|(i, exp_corners)| {
+            if matched[i] {
+                return false;
+            }
+            let actual_area = quad_area(actual_corners);
+            let exp_area = quad_area(exp_corners);
+            let overlap_area = overlap_area(actual_corners, exp_corners);
+            let percent = overlap_area / actual_area.min(exp_area);
+            if percent > 0.2 {
+                matched[i] = true;
+                true
+            } else {
+                false
+            }
+        }) {
+            res += 1;
+        }
+    }
+    res
+}
+
+fn quad_area(quad: &[f64]) -> f64 {
+    assert!(quad.len() == 8, "Expected 8 coordinates (4 points)");
+
+    let x1 = quad[0];
+    let y1 = quad[1];
+    let x2 = quad[2];
+    let y2 = quad[3];
+    let x3 = quad[4];
+    let y3 = quad[5];
+    let x4 = quad[6];
+    let y4 = quad[7];
+
+    0.5 * ((x1 * y2 + x2 * y3 + x3 * y4 + x4 * y1) - (y1 * x2 + y2 * x3 + y3 * x4 + y4 * x1)).abs()
+}
+
+/// Converts a flat slice of 8 f64s into a Polygon
+fn to_polygon(quad: &[f64]) -> Polygon<f64> {
+    assert!(quad.len() == 8);
+    let points = vec![
+        Coord { x: quad[0], y: quad[1] },
+        Coord { x: quad[2], y: quad[3] },
+        Coord { x: quad[4], y: quad[5] },
+        Coord { x: quad[6], y: quad[7] },
+        Coord { x: quad[0], y: quad[1] }, // close the ring
+    ];
+    Polygon::new(points.into(), vec![])
+}
+
+/// Returns the overlap area between two quads
+fn overlap_area(actual: &[f64], expected: &[f64]) -> f64 {
+    let poly1 = to_polygon(actual);
+    let poly2 = to_polygon(expected);
+
+    let intersection = poly1.intersection(&poly2);
+    intersection.unsigned_area()
 }
 
 fn main() {

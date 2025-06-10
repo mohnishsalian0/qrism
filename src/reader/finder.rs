@@ -2,10 +2,7 @@ use crate::metadata::Color;
 
 use super::{
     binarize::{BinaryImage, Pixel},
-    utils::{
-        geometry::{Point, Y},
-        verify_pattern,
-    },
+    utils::{geometry::Point, verify_finder_pattern, PATTERN_TOLERANCE},
 };
 
 #[cfg(test)]
@@ -82,9 +79,10 @@ impl LineScanner {
             return false;
         }
 
-        // Verify 1:1:3:1:1 ratio
-        let avg = (self.buffer[..5].iter().sum::<u32>() as f64) / 7.0;
-        let tol = avg * 3.0 / 4.0;
+        // Verify 1:1:3:1:1 ratio with 95% tolerance. The tolerance is very linient because
+        // the validations in the later stages of the pipeline are more stringent
+        let avg = self.buffer[..5].iter().sum::<u32>() as f64 / 7.0;
+        let tol = avg * PATTERN_TOLERANCE;
 
         let ratio: [f64; 5] = [1.0, 1.0, 3.0, 1.0, 1.0];
         for (i, r) in ratio.iter().enumerate() {
@@ -163,20 +161,23 @@ fn verify_and_mark_finder(
     let seed = Point { x: sx as i32, y: datum.y as i32 };
     let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
     let buf = &scn.buffer;
-    let thresh = (buf[0] + buf[1] + buf[3] + buf[4]) as f64 / 4.0;
     let max_run = (r - l) * 2; // Setting a loose upper limit on the run
 
-    // Verify 1:1:3:1:1 pattern along Y axis
-    if !verify_pattern::<Y>(img, &seed, &pattern, thresh, max_run) {
-        return None;
-    };
+    // Verify 1:1:3:1:1 pattern along Y axis. Returns the top and bottom pts if valid
+    let (t, b) = verify_finder_pattern(img, &seed, &pattern, max_run)?;
 
     let stone = img.get_region((s, y)).clone();
     let ring = img.get_region((r, y)).clone();
 
-    // Check if left and right pts are not connected through same region
-    // The id in Pixel::Visited makes the pixels unique
-    if img.get(l, y) != img.get(r, y) {
+    // Check if left, top and bottom points lie inside the ring
+    let lid = img.get(l, y)?.get_id()?;
+    // FIXME:
+    // let tid = img.get(sx, t)?.get_id()?;
+    // let bid = img.get(sx, b)?.get_id()?;
+    // if lid != ring.id || tid != ring.id || bid != ring.id {
+    //     return None;
+    // }
+    if lid != ring.id {
         return None;
     }
 
