@@ -109,7 +109,7 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Point> {
 
     for y in 0..h {
         for x in 0..w {
-            let color = Color::from(img.get(x, y).unwrap());
+            let color = img.get(x, y).unwrap().get_color();
             let datum = match scanner.advance(color) {
                 Some(d) => d,
                 None => continue,

@@ -25,15 +25,6 @@ pub enum Pixel {
     Unvisited(Color),      // Default tag
 }
 
-impl From<Pixel> for Color {
-    fn from(p: Pixel) -> Self {
-        match p {
-            Pixel::Visited(_, c) => c,
-            Pixel::Unvisited(c) => c,
-        }
-    }
-}
-
 impl From<Pixel> for Rgb<u8> {
     fn from(p: Pixel) -> Self {
         match p {
@@ -47,6 +38,13 @@ impl Pixel {
         match self {
             Pixel::Visited(id, _) => Some(*id),
             _ => None,
+        }
+    }
+
+    pub fn get_color(&self) -> Color {
+        match self {
+            Pixel::Visited(_, c) => *c,
+            Pixel::Unvisited(c) => *c,
         }
     }
 }

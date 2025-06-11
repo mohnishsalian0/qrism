@@ -208,12 +208,12 @@ where
     let mut flips = 0;
     let mut buffer = Vec::with_capacity(100);
     let px = img.get_at_point(from).unwrap();
-    let mut last = Color::from(*px);
+    let mut last = px.get_color();
     let line = BresenhamLine::<A>::new(from, to);
 
     for p in line {
         let px = img.get_at_point(&p).unwrap();
-        let color = Color::from(*px);
+        let color = px.get_color();
 
         if color != last {
             flips += 1;
@@ -249,12 +249,12 @@ where
 {
     let mut transitions = [0, 0, 0];
     let px = img.get_at_point(from).unwrap();
-    let mut last = Color::from(*px).to_bits();
+    let mut last = px.get_color().to_bits();
     let line = BresenhamLine::<A>::new(from, to);
 
     for p in line {
         let px = img.get_at_point(&p).unwrap();
-        let color = Color::from(*px).to_bits();
+        let color = px.get_color().to_bits();
         for i in 0..3 {
             if color[i] != last[i] {
                 transitions[i] += 1;
@@ -426,7 +426,7 @@ fn locate_alignment_pattern(
             let y = seed.y as u32;
 
             if let Some(px) = img.get_at_point(&seed) {
-                let color = Color::from(*px);
+                let color = px.get_color();
 
                 if x < w && y < h && color == Color::Black {
                     let reg = img.get_region((x, y));
@@ -616,7 +616,7 @@ fn cell_fitness(img: &BinaryImage, hm: &Homography, x: i32, y: i32) -> i32 {
                 Err(_) => return 0,
             };
             if let Some(px) = img.get_at_point(&pt) {
-                let color = Color::from(*px);
+                let color = px.get_color();
                 if color == white {
                     score -= 1;
                 } else {
@@ -715,7 +715,7 @@ impl Symbol<'_> {
 
     pub fn read_palette_info(&self) -> QRResult<Palette> {
         if let Some(px) = self.get(8, -8) {
-            let color = Color::from(*px);
+            let color = px.get_color();
 
             if color == Color::Black {
                 return Ok(Palette::Mono);
@@ -730,7 +730,7 @@ impl Symbol<'_> {
     pub fn get_number(&self, coords: &[(i32, i32)]) -> Option<u32> {
         let mut num = 0;
         for &(x, y) in coords {
-            let color = Color::from(*self.get(x, y)?);
+            let color = self.get(x, y)?.get_color();
             let bit = (color != Color::White) as u32;
             num = (num << 1) | bit;
         }
@@ -948,7 +948,7 @@ impl Symbol<'_> {
 
         for (i, (x, y)) in rgn_iter.by_ref().take(chan_bits).enumerate() {
             let px = self.get(x, y).ok_or(QRError::PixelOutOfBounds)?;
-            let color = Color::from(*px);
+            let color = px.get_color();
             let [mut r, mut g, mut b] = color.to_bits();
 
             if !mask_fn(x, y) {
