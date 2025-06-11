@@ -115,14 +115,14 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Point> {
                 None => continue,
             };
 
-            if let Some(centre) = verify_and_mark_finder(img, &scanner, &datum) {
+            if let Some(centre) = verify_and_mark_finder(img, &datum) {
                 finders.push(centre);
             }
         }
 
         // Handles an edge case where the QR is located at the right edge of the image
         if let Some(datum) = scanner.advance(Color::White) {
-            if let Some(centre) = verify_and_mark_finder(img, &scanner, &datum) {
+            if let Some(centre) = verify_and_mark_finder(img, &datum) {
                 finders.push(centre);
             }
         }
@@ -140,11 +140,7 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Point> {
 // 4. Area of stone region is roughly 37.5% of ring region
 // 5. Crosscheck 1:1:3:1:1 pattern along Y axis
 // Finally it marks the regions are candidate and returns the centre
-fn verify_and_mark_finder(
-    img: &mut BinaryImage,
-    scn: &LineScanner,
-    datum: &DatumLine,
-) -> Option<Point> {
+fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Point> {
     let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
 
     // If pixel has been visited, check if regions is already marked as finder
@@ -160,7 +156,6 @@ fn verify_and_mark_finder(
     let sx = r - (s - l) * 5 / 4;
     let seed = Point { x: sx as i32, y: datum.y as i32 };
     let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
-    let buf = &scn.buffer;
     let max_run = (r - l) * 2; // Setting a loose upper limit on the run
 
     // Verify 1:1:3:1:1 pattern along Y axis. Returns the top and bottom pts if valid
@@ -171,13 +166,9 @@ fn verify_and_mark_finder(
 
     // Check if left, top and bottom points lie inside the ring
     let lid = img.get(l, y)?.get_id()?;
-    // FIXME:
-    // let tid = img.get(sx, t)?.get_id()?;
-    // let bid = img.get(sx, b)?.get_id()?;
-    // if lid != ring.id || tid != ring.id || bid != ring.id {
-    //     return None;
-    // }
-    if lid != ring.id {
+    let tid = img.get(sx, t)?.get_id()?;
+    let bid = img.get(sx, b)?.get_id()?;
+    if lid != ring.id || tid != ring.id || bid != ring.id {
         return None;
     }
 
@@ -257,7 +248,7 @@ impl FinderGroup {
     }
 }
 
-pub fn group_finders(img: &BinaryImage, finders: &[Point]) -> Vec<FinderGroup> {
+pub fn group_finders(finders: &[Point]) -> Vec<FinderGroup> {
     // Store all possible combinations of finders
     let mut all_groups: Vec<FinderGroup> = Vec::new();
     let right_angle = 90f64.to_radians();
@@ -310,23 +301,13 @@ fn angle(a: &Point, b: &Point, c: &Point) -> f64 {
     let mag_ab = (ab.0.powi(2) + ab.1.powi(2)).sqrt();
     let mag_cb = (cb.0.powi(2) + cb.1.powi(2)).sqrt();
 
-    if mag_ab == 0.0 || mag_cb == 0.0 {
+    if mag_ab <= f64::EPSILON || mag_cb <= f64::EPSILON {
         return 0.0;
     }
 
     let cos_theta = (dot / (mag_ab * mag_cb)).clamp(-1.0, 1.0);
 
     cos_theta.acos()
-}
-
-fn estimate_mod_count(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {
-    let d1 = c1.dist_sq(m1);
-    let d2 = c2.dist_sq(m2);
-
-    let avg_d = ((d1 + d2) / 2) as f64;
-    let d12 = c1.dist_sq(c2) as f64;
-
-    (d12 * 9.0 / avg_d).sqrt()
 }
 
 #[cfg(test)]
@@ -357,7 +338,7 @@ mod group_finders_tests {
 
         let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
-        let group = group_finders(&img, &finders);
+        let group = group_finders(&finders);
         assert!(!group.is_empty(), "No group found");
         for f in group[0].finders.iter() {
             let c = (f.x, f.y);

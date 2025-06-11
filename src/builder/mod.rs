@@ -195,16 +195,10 @@ impl QRBuilder<'_> {
         );
 
         let mut blks = Vec::with_capacity(256);
-        data[..b1_tot_sz]
-            .chunks(b1s)
-            .enumerate()
-            .for_each(|(i, d)| blks.push(Block::new(d, b1s + ec_len)));
+        data[..b1_tot_sz].chunks(b1s).for_each(|d| blks.push(Block::new(d, b1s + ec_len)));
 
         if b2s > 0 {
-            data[b1_tot_sz..]
-                .chunks(b2s)
-                .enumerate()
-                .for_each(|(i, d)| blks.push(Block::new(d, b2s + ec_len)));
+            data[b1_tot_sz..].chunks(b2s).for_each(|d| blks.push(Block::new(d, b2s + ec_len)));
         }
 
         blks
@@ -290,7 +284,7 @@ mod builder_tests {
     fn test_interleave() {
         let data = [vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9, 0]];
         let mut blks: Vec<Block> = Vec::with_capacity(256);
-        data.iter().enumerate().for_each(|(i, b)| blks.push(Block::new(b, 6)));
+        data.iter().for_each(|b| blks.push(Block::new(b, 6)));
         let mut ilvd = BitStream::new(256);
         QRBuilder::interleave_into(&blks, &mut ilvd);
         let exp_ilvd = vec![1, 4, 7, 2, 5, 8, 3, 6, 9, 0];

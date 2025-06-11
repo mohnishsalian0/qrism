@@ -10,7 +10,8 @@ use std::error::Error;
 use std::path::Path;
 
 use image::{GrayImage, Luma, RgbImage};
-use qrism::reader::QRReader;
+use qrism::reader::binarize::BinaryImage;
+use qrism::reader::detect;
 use qrism::{ECLevel, Palette, Version};
 use qrism::{MaskPattern, QRBuilder};
 use rqrr::PreparedImage;
@@ -38,7 +39,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     // QR Reader
     // let path = Path::new("assets/test7.png");
     // let img = image::open(path).unwrap().to_rgb8();
-    // let msg = QRReader::read(&img).unwrap();
+    // let mut bin_img = BinaryImage::binarize(&img);
+    // let mut symbols = detect(&mut bin_img);
+    // assert!(symbols.len() > 0, "No symbol found");
+    // let msg = symbols[0].decode().unwrap();
     // println!("\x1b[1;32mMessage:\x1b[0m");
     // println!("{msg}");
 

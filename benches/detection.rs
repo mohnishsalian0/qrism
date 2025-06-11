@@ -1,13 +1,12 @@
 use geo::{polygon, Area, BooleanOps, Coord, Polygon};
 use geo_booleanop::boolean::BooleanOp;
+use qrism::reader::get_corners;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use walkdir::WalkDir;
-
-use qrism::QRReader;
 
 mod utils;
 use utils::*;
@@ -29,19 +28,18 @@ fn benchmark(dataset_dir: &Path) {
         let exp_path = img_path.with_extension("txt");
         let exp_symbols = parse_expected_bounds_result(&exp_path);
 
-        let gray = load_grayscale(img_path).unwrap();
+        let gray = image::open(img_path).unwrap().to_luma8();
 
         let start = Instant::now();
-        let symbols = QRReader::get_corners(gray);
+        let symbols = get_corners(gray);
         let time = start.elapsed().as_millis();
 
-        // let true_pos = matched_areas(&symbols, &exp_symbols);
-        let true_pos = matched_corners(&symbols, &exp_symbols);
+        let true_pos = matched_areas(&symbols, &exp_symbols);
         let false_pos = symbols.len() - true_pos;
         let false_neg = exp_symbols.len() - true_pos;
 
         let path_str = img_path.to_str().unwrap();
-        println!("\x1b[1;32m[PASSED {}/{}]\x1b[0m {}", true_pos, exp_symbols.len(), path_str);
+        // println!("\x1b[1;32m[PASSED {}/{}]\x1b[0m {}", true_pos, exp_symbols.len(), path_str);
 
         let mut results = results.lock().unwrap();
         let mut runtimes = runtimes.lock().unwrap();
@@ -115,38 +113,6 @@ fn benchmark(dataset_dir: &Path) {
     print_table(&results, &rows, &cols);
 }
 
-fn matched_corners(actual: &[Vec<f64>], expected: &[Vec<f64>]) -> usize {
-    let mut matched = [false; 100];
-    let mut res = 0;
-    for actual_corners in actual.iter() {
-        let mut actual_corners = actual_corners.to_vec();
-        let mut best_score: f64 = f64::MAX;
-        let mut best_match: Option<usize> = None;
-        for (i, exp_corners) in expected.iter().enumerate() {
-            if matched[i] {
-                continue;
-            }
-            for _ in 0..4 {
-                if exp_corners.iter().zip(&actual_corners).all(|(a, e)| (*a - *e).abs() <= *e * 0.1)
-                {
-                    let score: f64 =
-                        exp_corners.iter().zip(&actual_corners).map(|(a, e)| (*a - *e).abs()).sum();
-                    if score < best_score {
-                        best_match = Some(i);
-                        best_score = score;
-                    }
-                }
-                actual_corners.rotate_left(2);
-            }
-        }
-        if let Some(bm) = best_match {
-            res += 1;
-            matched[bm] = true;
-        }
-    }
-    res
-}
-
 fn matched_areas(actual: &[Vec<f64>], expected: &[Vec<f64>]) -> usize {
     let mut matched = [false; 100];
     let actual = actual.to_vec();
@@ -160,6 +126,7 @@ fn matched_areas(actual: &[Vec<f64>], expected: &[Vec<f64>]) -> usize {
             let exp_area = quad_area(exp_corners);
             let overlap_area = overlap_area(actual_corners, exp_corners);
             let percent = overlap_area / actual_area.min(exp_area);
+            // let percent = overlap_area / exp_area;
             if percent > 0.2 {
                 matched[i] = true;
                 true

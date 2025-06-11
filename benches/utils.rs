@@ -16,16 +16,6 @@ pub fn get_parent(path: &Path) -> String {
     path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()).unwrap().to_string()
 }
 
-pub fn load_grayscale<P: AsRef<Path>>(path: P) -> Option<GrayImage> {
-    match open(&path) {
-        Ok(img) => Some(img.to_luma8()),
-        Err(e) => {
-            eprintln!("Failed to open {}: {}", path.as_ref().display(), e);
-            None
-        }
-    }
-}
-
 pub fn parse_expected_decode_result(path: &Path) -> Vec<String> {
     let exp_msg = std::fs::read_to_string(path).unwrap();
     exp_msg.lines().map(String::from).collect()

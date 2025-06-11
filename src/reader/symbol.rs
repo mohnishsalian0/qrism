@@ -135,7 +135,7 @@ impl SymbolLocation {
             let v1 = Slope::new(&c2, &mids[5]);
             let area = v0.cross(&v1).unsigned_abs() / 9;
 
-            align = locate_alignment_pattern(img, group, seed, mod_w, area)?;
+            align = locate_alignment_pattern(img, seed, mod_w, area)?;
         }
 
         let h = setup_homography(img, group, align, ver)?;
@@ -402,7 +402,6 @@ impl<'a> Symbol<'a> {
 
 fn locate_alignment_pattern(
     img: &mut BinaryImage,
-    group: &FinderGroup,
     mut seed: Point,
     mod_w: f64,
     area: u32,
@@ -662,7 +661,7 @@ mod symbol_tests {
 
         let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&img, &finders);
+        let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
         for b in symbols[0].anchors {
             assert!(exp_anchors.contains(&(b.x, b.y)), "Symbol not within bounds");
@@ -765,7 +764,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&img, &finders);
+        let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
 
         let fmt_info = symbols[0].read_format_info().expect("Failed to read format info");
@@ -788,7 +787,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&img, &finders);
+        let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
 
         let fmt_info = symbols[0].read_format_info().expect("Failed to read format info");
@@ -812,7 +811,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&img, &finders);
+        let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
 
         let fmt_info = symbols[0].read_format_info().expect("Failed to read format info");
@@ -841,7 +840,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&img, &finders);
+        let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
 
         let _ = symbols[0].read_format_info().expect("Failed to read format info");
@@ -858,7 +857,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&img, &finders);
+        let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
 
         let scanned_ver = symbols[0].read_version_info().expect("Failed to read format info");
@@ -879,7 +878,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&img, &finders);
+        let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
 
         let scanned_ver = symbols[0].read_version_info().expect("Failed to read format info");
@@ -901,7 +900,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&img, &finders);
+        let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
 
         let scanned_ver = symbols[0].read_version_info().expect("Failed to read format info");
@@ -928,7 +927,7 @@ mod symbol_infos_tests {
 
         let mut img = BinaryImage::binarize(&img);
         let finders = locate_finders(&mut img);
-        let groups = group_finders(&img, &finders);
+        let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
 
         let _ = symbols[0].read_version_info().expect("Failed to read format info");
@@ -1005,7 +1004,7 @@ mod reader_tests {
     use crate::{
         builder::QRBuilder,
         metadata::{ECLevel, Palette, Version},
-        reader::deinterleave,
+        reader::symbol::deinterleave,
         utils::BitStream,
     };
 

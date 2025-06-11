@@ -1,3 +1,4 @@
+use qrism::reader::detect;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
@@ -6,7 +7,6 @@ use std::time::Instant;
 use walkdir::WalkDir;
 
 use qrism::reader::binarize::BinaryImage;
-use qrism::QRReader;
 
 mod utils;
 use utils::*;
@@ -26,7 +26,7 @@ fn benchmark(dataset_dir: &Path) {
         let parent = get_parent(img_path);
         let path_str = img_path.to_str().unwrap();
 
-        let gray = load_grayscale(img_path).unwrap();
+        let gray = image::open(img_path).unwrap().to_luma8();
         for angle in [0, 90, 180, 270].iter() {
             let img = match angle {
                 90 => image::imageops::rotate90(&gray),
@@ -37,7 +37,7 @@ fn benchmark(dataset_dir: &Path) {
 
             let start = Instant::now();
             let mut img = BinaryImage::binarize(&img);
-            let mut symbols = QRReader::detect(&mut img);
+            let mut symbols = detect(&mut img);
 
             if symbols.is_empty() {
                 // println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", path_str, angle);
