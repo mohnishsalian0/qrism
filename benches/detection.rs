@@ -1,6 +1,7 @@
-use geo::{polygon, Area, BooleanOps, Coord, Polygon};
-use geo_booleanop::boolean::BooleanOp;
-use qrism::reader::get_corners;
+use geo::{Area, BooleanOps, Coord, Polygon};
+use qrism::binarize::BinaryImage;
+use qrism::detect;
+use qrism::symbol::Symbol;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
@@ -31,14 +32,16 @@ fn benchmark(dataset_dir: &Path) {
         let gray = image::open(img_path).unwrap().to_luma8();
 
         let start = Instant::now();
-        let symbols = get_corners(gray);
+        let mut img = BinaryImage::binarize(&gray);
+        let symbols = detect(&mut img);
         let time = start.elapsed().as_millis();
 
+        let symbols = get_corners(&symbols);
         let true_pos = matched_areas(&symbols, &exp_symbols);
         let false_pos = symbols.len() - true_pos;
         let false_neg = exp_symbols.len() - true_pos;
 
-        let path_str = img_path.to_str().unwrap();
+        // let path_str = img_path.to_str().unwrap();
         // println!("\x1b[1;32m[PASSED {}/{}]\x1b[0m {}", true_pos, exp_symbols.len(), path_str);
 
         let mut results = results.lock().unwrap();
@@ -111,6 +114,34 @@ fn benchmark(dataset_dir: &Path) {
     ];
 
     print_table(&results, &rows, &cols);
+}
+
+pub fn get_corners(symbols: &[Symbol]) -> Vec<Vec<f64>> {
+    let mut symbol_corners = Vec::with_capacity(100);
+    for sym in symbols {
+        let sz = sym.ver.width() as f64;
+
+        let bl = match sym.raw_map(0.0, sz) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let tl = match sym.raw_map(0.0, 0.0) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let tr = match sym.raw_map(sz, 0.0) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let br = match sym.raw_map(sz, sz) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        symbol_corners.push(vec![bl.0, bl.1, tl.0, tl.1, tr.0, tr.1, br.0, br.1])
+    }
+
+    symbol_corners
 }
 
 fn matched_areas(actual: &[Vec<f64>], expected: &[Vec<f64>]) -> usize {

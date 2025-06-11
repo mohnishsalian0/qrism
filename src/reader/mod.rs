@@ -1,6 +1,6 @@
 pub mod binarize;
 mod finder;
-mod symbol;
+pub mod symbol;
 mod utils;
 
 use std::collections::HashSet;
@@ -158,40 +158,4 @@ mod reader_tests {
     //         out_img.save(out_path).unwrap();
     //     })
     // }
-}
-
-#[cfg(feature = "benchmark")]
-use image::GrayImage;
-
-#[cfg(feature = "benchmark")]
-pub fn get_corners(img: GrayImage) -> Vec<Vec<f64>> {
-    let mut img = BinaryImage::binarize(&img);
-    let finders = locate_finders(&mut img);
-    let groups = group_finders(&finders);
-    let symbols = locate_symbols(&mut img, groups);
-    let mut symbol_corners = Vec::with_capacity(20);
-    for sym in symbols {
-        let sz = sym.ver.width() as f64;
-
-        let bl = match sym.raw_map(0.0, sz) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        let tl = match sym.raw_map(0.0, 0.0) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        let tr = match sym.raw_map(sz, 0.0) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        let br = match sym.raw_map(sz, sz) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-
-        symbol_corners.push(vec![bl.0, bl.1, tl.0, tl.1, tr.0, tr.1, br.0, br.1])
-    }
-
-    symbol_corners
 }
