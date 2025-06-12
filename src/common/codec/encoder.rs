@@ -324,7 +324,7 @@ pub mod encode {
             let ver = Version::Normal(9);
             let ecl = ECLevel::L;
             let pal = Palette::Poly;
-            let encoded = encode_with_version(data.as_bytes(), ver, ecl, pal).unwrap();
+            let _ = encode_with_version(data.as_bytes(), ver, ecl, pal).unwrap();
         }
     }
 }

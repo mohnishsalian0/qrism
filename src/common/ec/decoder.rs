@@ -13,7 +13,7 @@ impl Block {
         };
 
         // Error locator polynomial
-        let sig = self.berlkamp_massey(&synd);
+        let sig = self.berlkamp_massey(&synd)?;
         let err_loc = self.chien_search(&sig);
 
         // Sigma derivative
@@ -26,7 +26,7 @@ impl Block {
         let omg = self.omega(&synd, &sig);
 
         // Error magnitude
-        let err_mag = self.forney(&omg, &dsig, &err_loc);
+        let err_mag = self.forney(&omg, &dsig, &err_loc)?;
 
         // Rectify errors by XORing data with magnitude
         for (i, &g) in err_mag.iter().enumerate() {
@@ -60,7 +60,7 @@ impl Block {
     }
 
     // Sigma polynomial
-    fn berlkamp_massey(&self, synd: &[G]) -> [G; MAX_EC_SIZE] {
+    fn berlkamp_massey(&self, synd: &[G]) -> QRResult<[G; MAX_EC_SIZE]> {
         let mut l = 0usize;
         let mut m = 1usize;
         let mut b = G(1);
@@ -82,7 +82,7 @@ impl Block {
                 // Temporary copy
                 tx.copy_from_slice(&cx);
 
-                let scale = d / b;
+                let scale = d.div(b)?;
 
                 for i in 0..MAX_EC_SIZE - m {
                     cx[i + m] += scale * bx[i];
@@ -100,7 +100,7 @@ impl Block {
                 m += 1;
             }
         }
-        cx
+        Ok(cx)
     }
 
     // Error location polynomial
@@ -132,7 +132,7 @@ impl Block {
         omg: &[G; MAX_EC_SIZE],
         dsig: &[G; MAX_EC_SIZE],
         err_loc: &[bool; MAX_BLOCK_SIZE],
-    ) -> [G; MAX_BLOCK_SIZE] {
+    ) -> QRResult<[G; MAX_BLOCK_SIZE]> {
         let mut mag = [G(0); MAX_BLOCK_SIZE];
         for (i, &is_err) in err_loc.iter().take(self.len).rev().enumerate() {
             if !is_err {
@@ -141,9 +141,9 @@ impl Block {
             let xinv = G::gen_pow(255 - i);
             let omg_x = eval_poly(omg.iter(), xinv);
             let sig_x = eval_poly(dsig.iter(), xinv);
-            mag[self.len - 1 - i] += omg_x / sig_x;
+            mag[self.len - 1 - i] += omg_x.div(sig_x)?;
         }
-        mag
+        Ok(mag)
     }
 }
 

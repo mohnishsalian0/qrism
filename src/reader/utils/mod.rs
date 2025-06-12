@@ -68,7 +68,7 @@ pub fn verify_finder_pattern(
 
     // Verify pattern with 95% tolerance. This was tuned to pass maximum number of test images
     let avg = run_len.iter().sum::<u32>() as f64 / 7.0;
-    let tol = avg * PATTERN_TOLERANCE;
+    let tol = avg * FINDER_PATTERN_TOLERANCE;
 
     for (i, r) in pattern.iter().enumerate() {
         let rl = run_len[i] as f64;
@@ -138,11 +138,16 @@ pub fn verify_alignment_pattern<A: Axis>(
     }
 
     // Verify pattern with 95% tolerance. This was tuned to pass maximum number of test images
-    let tol = threshold * PATTERN_TOLERANCE;
+    let avg = run_len.iter().sum::<u32>() as f64 / 3.0;
+    let tol = avg * ALIGNMENT_PATTERN_TOLERANCE;
+
+    if avg > threshold * 1.5 {
+        return false;
+    }
 
     for (i, r) in pattern.iter().enumerate() {
         let rl = run_len[i] as f64;
-        if rl < r * threshold - tol || rl > r * threshold + tol {
+        if rl < r * avg - tol || rl > r * avg + tol {
             return false;
         }
     }
@@ -180,4 +185,6 @@ pub fn rnd_rgb() -> image::Rgb<u8> {
 // Global constants
 //------------------------------------------------------------------------------
 
-pub const PATTERN_TOLERANCE: f64 = 0.95;
+pub const FINDER_PATTERN_TOLERANCE: f64 = 0.95;
+
+pub const ALIGNMENT_PATTERN_TOLERANCE: f64 = 0.8;

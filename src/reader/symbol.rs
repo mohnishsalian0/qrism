@@ -184,7 +184,7 @@ fn verify_symbol_size(img: &BinaryImage, group: &FinderGroup, mids: &[Point; 6])
     }
 
     // Provisional width and version
-    let size = std::cmp::max(t12, t13) + 13;
+    let size = (t12 + t13) / 2 + 13;
     let ver = ((size as f64 - 15.0) / 4.0).floor() as u32;
     let size = ver * 4 + 17;
 
@@ -221,7 +221,6 @@ where
             if flips == 3 {
                 let idx = buffer.len() * 6 / 7;
                 let mid = buffer[idx];
-                // let mid = buffer[buffer.len() / 2];
                 return Some(mid);
             }
         }
@@ -249,16 +248,16 @@ where
 {
     let mut transitions = [0, 0, 0];
     let px = img.get_at_point(from).unwrap();
-    let mut last = px.get_color().to_bits();
+    let mut last = px.get_color() as u8;
     let line = BresenhamLine::<A>::new(from, to);
 
     for p in line {
         let px = img.get_at_point(&p).unwrap();
-        let color = px.get_color().to_bits();
-        for i in 0..3 {
-            if color[i] != last[i] {
-                transitions[i] += 1;
-                last[i] = color[i];
+        let color = px.get_color() as u8;
+        for (i, t) in transitions.iter_mut().enumerate() {
+            if color >> i != last >> i {
+                *t += 1;
+                last ^= 1 << i;
             }
         }
     }
@@ -279,7 +278,7 @@ fn estimate_mod_count(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {
 // Symbol
 //------------------------------------------------------------------------------
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Symbol<'a> {
     img: &'a BinaryImage,
     h: Homography,
@@ -521,6 +520,7 @@ fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Opti
         adjustments = adjustments.map(|x| x * 0.5);
     }
     let max_score = max_fitness_score(ver);
+
     if best >= max_score / 2 {
         Some(h)
     } else {
@@ -942,24 +942,21 @@ impl Symbol<'_> {
         let ver = self.ver;
         let mask_fn = mask.mask_functions();
         let chan_bits = ver.channel_codewords() << 3;
-        let (g_off, b_off) = (chan_bits, 2 * chan_bits);
+        let offsets = [2 * chan_bits, chan_bits, 0]; // B, G, R offsets
         let mut payload = BitArray::new(chan_bits * 3);
         let mut rgn_iter = EncRegionIter::new(ver);
 
         for (i, (x, y)) in rgn_iter.by_ref().take(chan_bits).enumerate() {
             let px = self.get(x, y).ok_or(QRError::PixelOutOfBounds)?;
             let color = px.get_color();
-            let [mut r, mut g, mut b] = color.to_bits();
-
-            if !mask_fn(x, y) {
-                r = !r;
-                g = !g;
-                b = !b;
-            };
-
-            payload.put(i, r);
-            payload.put(i + g_off, g);
-            payload.put(i + b_off, b);
+            let rgb = color as u8;
+            for (j, off) in offsets.iter().enumerate() {
+                let mut bit = ((rgb >> j) & 1) == 1;
+                if !mask_fn(x, y) {
+                    bit = !bit;
+                }
+                payload.put(i + off, bit);
+            }
         }
 
         debug_assert_eq!(rgn_iter.count(), self.ver.remainder_bits(), "Remainder bits don't match");

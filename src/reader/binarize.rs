@@ -84,7 +84,7 @@ impl Stat {
     }
 }
 
-// Binarize trait for pixel type in image crate
+// Binarize trait for pixel types in image crate
 //------------------------------------------------------------------------------
 
 pub trait Binarize {
@@ -199,7 +199,7 @@ impl BinaryImage {
         }
 
         // Take average from the sum calculated for each block
-        // If variance is low (<= 24), assume the block is white. Because there is a high chance
+        // If variance is low (<= 25), assume the block is white. Because there is a high chance
         // that the block is outside the qr. Unless the block has top/left neighbors, in which
         // case take average of them.
         let wsteps = wsteps as usize;
@@ -207,7 +207,7 @@ impl BinaryImage {
         let block_area_pow = 2 * block_pow;
         for i in 0..len {
             for j in 0..chan_count {
-                if stats[i][j].max - stats[i][j].min <= 24 {
+                if stats[i][j].max - stats[i][j].min <= 25 {
                     stats[i][j].avg = (stats[i][j].min as usize) / 2;
                     if i > wsteps && i % wsteps > 0 {
                         // Average of neighbors 2 * (x-1, y), (x, y-1), (x-1, y-1)
@@ -227,8 +227,8 @@ impl BinaryImage {
         }
 
         // Calculates threshold for blocks
-        let half_grid = IMAGE_GRID_SIZE / 2;
-        let grid_area = IMAGE_GRID_SIZE * IMAGE_GRID_SIZE;
+        let half_grid = BLOCK_GRID_SIZE / 2;
+        let grid_area = BLOCK_GRID_SIZE * BLOCK_GRID_SIZE;
         let (maxx, maxy) = (wsteps - half_grid, hsteps - half_grid);
         let mut threshold = vec![[0u8; 4]; wsteps * hsteps];
 
@@ -372,19 +372,6 @@ impl BinaryImage {
         }
     }
 
-    #[cfg(test)]
-    pub fn save(&self, path: &Path) -> ImageResult<()> {
-        let w = self.w;
-        let mut img = RgbImage::new(w, self.h);
-        for (i, p) in self.buffer.iter().enumerate() {
-            let i = i as u32;
-            let (x, y) = (i % w, i / w);
-            img.put_pixel(x, y, (*p).into());
-        }
-        img.save(path).unwrap();
-        Ok(())
-    }
-
     pub(crate) fn get_region(&mut self, src: (u32, u32)) -> &mut Region {
         let px = self.get(src.0, src.1).unwrap();
 
@@ -471,12 +458,26 @@ impl BinaryImage {
         }
         acc
     }
+
+    #[cfg(test)]
+    pub fn save(&self, path: &Path) -> ImageResult<()> {
+        let w = self.w;
+        let mut img = RgbImage::new(w, self.h);
+        for (i, p) in self.buffer.iter().enumerate() {
+            let i = i as u32;
+            let (x, y) = (i % w, i / w);
+            img.put_pixel(x, y, (*p).into());
+        }
+        img.save(path).unwrap();
+        Ok(())
+    }
 }
 
 // Constants
 //------------------------------------------------------------------------------
 
-// Number of blocks along shorter dimension of image
+// Number of blocks the shorter dimension of image should be divided into
 const BLOCK_COUNT: f64 = 20.0;
 
-const IMAGE_GRID_SIZE: usize = 5;
+// Number of blocks along row/col in a grid
+const BLOCK_GRID_SIZE: usize = 5;

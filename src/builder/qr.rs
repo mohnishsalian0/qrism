@@ -984,14 +984,14 @@ impl QR {
         for y in 0..total_sz {
             // Quiet zone
             if y < qz_sz || y >= qz_sz + qr_sz {
-                for x in 0..total_sz {
+                for _x in 0..total_sz {
                     canvas.push('█');
                 }
                 canvas.push('\n');
                 continue;
             }
 
-            let qy = (y - qz_sz) / module_sz;
+            let qy = ((y - qz_sz) / module_sz) as i32;
 
             for x in 0..total_sz {
                 // Quiet zone
@@ -1000,7 +1000,6 @@ impl QR {
                     continue;
                 }
                 let qx = ((x - qz_sz) / module_sz) as i32;
-                let qy = ((y - qz_sz) / module_sz) as i32;
 
                 let clr = match self.get(qx, qy) {
                     Module::Func(c) | Module::Format(c) | Module::Version(c) | Module::Data(c) => c,

@@ -1,7 +1,9 @@
 use std::{
     fmt,
-    ops::{Add, AddAssign, Div, Mul, MulAssign, Sub, SubAssign},
+    ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
+
+use crate::utils::{QRError, QRResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct G(pub u8);
@@ -91,25 +93,23 @@ impl MulAssign for G {
     }
 }
 
-impl Div<Self> for G {
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self {
-        assert!(rhs.0 != 0, "Division by zero in GF(256)");
-        if self.0 == 0 {
-            return Self(0);
-        }
-        let log_l = LOG_TABLE[self.0 as usize] as usize;
-        let log_r = LOG_TABLE[rhs.0 as usize] as usize;
-        let log_sum = if log_l < log_r { 255 + log_l - log_r } else { log_l - log_r };
-        Self(EXP_TABLE[log_sum])
-    }
-}
-
 impl G {
     pub fn gen_pow(p: usize) -> G {
         debug_assert!(p < 256, "Generator power must be less than 256: Power {p}");
         Self(EXP_TABLE[p])
+    }
+
+    pub fn div(self, rhs: Self) -> QRResult<Self> {
+        if rhs.0 == 0 {
+            return Err(QRError::DivisionByZero);
+        }
+        if self.0 == 0 {
+            return Ok(Self(0));
+        }
+        let log_l = LOG_TABLE[self.0 as usize] as usize;
+        let log_r = LOG_TABLE[rhs.0 as usize] as usize;
+        let log_sum = if log_l < log_r { 255 + log_l - log_r } else { log_l - log_r };
+        Ok(Self(EXP_TABLE[log_sum]))
     }
 }
 

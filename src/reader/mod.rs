@@ -99,63 +99,72 @@ mod reader_tests {
     //     let mut symbols = detect(&mut img);
     //     let (_meta, msg) = symbols[0].decode().expect("Failed to read QR");
     // }
-    //
-    // fn is_image_file(entry: &walkdir::DirEntry) -> bool {
-    //     entry.file_type().is_file()
-    //         && entry
-    //             .path()
-    //             .extension()
-    //             .map(|e| matches!(e.to_str(), Some("png" | "jpg" | "jpeg" | "bmp")))
-    //             .unwrap_or(false)
-    // }
-    //
-    // #[test]
-    // #[ignore]
-    // fn detect_debugger() {
-    //     #[allow(unused_imports)]
-    //     use super::{binarize::BinaryImage, finder::locate_finders, locate_symbols};
-    //     #[allow(unused_imports)]
-    //     use crate::reader::{
-    //         detect,
-    //         finder::group_finders,
-    //         utils::geometry::{BresenhamLine, Line, X, Y},
-    //     };
-    //     #[allow(unused_imports)]
-    //     use rayon::prelude::*;
-    //
-    //     let dataset_dir = std::path::Path::new("benches/dataset/detection/rotations/image031.jpg");
-    //     // let dataset_dir = std::path::Path::new("assets/test12.png");
-    //
-    //     let image_paths: Vec<_> = walkdir::WalkDir::new(dataset_dir)
-    //         .into_iter()
-    //         .filter_map(Result::ok)
-    //         .filter(is_image_file)
-    //         .map(|e| e.path().to_path_buf())
-    //         .collect();
-    //
-    //     image_paths.par_iter().for_each(|inp_path| {
-    //         let file_name = inp_path.file_name().unwrap().to_str().unwrap();
-    //         let img = image::open(inp_path).unwrap().to_luma8();
-    //         let mut bin_img = BinaryImage::binarize(&img);
-    //
-    //         let inp_path = std::path::Path::new(&"assets/inp.png");
-    //         bin_img.save(inp_path).unwrap();
-    //         let mut out_img = image::open(inp_path).unwrap().to_rgb8();
-    //
-    //         // let finders = locate_finders(&mut bin_img);
-    //         // println!("Finders count: {}", finders.len());
-    //         // finders.iter().for_each(|f| f.highlight(&mut out_img, image::Rgb([255, 0, 0])));
-    //
-    //         // let groups = group_finders(&bin_img, &finders);
-    //         // println!("Groups count: {}", groups.len());
-    //         // groups.iter().for_each(|g| g.highlight(&mut out_img));
-    //
-    //         let symbols = detect(&mut bin_img);
-    //         println!("Symbol count: {}", symbols.len());
-    //         symbols.iter().for_each(|s| s.highlight(&mut out_img));
-    //
-    //         let out_path = std::path::Path::new("assets/out.png");
-    //         out_img.save(out_path).unwrap();
-    //     })
-    // }
+
+    #[test]
+    #[ignore]
+    fn detect_debugger() {
+        #[allow(unused_imports)]
+        use super::{binarize::BinaryImage, finder::locate_finders, locate_symbols};
+        #[allow(unused_imports)]
+        use crate::reader::{
+            detect,
+            finder::group_finders,
+            utils::geometry::{BresenhamLine, Line, X, Y},
+        };
+        #[allow(unused_imports)]
+        use rayon::prelude::*;
+
+        let dataset_dir = std::path::Path::new("benches/dataset/detection/lots");
+        // let dataset_dir = std::path::Path::new("assets/test12.png");
+
+        let image_paths: Vec<_> = walkdir::WalkDir::new(dataset_dir)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(is_image_file)
+            .map(|e| e.path().to_path_buf())
+            .collect();
+
+        image_paths.par_iter().for_each(|inp_path| {
+            let parent = get_parent(inp_path);
+            let file_name = inp_path.file_name().unwrap().to_str().unwrap();
+            let img = image::open(inp_path).unwrap().to_luma8();
+            let mut bin_img = BinaryImage::binarize(&img);
+
+            let inp_str = format!("assets/{parent}/{file_name}");
+            // let inp_str = format!("assets/inp.png");
+            let inp_path = std::path::Path::new(&inp_str);
+            bin_img.save(inp_path).unwrap();
+            let mut out_img = image::open(inp_path).unwrap().to_rgb8();
+
+            // let finders = locate_finders(&mut bin_img);
+            // println!("Finders count: {}", finders.len());
+            // finders.iter().for_each(|f| f.highlight(&mut out_img, image::Rgb([255, 0, 0])));
+
+            // let groups = group_finders(&bin_img, &finders);
+            // println!("Groups count: {}", groups.len());
+            // groups.iter().for_each(|g| g.highlight(&mut out_img));
+
+            let symbols = detect(&mut bin_img);
+            println!("Symbol count: {}", symbols.len());
+            symbols.iter().for_each(|s| s.highlight(&mut out_img));
+
+            let out_str = format!("assets/{parent}/{file_name}");
+            // let out_str = format!("assets/out.png");
+            let out_path = std::path::Path::new(&out_str);
+            out_img.save(out_path).unwrap();
+        })
+    }
+
+    fn is_image_file(entry: &walkdir::DirEntry) -> bool {
+        entry.file_type().is_file()
+            && entry
+                .path()
+                .extension()
+                .map(|e| matches!(e.to_str(), Some("png" | "jpg" | "jpeg" | "bmp")))
+                .unwrap_or(false)
+    }
+
+    fn get_parent(path: &std::path::Path) -> String {
+        path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()).unwrap().to_string()
+    }
 }

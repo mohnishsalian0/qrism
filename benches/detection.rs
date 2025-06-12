@@ -34,6 +34,10 @@ fn benchmark(dataset_dir: &Path) {
         let start = Instant::now();
         let mut img = BinaryImage::binarize(&gray);
         let symbols = detect(&mut img);
+        let symbols: Vec<Symbol> = symbols
+            .into_iter()
+            .filter_map(|mut s| if s.decode().is_ok() { Some(s) } else { None })
+            .collect();
         let time = start.elapsed().as_millis();
 
         let symbols = get_corners(&symbols);
@@ -65,9 +69,14 @@ fn benchmark(dataset_dir: &Path) {
         let false_pos = *v.get("false_pos").unwrap();
         let false_neg = *v.get("false_neg").unwrap();
 
-        let precision = true_pos / (true_pos + false_pos);
-        let recall = true_pos / (true_pos + false_neg);
-        let fscore = 2.0 * precision * recall / (precision + recall);
+        let precision_den = true_pos + false_pos;
+        let precision = if precision_den > 0.0 { true_pos / precision_den } else { 0.0 };
+
+        let recall_den = true_pos + false_neg;
+        let recall = if recall_den > 0.0 { true_pos / recall_den } else { 0.0 };
+
+        let fscore_den = precision + recall;
+        let fscore = if fscore_den > 0.0 { 2.0 * precision * recall / fscore_den } else { 0.0 };
 
         v.insert("precision".to_string(), precision);
         v.insert("recall".to_string(), recall);

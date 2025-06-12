@@ -423,14 +423,6 @@ impl TryFrom<Color> for Luma<u8> {
 }
 
 impl Color {
-    pub fn to_bits(self) -> [bool; 3] {
-        let byte = self as u8;
-        let r = byte & 0b100 != 0;
-        let g = byte & 0b010 != 0;
-        let b = byte & 0b001 != 0;
-        [r, g, b]
-    }
-
     pub fn select<T: Debug>(&self, light: T, dark: T) -> T {
         match self {
             Self::White => light,

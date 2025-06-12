@@ -2,7 +2,7 @@ use crate::metadata::Color;
 
 use super::{
     binarize::{BinaryImage, Pixel},
-    utils::{geometry::Point, verify_finder_pattern, PATTERN_TOLERANCE},
+    utils::{geometry::Point, verify_finder_pattern, FINDER_PATTERN_TOLERANCE},
 };
 
 #[cfg(test)]
@@ -82,7 +82,7 @@ impl LineScanner {
         // Verify 1:1:3:1:1 ratio with 95% tolerance. The tolerance is very linient because
         // the validations in the later stages of the pipeline are more stringent
         let avg = self.buffer[..5].iter().sum::<u32>() as f64 / 7.0;
-        let tol = avg * PATTERN_TOLERANCE;
+        let tol = avg * FINDER_PATTERN_TOLERANCE;
 
         let ratio: [f64; 5] = [1.0, 1.0, 3.0, 1.0, 1.0];
         for (i, r) in ratio.iter().enumerate() {
