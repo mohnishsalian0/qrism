@@ -137,14 +137,15 @@ pub fn verify_alignment_pattern<A: Axis>(
         run_len[flips] += 1;
     }
 
-    // Verify pattern with 95% tolerance. This was tuned to pass maximum number of test images
+    // Ensure the average run length is roughly equal to the threshold (estimate mod size) with 50%
+    // tolerance
     let avg = run_len.iter().sum::<u32>() as f64 / 3.0;
-    let tol = avg * ALIGNMENT_PATTERN_TOLERANCE;
-
-    if avg > threshold * 1.5 {
+    if avg < threshold * 0.5 || threshold * 1.5 < avg {
         return false;
     }
 
+    // Verify pattern with 80% tolerance. This was tuned to pass maximum number of test images
+    let tol = avg * ALIGNMENT_PATTERN_TOLERANCE;
     for (i, r) in pattern.iter().enumerate() {
         let rl = run_len[i] as f64;
         if rl < r * avg - tol || rl > r * avg + tol {

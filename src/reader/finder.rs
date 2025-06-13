@@ -164,7 +164,7 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Po
     let stone = img.get_region((s, y)).clone();
     let ring = img.get_region((r, y)).clone();
 
-    // Check if left, top and bottom points lie inside the ring
+    // Check if left, top and bottom points lie within the ring
     let lid = img.get(l, y)?.get_id()?;
     let tid = img.get(sx, t)?.get_id()?;
     let bid = img.get(sx, b)?.get_id()?;
@@ -172,7 +172,7 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Po
         return None;
     }
 
-    // False if ring & stone are connected, or if ring to stone area is outside limits
+    // False if ring & stone are connected, or if ring to stone area is not roughly 37,5%
     let ratio = stone.area * 100 / ring.area;
     if img.get(r, y) == img.get(s, y) || ratio <= 10 || 70 <= ratio {
         return None;

@@ -90,19 +90,9 @@ mod reader_tests {
         assert_eq!(msg, exp_msg, "Incorrect data read from qr image");
     }
 
-    // #[test]
-    // #[ignore]
-    // fn decode_debugger() {
-    //     let inp_path = std::path::Path::new("benches/dataset/blackbox/qrcode-1/4.png");
-    //     let img = image::open(inp_path).unwrap().to_luma8();
-    //     let mut img = BinaryImage::binarize(&img);
-    //     let mut symbols = detect(&mut img);
-    //     let (_meta, msg) = symbols[0].decode().expect("Failed to read QR");
-    // }
-
     #[test]
     #[ignore]
-    fn detect_debugger() {
+    fn debugger() {
         #[allow(unused_imports)]
         use super::{binarize::BinaryImage, finder::locate_finders, locate_symbols};
         #[allow(unused_imports)]
@@ -114,7 +104,8 @@ mod reader_tests {
         #[allow(unused_imports)]
         use rayon::prelude::*;
 
-        let dataset_dir = std::path::Path::new("benches/dataset/detection/lots");
+        let dataset_dir =
+            std::path::Path::new("benches/dataset/detection/high_version/image002.jpg");
         // let dataset_dir = std::path::Path::new("assets/test12.png");
 
         let image_paths: Vec<_> = walkdir::WalkDir::new(dataset_dir)
@@ -125,13 +116,13 @@ mod reader_tests {
             .collect();
 
         image_paths.par_iter().for_each(|inp_path| {
-            let parent = get_parent(inp_path);
-            let file_name = inp_path.file_name().unwrap().to_str().unwrap();
+            // let parent = get_parent(inp_path);
+            // let file_name = inp_path.file_name().unwrap().to_str().unwrap();
             let img = image::open(inp_path).unwrap().to_luma8();
             let mut bin_img = BinaryImage::binarize(&img);
 
-            let inp_str = format!("assets/{parent}/{file_name}");
-            // let inp_str = format!("assets/inp.png");
+            // let inp_str = format!("assets/{parent}/{file_name}");
+            let inp_str = "assets/inp.png";
             let inp_path = std::path::Path::new(&inp_str);
             bin_img.save(inp_path).unwrap();
             let mut out_img = image::open(inp_path).unwrap().to_rgb8();
@@ -140,16 +131,21 @@ mod reader_tests {
             // println!("Finders count: {}", finders.len());
             // finders.iter().for_each(|f| f.highlight(&mut out_img, image::Rgb([255, 0, 0])));
 
-            // let groups = group_finders(&bin_img, &finders);
+            // let groups = group_finders(&finders);
             // println!("Groups count: {}", groups.len());
             // groups.iter().for_each(|g| g.highlight(&mut out_img));
 
-            let symbols = detect(&mut bin_img);
+            let mut symbols = detect(&mut bin_img);
             println!("Symbol count: {}", symbols.len());
             symbols.iter().for_each(|s| s.highlight(&mut out_img));
 
-            let out_str = format!("assets/{parent}/{file_name}");
-            // let out_str = format!("assets/out.png");
+            symbols.iter_mut().for_each(|s| {
+                let msg = s.decode().unwrap();
+                dbg!(msg);
+            });
+
+            // let out_str = format!("assets/{parent}/{file_name}");
+            let out_str = "assets/out.png";
             let out_path = std::path::Path::new(&out_str);
             out_img.save(out_path).unwrap();
         })

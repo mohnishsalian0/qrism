@@ -34,10 +34,10 @@ fn benchmark(dataset_dir: &Path) {
         let start = Instant::now();
         let mut img = BinaryImage::binarize(&gray);
         let symbols = detect(&mut img);
-        let symbols: Vec<Symbol> = symbols
-            .into_iter()
-            .filter_map(|mut s| if s.decode().is_ok() { Some(s) } else { None })
-            .collect();
+        // let symbols: Vec<Symbol> = symbols
+        //     .into_iter()
+        //     .filter_map(|mut s| if s.decode().is_ok() { Some(s) } else { None })
+        //     .collect();
         let time = start.elapsed().as_millis();
 
         let symbols = get_corners(&symbols);

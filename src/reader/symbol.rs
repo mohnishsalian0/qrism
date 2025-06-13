@@ -111,7 +111,7 @@ impl SymbolLocation {
             find_edge_mid(img, &c2, &align)?,
         ];
 
-        let size = verify_symbol_size(img, group, &mids)?;
+        let size = verify_symbol_size(img, &group.finders, &mids)?;
 
         let ver = Version::from_grid_size(size as usize)?;
 
@@ -121,21 +121,7 @@ impl SymbolLocation {
         // black region with estimate module size to confirm alignment stone. Finally, locate the
         // centre of the stone.
         if *ver != 1 {
-            let dx = mids[4].x - c1.x;
-            let dy = mids[4].y - c1.y;
-            let seed = Point { x: mids[1].x + dx, y: mids[1].y + dy };
-
-            // Calculate estimate width of module
-            let hor_w = c0.dist_sq(&mids[0]);
-            let ver_w = c2.dist_sq(&mids[5]);
-            let mod_w = ((hor_w + ver_w) as f64 / 2.0).sqrt() / 3.0;
-
-            // Calculate estimate area of module by taking cross product of vectors
-            let v0 = Slope::new(&c0, &mids[0]);
-            let v1 = Slope::new(&c2, &mids[5]);
-            let area = v0.cross(&v1).unsigned_abs() / 9;
-
-            align = locate_alignment_pattern(img, seed, mod_w, area)?;
+            align = locate_alignment_pattern(img, &group.finders, &mids, &ver)?;
         }
 
         let h = setup_homography(img, group, align, ver)?;
@@ -149,8 +135,8 @@ impl SymbolLocation {
 // Validates the symbol and returns its size if valid. Validation involves:
 // 1. Ensuring the horizontal and vertical timing patterns are consistent.
 // 2. Verifying that the estimated number of modules along the center matches the timing patterns.
-fn verify_symbol_size(img: &BinaryImage, group: &FinderGroup, mids: &[Point; 6]) -> Option<u32> {
-    let [c0, c1, c2] = &group.finders;
+fn verify_symbol_size(img: &BinaryImage, finders: &[Point; 3], mids: &[Point; 6]) -> Option<u32> {
+    let [c0, c1, c2] = finders;
     let [m03, m01, m10, m12, m21, m23] = mids;
 
     // Measure timing pattern from c1 to c2
@@ -401,14 +387,30 @@ impl<'a> Symbol<'a> {
 
 fn locate_alignment_pattern(
     img: &mut BinaryImage,
-    mut seed: Point,
-    mod_w: f64,
-    area: u32,
+    finders: &[Point; 3],
+    mids: &[Point; 6],
+    ver: &Version,
 ) -> Option<Point> {
     let (w, h) = (img.w, img.h);
-    let mod_w_i32 = mod_w as i32;
-    let threshold = area * 2;
+    let [c0, c1, c2] = finders;
     let pattern = [1.0, 1.0, 1.0];
+
+    // Locate provisional alignment centre
+    let dx = mids[4].x - c1.x;
+    let dy = mids[4].y - c1.y;
+    let mut seed = Point { x: mids[1].x + dx, y: mids[1].y + dy };
+
+    // Calculate estimate width of module
+    let hor_w = c0.dist_sq(&mids[0]);
+    let ver_w = c2.dist_sq(&mids[5]);
+    let mod_w = ((hor_w + ver_w) as f64 / 2.0).sqrt() / 3.0;
+    let mod_w_i32 = mod_w as i32;
+
+    // Calculate estimate area of module by taking cross product of vectors
+    let v0 = Slope::new(c0, &mids[0]);
+    let v1 = Slope::new(c2, &mids[5]);
+    let area = v0.cross(&v1).unsigned_abs() / 9;
+    let threshold = area * 2;
 
     // Directional increment for x & y: [right, down, left, up]
     const DX: [i32; 4] = [1, 0, -1, 0];
@@ -417,9 +419,11 @@ fn locate_alignment_pattern(
     // Spiral outward to find stone
     let mut dir = 0;
     let mut run_len = 1;
+    let radius_increment = ver.alignment_pattern().len() as i32;
+    let search_radius = mod_w_i32 * (radius_increment + 14);
     let mut rejected = Vec::with_capacity(100);
 
-    while run_len < mod_w_i32 * 15 {
+    while run_len < search_radius {
         for _ in 0..run_len {
             let x = seed.x as u32;
             let y = seed.y as u32;
