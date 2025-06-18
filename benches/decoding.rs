@@ -1,5 +1,6 @@
 use qrism::reader::detect;
 use rayon::prelude::*;
+use rqrr::PreparedImage;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -36,44 +37,43 @@ fn benchmark(dataset_dir: &Path) {
             };
 
             let start = Instant::now();
-            let mut img = BinaryImage::binarize(&img);
+            let mut img = BinaryImage::prepare(&img);
             let mut symbols = detect(&mut img);
+            // let mut img = PreparedImage::prepare(img);
+            // let mut symbols = img.detect_grids();
+            let mut passed = false;
 
-            if symbols.is_empty() {
-                // println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", path_str, angle);
-                continue;
-            } else {
-                match symbols[0].decode() {
-                    Ok((_meta, msg)) => {
-                        let elapsed = start.elapsed();
+            if !symbols.is_empty() {
+                if let Ok((_meta, msg)) = symbols[0].decode() {
+                    let elapsed = start.elapsed();
 
-                        let mut runtimes = runtimes.lock().unwrap();
-                        runtimes.entry(parent.clone()).or_default().push(elapsed.as_micros());
+                    let mut runtimes = runtimes.lock().unwrap();
+                    runtimes.entry(parent.clone()).or_default().push(elapsed.as_micros());
 
-                        let msg = msg.lines().map(String::from).collect::<Vec<_>>();
+                    let msg = msg.lines().map(String::from).collect::<Vec<_>>();
 
-                        // Corresponding expected result file
-                        let exp_path = img_path.with_extension("txt");
-                        let exp_msg = parse_expected_decode_result(&exp_path);
+                    // Corresponding expected result file
+                    let exp_path = img_path.with_extension("txt");
+                    let exp_msg = parse_expected_decode_result(&exp_path);
 
-                        if msg == exp_msg {
-                            let mut results = results.lock().unwrap();
-                            *results
-                                .entry(parent.clone())
-                                .or_default()
-                                .entry(angle.to_string())
-                                .or_default() += 1;
+                    if msg == exp_msg {
+                        let mut results = results.lock().unwrap();
+                        *results
+                            .entry(parent.clone())
+                            .or_default()
+                            .entry(angle.to_string())
+                            .or_default() += 1;
 
-                            // println!("\x1b[1;32m[PASS]\x1b[0m {} at {}deg", path_str, angle);
-                        } else {
-                            // println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", path_str, angle);
-                        };
-                    }
-                    Err(_) => {
-                        // println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", path_str, angle);
+                        passed = true;
                     }
                 }
             }
+
+            // if passed {
+            //     println!("\x1b[1;32m[PASS]\x1b[0m {} at {}deg", path_str, angle);
+            // } else {
+            //     println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", path_str, angle);
+            // }
         }
     });
 

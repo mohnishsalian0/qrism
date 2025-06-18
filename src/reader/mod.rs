@@ -59,7 +59,7 @@ mod reader_tests {
             .unwrap();
         let img = qr.to_image(2);
 
-        let mut img = BinaryImage::binarize(&img);
+        let mut img = BinaryImage::prepare(&img);
         let mut symbols = detect(&mut img);
         let (_meta, exp_msg) = symbols[0].decode().expect("Failed to read QR");
 
@@ -83,7 +83,7 @@ mod reader_tests {
             .unwrap();
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::binarize(&img);
+        let mut img = BinaryImage::prepare(&img);
         let mut symbols = detect(&mut img);
         let (_meta, msg) = symbols[0].decode().expect("Failed to read QR");
 
@@ -104,9 +104,8 @@ mod reader_tests {
         #[allow(unused_imports)]
         use rayon::prelude::*;
 
-        let dataset_dir =
-            std::path::Path::new("benches/dataset/detection/high_version/image002.jpg");
-        // let dataset_dir = std::path::Path::new("assets/test12.png");
+        let dataset_dir = std::path::Path::new("benches/dataset/detection/monitor");
+        // let dataset_dir = std::path::Path::new("assets/test11.jpg");
 
         let image_paths: Vec<_> = walkdir::WalkDir::new(dataset_dir)
             .into_iter()
@@ -116,36 +115,37 @@ mod reader_tests {
             .collect();
 
         image_paths.par_iter().for_each(|inp_path| {
-            // let parent = get_parent(inp_path);
-            // let file_name = inp_path.file_name().unwrap().to_str().unwrap();
+            let parent = get_parent(inp_path);
+            let file_name = inp_path.file_name().unwrap().to_str().unwrap();
             let img = image::open(inp_path).unwrap().to_luma8();
-            let mut bin_img = BinaryImage::binarize(&img);
+            let mut bin_img = BinaryImage::prepare(&img);
 
-            // let inp_str = format!("assets/{parent}/{file_name}");
-            let inp_str = "assets/inp.png";
+            let inp_str = format!("assets/{parent}/{file_name}");
+            // let inp_str = "assets/inp.png";
             let inp_path = std::path::Path::new(&inp_str);
             bin_img.save(inp_path).unwrap();
             let mut out_img = image::open(inp_path).unwrap().to_rgb8();
 
             // let finders = locate_finders(&mut bin_img);
-            // println!("Finders count: {}", finders.len());
+            // println!("[{file_name}] Finders count: {}", finders.len());
             // finders.iter().for_each(|f| f.highlight(&mut out_img, image::Rgb([255, 0, 0])));
 
             // let groups = group_finders(&finders);
-            // println!("Groups count: {}", groups.len());
+            // println!("[{file_name}] Groups count: {}", groups.len());
             // groups.iter().for_each(|g| g.highlight(&mut out_img));
 
             let mut symbols = detect(&mut bin_img);
-            println!("Symbol count: {}", symbols.len());
+            println!("[{file_name}] Symbol count: {}", symbols.len());
             symbols.iter().for_each(|s| s.highlight(&mut out_img));
 
-            symbols.iter_mut().for_each(|s| {
-                let msg = s.decode().unwrap();
-                dbg!(msg);
+            symbols.iter_mut().enumerate().for_each(|(i, s)| {
+                if let Ok((meta, msg)) = s.decode() {
+                    println!("[{file_name}] id: {i}, Metadata: {meta:?}, Message: {msg}");
+                }
             });
 
-            // let out_str = format!("assets/{parent}/{file_name}");
-            let out_str = "assets/out.png";
+            let out_str = format!("assets/{parent}/{file_name}");
+            // let out_str = "assets/out.png";
             let out_path = std::path::Path::new(&out_str);
             out_img.save(out_path).unwrap();
         })

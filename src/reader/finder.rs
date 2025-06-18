@@ -217,7 +217,7 @@ mod finder_tests {
             [[40, 369], [40, 300], [109, 300], [109, 369]],
         ];
         let centres = [[75, 75], [335, 75], [75, 335]];
-        let mut bin_img = BinaryImage::binarize(&img);
+        let mut bin_img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut bin_img);
 
         for (i, f) in finders.iter().enumerate() {
@@ -336,7 +336,7 @@ mod group_finders_tests {
 
         let centres = [(75, 75), (335, 75), (75, 335)];
 
-        let mut img = BinaryImage::binarize(&img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let group = group_finders(&finders);
         assert!(!group.is_empty(), "No group found");

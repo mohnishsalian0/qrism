@@ -39,7 +39,7 @@ mod qr_proptests {
 
             let qr = QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-        let mut img = BinaryImage::binarize(&qr);
+        let mut img = BinaryImage::prepare(&qr);
         let mut symbols = detect(&mut img);
         let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
 
@@ -53,7 +53,7 @@ mod qr_proptests {
 
             let qr = QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-        let mut img = BinaryImage::binarize(&qr);
+        let mut img = BinaryImage::prepare(&qr);
         let mut symbols = detect(&mut img);
         let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
 
@@ -102,7 +102,7 @@ mod qr_tests {
             .unwrap()
             .to_image(3);
 
-        let mut img = BinaryImage::binarize(&qr);
+        let mut img = BinaryImage::prepare(&qr);
         let mut symbols = detect(&mut img);
         let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
 
@@ -118,7 +118,7 @@ mod qr_tests {
         let qr =
             QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-        let mut img = BinaryImage::binarize(&qr);
+        let mut img = BinaryImage::prepare(&qr);
         let mut symbols = detect(&mut img);
         let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
 
@@ -134,7 +134,7 @@ mod qr_tests {
         let qr =
             QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-        let mut img = BinaryImage::binarize(&qr);
+        let mut img = BinaryImage::prepare(&qr);
         let mut symbols = detect(&mut img);
         let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
 
@@ -150,7 +150,7 @@ mod qr_tests {
         let qr =
             QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-        let mut img = BinaryImage::binarize(&qr);
+        let mut img = BinaryImage::prepare(&qr);
         let mut symbols = detect(&mut img);
         let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
 
@@ -166,7 +166,7 @@ mod qr_tests {
         let qr =
             QRBuilder::new(data.as_bytes()).ec_level(ecl).palette(pal).build().unwrap().to_image(3);
 
-        let mut img = BinaryImage::binarize(&qr);
+        let mut img = BinaryImage::prepare(&qr);
         let mut symbols = detect(&mut img);
         let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
 
@@ -185,7 +185,7 @@ mod qr_tests {
         let path = std::path::Path::new("assets/built.png");
         qr.save(path).unwrap();
 
-        let mut img = BinaryImage::binarize(&qr);
+        let mut img = BinaryImage::prepare(&qr);
         let mut symbols = detect(&mut img);
         let (_meta, decoded) = symbols[0].decode().unwrap();
 

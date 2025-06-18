@@ -17,29 +17,29 @@ use qrism::{MaskPattern, QRBuilder};
 use rqrr::PreparedImage;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // let data = "Well, hello there!";
-    // let ver = Version::Normal(1); // Size
-    // let ecl = ECLevel::L; // Error correction level
-    // let pal = Palette::Mono; // Color scheme: Monochromatic (traditional qr) or Polychromatic
-    // let mask = MaskPattern::new(5); // Mask pattern
+    let data = "Winter is arriving";
+    let ver = Version::Normal(21); // Size
+    let ecl = ECLevel::L; // Error correction level
+    let pal = Palette::Mono; // Color scheme: Monochromatic (traditional qr) or Polychromatic
+    let mask = MaskPattern::new(5); // Mask pattern
 
     // QR Builder
-    // let qrb = QRBuilder::new(data.as_bytes())
-    //     // .version(ver) // if not provided, finds smallest version to fit the data
-    //     .ec_level(ecl)
-    //     .palette(pal)
-    //     // .mask(mask) // If not provided, finds best mask based on score
-    //     .build()
-    //     .unwrap();
+    let qrb = QRBuilder::new(data.as_bytes())
+        .version(ver) // if not provided, finds smallest version to fit the data
+        .ec_level(ecl)
+        .palette(pal)
+        // .mask(mask) // If not provided, finds best mask based on score
+        .build()
+        .unwrap();
 
-    // let img = qrb.to_image(3);
-    // let path = Path::new("D:/Rust/images/test10.png");
-    // img.save(path).unwrap();
+    let img = qrb.to_image(3);
+    let path = Path::new("benches/dataset/decoding/version21.png");
+    img.save(path).unwrap();
 
     // QR Reader
     // let path = Path::new("assets/test7.png");
     // let img = image::open(path).unwrap().to_rgb8();
-    // let mut bin_img = BinaryImage::binarize(&img);
+    // let mut bin_img = BinaryImage::prepare(&img);
     // let mut symbols = detect(&mut bin_img);
     // assert!(symbols.len() > 0, "No symbol found");
     // let msg = symbols[0].decode().unwrap();

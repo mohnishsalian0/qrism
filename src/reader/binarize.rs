@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use image::{GenericImageView, Luma, Pixel as ImgPixel, Rgb, RgbImage};
+use imageproc::drawing::Canvas;
 
 use crate::metadata::Color;
 
@@ -115,6 +116,7 @@ pub struct BinaryImage {
     pub h: u32,
 }
 
+// Binarizing functions
 impl BinaryImage {
     // Steps:
     // 1. Divides image into blocks of 8x8 pixels. Note: For the last fractional block is, the
@@ -125,14 +127,16 @@ impl BinaryImage {
     // 4. Sets pixel value as false if less than or equal to threshold, else true
     // Note: If the pixel value is equal to threshold, it is set as false for the edge case when
     // threshold is 0 in which case the pixel should be false/black
-    pub fn binarize<I>(img: &I) -> Self
+    pub fn prepare<I>(img: &I) -> Self
     where
         I: GenericImageView,
         I::Pixel: ImgPixel<Subpixel = u8> + Binarize,
     {
         let (w, h) = img.dimensions();
         let chan_count = I::Pixel::CHANNEL_COUNT as usize;
+        // FIXME:
         let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
+        // let block_pow = 3;
         let block_size = 1 << block_pow;
         let mask = (1 << block_pow) - 1;
 
@@ -297,8 +301,158 @@ impl BinaryImage {
         Self { buffer, regions, w, h }
     }
 
+    pub fn otsu<I>(img: &I) -> Self
+    where
+        I: GenericImageView,
+        I::Pixel: ImgPixel<Subpixel = u8> + Binarize,
+    {
+        let (w, h) = img.dimensions();
+        let chan_count = I::Pixel::CHANNEL_COUNT as usize;
+        // FIXME:
+        // let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
+        let block_pow = 3;
+        let block_size = 1 << block_pow;
+        let block_area = block_size * block_size;
+        let mask = (1 << block_pow) - 1;
+
+        let wsteps = (w + mask) >> block_pow;
+        let hsteps = (h + mask) >> block_pow;
+        let len = (wsteps * hsteps) as usize;
+
+        let mut histogram = vec![[[0u32; 256]; 4]; len];
+
+        // Calculate sum of 8x8 pixels for each block
+        // Skip last few pixels which form fractional blocks. The last block will be computed later
+        // Round w and h to skips these pixels
+        let (wr, hr) = (w & !mask, h & !mask);
+        for y in 0..hr {
+            let row_off = (y >> block_pow) * wsteps;
+            for x in 0..wr {
+                let idx = (row_off + (x >> block_pow)) as usize;
+
+                let px = img.get_pixel(x, y);
+                for (i, &val) in px.channels().iter().enumerate() {
+                    histogram[idx][i][val as usize] += 1;
+                }
+            }
+        }
+
+        // Sum of 8x8 pixels for fractional blocks (if exists) on the right edge
+        if w & mask != 0 {
+            for y in 0..hr {
+                let idx = (((y >> block_pow) + 1) * wsteps - 1) as usize;
+                for x in w - block_size..w {
+                    let px = img.get_pixel(x, y);
+                    for (i, &val) in px.channels().iter().enumerate() {
+                        histogram[idx][i][val as usize] += 1;
+                    }
+                }
+            }
+        }
+
+        // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom edge
+        if h & mask != 0 {
+            let last_row = wsteps * (hsteps - 1);
+            for y in h - block_size..h {
+                for x in 0..wr {
+                    let idx = (last_row + (x >> block_pow)) as usize;
+
+                    let px = img.get_pixel(x, y);
+                    for (i, &val) in px.channels().iter().enumerate() {
+                        histogram[idx][i][val as usize] += 1;
+                    }
+                }
+            }
+        }
+
+        // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom right corner
+        if w & mask != 0 && h & mask != 0 {
+            for y in h - block_size..h {
+                for x in w - block_size..w {
+                    let px = img.get_pixel(x, y);
+                    for (i, &val) in px.channels().iter().enumerate() {
+                        histogram[len - 1][i][val as usize] += 1;
+                    }
+                }
+            }
+        }
+
+        // Calculates threshold for blocks
+        let wsteps = wsteps as usize;
+        let hsteps = hsteps as usize;
+        let half_grid = BLOCK_GRID_SIZE / 2;
+        let grid_area = (BLOCK_GRID_SIZE * BLOCK_GRID_SIZE) as u32;
+        let (maxx, maxy) = (wsteps - half_grid, hsteps - half_grid);
+        let mut threshold = vec![[0u8; 4]; wsteps * hsteps];
+
+        for y in 0..hsteps {
+            let row_off = y * wsteps;
+            for x in 0..wsteps {
+                let i = row_off + x;
+
+                // If y is near any boundary then copy the threshold above
+                if y > 0 && (y <= half_grid || y >= maxy) {
+                    threshold[i] = threshold[i - wsteps];
+                    continue;
+                }
+
+                // If x is near any boundary then copy the left threshold
+                if x > 0 && (x <= half_grid || x >= maxx) {
+                    threshold[i] = threshold[i - 1];
+                    continue;
+                }
+
+                let cx = std::cmp::max(x, half_grid);
+                let cy = std::cmp::max(y, half_grid);
+                let mut grid_hist = [[0; 256]; 4];
+                for ny in cy - half_grid..=cy + half_grid {
+                    let ni = ny * wsteps + cx;
+                    for px_stat in &histogram[ni - half_grid..=ni + half_grid] {
+                        for (i, chan_hist) in px_stat.iter().take(chan_count).enumerate() {
+                            let block_thresh = compute_threshold(chan_hist, block_area, false);
+                            grid_hist[i][block_thresh as usize] += 1;
+                        }
+                    }
+                }
+
+                for (c, t) in threshold[i].iter_mut().take(chan_count).enumerate() {
+                    *t = compute_threshold(&grid_hist[c], grid_area, false);
+                }
+            }
+        }
+
+        // Initially mark all pixels as unvisited; will be used for flood fill later.
+        let mut buffer = vec![Pixel::Unvisited(Color::White); (w * h) as usize];
+        for y in 0..h {
+            let row_off = y * w;
+            let thresh_row_off = (y as usize >> block_pow) * wsteps;
+            for x in 0..w {
+                let p = img.get_pixel(x, y);
+
+                let idx = (row_off + x) as usize;
+                let xsteps = x as usize >> block_pow;
+                let thresh_idx = thresh_row_off + xsteps;
+
+                let mut color_byte = 0;
+                for (i, &val) in p.channels().iter().rev().enumerate() {
+                    if val > threshold[thresh_idx][i] {
+                        color_byte |= 1 << i;
+                    }
+                }
+
+                let color = <I::Pixel>::binarize(color_byte);
+                if color != Color::White {
+                    buffer[idx] = Pixel::Unvisited(color);
+                }
+            }
+        }
+
+        let regions = Vec::with_capacity(100);
+        Self { buffer, regions, w, h }
+    }
+
     /// Performs absolute/naive binarization
-    pub fn simple_thresholding(img: RgbImage) -> Self {
+    pub fn global_thresholding(img: RgbImage) -> Self {
         let (w, h) = img.dimensions();
         let mut buffer = Vec::with_capacity((w * h) as usize);
 
@@ -311,7 +465,74 @@ impl BinaryImage {
         }
         Self { buffer, regions: Vec::with_capacity(100), w, h }
     }
+}
 
+// Computes Otsu threshold
+fn compute_threshold(histogram: &[u32; 256], total_pixels: u32, is_block: bool) -> u8 {
+    let dlen = 256.0;
+
+    // Compute sum of normalized intensities
+    let mut sum = 0.0;
+    for (i, &h) in histogram.iter().enumerate() {
+        let f = i as f64 / dlen;
+        sum += f * h as f64;
+    }
+
+    let mut sumb = 0.0;
+    let mut wb = 0; // Count of background pixels
+    let mut max_variance = 0.0;
+    let mut best_mb = 0.0; // Best background mean
+    let mut best_mf = 0.0; // Best foreground mean
+    let mut min = u8::MAX as usize;
+    let mut max = u8::MIN as usize;
+
+    for (i, &h) in histogram.iter().enumerate() {
+        wb += h;
+        if wb == 0 {
+            continue;
+        }
+
+        let wf = total_pixels - wb;
+        if wf == 0 {
+            break;
+        }
+
+        let f = i as f64 / dlen;
+        sumb += f * histogram[i] as f64;
+
+        let mb = sumb / (wb as f64);
+        let mf = (sum - sumb) / (wf as f64);
+
+        let var_between = (wb as f64) * (wf as f64) * (mb - mf).powi(2);
+
+        if var_between > max_variance {
+            max_variance = var_between;
+            best_mb = mb;
+            best_mf = mf;
+        }
+
+        if h != 0 {
+            min = min.min(i);
+            max = max.max(i);
+        }
+    }
+
+    if is_block && max >= min && max - min <= 60 {
+        let avg = (max + min) / 2;
+        if avg > 127 {
+            return 0;
+        }
+        return 255;
+    }
+
+    // Final threshold is average of both means, scaled back to 0..255
+    let threshold_f = (best_mb + best_mf) / 2.0;
+
+    (threshold_f * dlen).round() as u8
+}
+
+// Util functions
+impl BinaryImage {
     pub fn get(&self, x: u32, y: u32) -> Option<Pixel> {
         let w = self.w;
         let h = self.h;
@@ -372,6 +593,22 @@ impl BinaryImage {
         }
     }
 
+    #[cfg(test)]
+    pub fn save(&self, path: &Path) -> ImageResult<()> {
+        let w = self.w;
+        let mut img = RgbImage::new(w, self.h);
+        for (i, p) in self.buffer.iter().enumerate() {
+            let i = i as u32;
+            let (x, y) = (i % w, i / w);
+            img.put_pixel(x, y, (*p).into());
+        }
+        img.save(path).unwrap();
+        Ok(())
+    }
+}
+
+// Flood fill related functions
+impl BinaryImage {
     pub(crate) fn get_region(&mut self, src: (u32, u32)) -> &mut Region {
         let px = self.get(src.0, src.1).unwrap();
 
@@ -458,23 +695,12 @@ impl BinaryImage {
         }
         acc
     }
-
-    #[cfg(test)]
-    pub fn save(&self, path: &Path) -> ImageResult<()> {
-        let w = self.w;
-        let mut img = RgbImage::new(w, self.h);
-        for (i, p) in self.buffer.iter().enumerate() {
-            let i = i as u32;
-            let (x, y) = (i % w, i / w);
-            img.put_pixel(x, y, (*p).into());
-        }
-        img.save(path).unwrap();
-        Ok(())
-    }
 }
 
 // Constants
 //------------------------------------------------------------------------------
+
+const BLOCK_SIZE: u32 = 40;
 
 // Number of blocks the shorter dimension of image should be divided into
 const BLOCK_COUNT: f64 = 20.0;

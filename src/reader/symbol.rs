@@ -139,21 +139,26 @@ fn verify_symbol_size(img: &BinaryImage, finders: &[Point; 3], mids: &[Point; 6]
     let [c0, c1, c2] = finders;
     let [m03, m01, m10, m12, m21, m23] = mids;
 
+    // Estimate mod size along f1->f2 & f1->f0. This is used as threshold to filter noise in timing
+    // pattern
+    let ms12 = estimate_mod_size(c1, m12, c2, m21);
+    let ms10 = estimate_mod_size(c1, m10, c0, m01);
+
     // Measure timing pattern from c1 to c2
-    let t12 = measure_timing_patterns(img, m10, m23);
+    let t12 = measure_timing_patterns(img, m10, m23, ms12);
 
     // Measure timing pattern from c1 to c3
-    let t13 = measure_timing_patterns(img, m12, m03);
+    let t10 = measure_timing_patterns(img, m12, m03, ms10);
 
     // Closeness of horizontal and vertical timing patterns
-    let timing_score = ((t12 as f64 / t13 as f64) - 1.0).abs();
+    let timing_score = ((t12 as f64 / t10 as f64) - 1.0).abs();
     if timing_score > SYMBOL_HEURICTIC_THRESHOLD {
         return None;
     }
 
     // Estimate module count from c1 to c2
-    let est_mod_count12 = estimate_mod_count(c1, m12, c2, m21);
-    let mod_score12 = ((est_mod_count12 / (t12 + 6) as f64) - 1.0).abs();
+    let mc12 = estimate_mod_count(c1, m12, c2, m21);
+    let mod_score12 = ((mc12 / (t12 + 6) as f64) - 1.0).abs();
 
     // Skip if one is more than twice as long as the other
     if mod_score12 > SYMBOL_HEURICTIC_THRESHOLD {
@@ -161,20 +166,27 @@ fn verify_symbol_size(img: &BinaryImage, finders: &[Point; 3], mids: &[Point; 6]
     }
 
     // Estimate module count from c1 to c3
-    let est_mod_count13 = estimate_mod_count(c1, m10, c0, m01);
-    let mod_score13 = ((est_mod_count13 / (t13 + 6) as f64) - 1.0).abs();
+    let mc10 = estimate_mod_count(c1, m10, c0, m01);
+    let mod_score10 = ((mc10 / (t10 + 6) as f64) - 1.0).abs();
 
     // Skip if one is more than twice as long as the other
-    if mod_score13 > SYMBOL_HEURICTIC_THRESHOLD {
+    if mod_score10 > SYMBOL_HEURICTIC_THRESHOLD {
         return None;
     }
 
     // Provisional width and version
-    let size = (t12 + t13) / 2 + 13;
+    let size = (t12 + t10) / 2 + 13;
     let ver = ((size as f64 - 15.0) / 4.0).floor() as u32;
     let size = ver * 4 + 17;
 
     Some(size)
+}
+
+fn estimate_mod_size(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {
+    let d1 = c1.dist_sq(m1);
+    let d2 = c2.dist_sq(m2);
+
+    ((d1 + d2) as f64 / 18.0).sqrt()
 }
 
 fn find_edge_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point> {
@@ -217,22 +229,26 @@ where
     None
 }
 
-pub fn measure_timing_patterns(img: &BinaryImage, from: &Point, to: &Point) -> u32 {
+pub fn measure_timing_patterns(img: &BinaryImage, from: &Point, to: &Point, mod_size: f64) -> u32 {
     let dx = (to.x - from.x).abs();
     let dy = (to.y - from.y).abs();
 
     if dx > dy {
-        timing_scan::<X>(img, from, to)
+        timing_scan::<X>(img, from, to, mod_size)
     } else {
-        timing_scan::<Y>(img, from, to)
+        timing_scan::<Y>(img, from, to, mod_size)
     }
 }
 
-fn timing_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> u32
+fn timing_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point, mod_size: f64) -> u32
 where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
-    let mut transitions = [0, 0, 0];
+    let mut transitions = [0; 3];
+    let mut run_len = [0; 3];
+    let threshold = (mod_size / 8.0) as u32; // Threshold to filter noise
+    let mut noise_found = true; // Tracks whether previous segment is a noise
+
     let px = img.get_at_point(from).unwrap();
     let mut last = px.get_color() as u8;
     let line = BresenhamLine::<A>::new(from, to);
@@ -242,8 +258,28 @@ where
         let color = px.get_color() as u8;
         for (i, t) in transitions.iter_mut().enumerate() {
             if color >> i != last >> i {
-                *t += 1;
+                // The below condition handles few scenarios. Consider the current run is
+                // supposed to be black;
+                // 1. If a white noise was encountered early on, such that the black run is below
+                //    threshold. The noise_found would be false in this case and the black run
+                //    will not be mistaken for noise
+                // 2. If 2 segments of noise are too close, such that the black run between them
+                //    is below the threshold. The noise found would be false during the black run
+                //    thus avoiding misinterpretation
+                // 3. The else block handles the case where 2 or more runs of black separated by
+                //    white noises aren't counted as separate runs.
+                if noise_found || run_len[i] > threshold {
+                    *t += 1;
+                    noise_found = false;
+                } else {
+                    *t -= 1;
+                    noise_found = true;
+                }
+
                 last ^= 1 << i;
+                run_len[i] = 1;
+            } else {
+                run_len[i] += 1;
             }
         }
     }
@@ -663,7 +699,7 @@ mod symbol_tests {
         let img = qr.to_image(10);
         let exp_anchors = [(75, 75), (335, 75), (305, 305), (75, 335)];
 
-        let mut img = BinaryImage::binarize(&img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -766,7 +802,7 @@ mod symbol_infos_tests {
             QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::binarize(&img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -789,7 +825,7 @@ mod symbol_infos_tests {
         qr.set(4, 8, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::binarize(&img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -813,7 +849,7 @@ mod symbol_infos_tests {
         qr.set(4, 8, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::binarize(&img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -842,7 +878,7 @@ mod symbol_infos_tests {
         qr.set(8, -5, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::binarize(&img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -859,7 +895,7 @@ mod symbol_infos_tests {
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::binarize(&img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -880,7 +916,7 @@ mod symbol_infos_tests {
         qr.set(5, -11, Module::Format(Color::Black));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::binarize(&img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -902,7 +938,7 @@ mod symbol_infos_tests {
         qr.set(4, -9, Module::Format(Color::White));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::binarize(&img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
@@ -929,7 +965,7 @@ mod symbol_infos_tests {
         qr.set(-9, 4, Module::Format(Color::White));
         let img = qr.to_image(3);
 
-        let mut img = BinaryImage::binarize(&img);
+        let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);

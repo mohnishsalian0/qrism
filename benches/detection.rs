@@ -32,7 +32,7 @@ fn benchmark(dataset_dir: &Path) {
         let gray = image::open(img_path).unwrap().to_luma8();
 
         let start = Instant::now();
-        let mut img = BinaryImage::binarize(&gray);
+        let mut img = BinaryImage::prepare(&gray);
         let symbols = detect(&mut img);
         // let symbols: Vec<Symbol> = symbols
         //     .into_iter()
