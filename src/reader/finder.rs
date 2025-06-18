@@ -211,11 +211,6 @@ mod finder_tests {
             .unwrap();
         let img = qr.to_image(10);
 
-        let corners = [
-            [[40, 40], [109, 40], [109, 109], [40, 109]],
-            [[300, 109], [300, 40], [369, 109], [369, 40]],
-            [[40, 369], [40, 300], [109, 300], [109, 369]],
-        ];
         let centres = [[75, 75], [335, 75], [75, 335]];
         let mut bin_img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut bin_img);
@@ -269,14 +264,14 @@ pub fn group_finders(finders: &[Point]) -> Vec<FinderGroup> {
 
                 // Closeness of the dist of bl and tr finders from tl finder
                 let symmetry_score = ((d12 as f64 / d13 as f64).sqrt() - 1.0).abs();
-                if symmetry_score > 0.75 {
+                if symmetry_score > SYMMETRY_THRESHOLD {
                     continue;
                 }
 
                 // Angle of c2-c1-c3
                 let angle = angle(f2, f1, f3);
                 let angle_score = ((angle / right_angle) - 1.0).abs();
-                if angle_score > 0.5 {
+                if angle_score > ANGLE_THRESHOLD {
                     continue;
                 }
 
@@ -349,3 +344,10 @@ mod group_finders_tests {
         }
     }
 }
+
+// Global constants
+//------------------------------------------------------------------------------
+
+pub const SYMMETRY_THRESHOLD: f64 = 0.75;
+
+pub const ANGLE_THRESHOLD: f64 = 0.5;

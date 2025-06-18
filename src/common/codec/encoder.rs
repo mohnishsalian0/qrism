@@ -238,18 +238,18 @@ pub mod encode {
             assert_eq!(segs[2], seg_3);
         }
 
-        #[test_case("1111111".to_string(), Version::Normal(1), vec![(Mode::Numeric, 0, None)])]
-        #[test_case("AAAAA".to_string(), Version::Normal(1), vec![(Mode::Alphanumeric, 0, None)])]
-        #[test_case("aaaaa".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, None)])]
-        #[test_case("1111111AAAA".to_string(), Version::Normal(1), vec![(Mode::Numeric, 0, Some(7)), (Mode::Alphanumeric, 7, None)])]
-        #[test_case("111111AAAA".to_string(), Version::Normal(1), vec![(Mode::Alphanumeric, 0,None)])]
-        #[test_case("aaa11111a".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, None)])]
-        #[test_case("aaa111111a".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, Some(3)), (Mode::Numeric, 3, Some(9)), (Mode::Byte, 9, None)])]
-        #[test_case("aaa1111A".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, None)])]
-        #[test_case("aaa1111AA".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, Some(3)), (Mode::Alphanumeric, 3, None)])]
-        #[test_case("aaa1111111AA".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, Some(3)), (Mode::Numeric, 3, Some(10)), (Mode::Alphanumeric, 10, None)])]
-        #[test_case(("A11111111111111".repeat(23) + "A").to_string(), Version::Normal(10), vec![(Mode::Alphanumeric, 0, None)])]
-        #[test_case("Golden ratio φ = 1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072072041893911374......".to_string(), Version::Normal(9), vec![(Mode::Byte, 0, Some(20)), (Mode::Numeric, 20, Some(120)), (Mode::Alphanumeric, 120, Some(126))])]
+        #[test_case("1111111".to_string(), Version::Normal(1), vec![(Mode::Numeric, 0, None)]; "test_compute_optimal_segments_1")]
+        #[test_case("AAAAA".to_string(), Version::Normal(1), vec![(Mode::Alphanumeric, 0, None)]; "test_compute_optimal_segments_2")]
+        #[test_case("aaaaa".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, None)]; "test_compute_optimal_segments_3")]
+        #[test_case("1111111AAAA".to_string(), Version::Normal(1), vec![(Mode::Numeric, 0, Some(7)), (Mode::Alphanumeric, 7, None)]; "test_compute_optimal_segments_4")]
+        #[test_case("111111AAAA".to_string(), Version::Normal(1), vec![(Mode::Alphanumeric, 0,None)]; "test_compute_optimal_segments_5")]
+        #[test_case("aaa11111a".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, None)]; "test_compute_optimal_segments_6")]
+        #[test_case("aaa111111a".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, Some(3)), (Mode::Numeric, 3, Some(9)), (Mode::Byte, 9, None)]; "test_compute_optimal_segments_7")]
+        #[test_case("aaa1111A".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, None)]; "test_compute_optimal_segments_8")]
+        #[test_case("aaa1111AA".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, Some(3)), (Mode::Alphanumeric, 3, None)]; "test_compute_optimal_segments_9")]
+        #[test_case("aaa1111111AA".to_string(), Version::Normal(1), vec![(Mode::Byte, 0, Some(3)), (Mode::Numeric, 3, Some(10)), (Mode::Alphanumeric, 10, None)]; "test_compute_optimal_segments_10")]
+        #[test_case(("A11111111111111".repeat(23) + "A").to_string(), Version::Normal(10), vec![(Mode::Alphanumeric, 0, None)]; "test_compute_optimal_segments_11")]
+        #[test_case("Golden ratio φ = 1.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072072041893911374......".to_string(), Version::Normal(9), vec![(Mode::Byte, 0, Some(20)), (Mode::Numeric, 20, Some(120)), (Mode::Alphanumeric, 120, Some(126))]; "test_compute_optimal_segments_12")]
         fn test_compute_optimal_segments(
             data: String,
             ver: Version,
@@ -293,12 +293,12 @@ pub mod encode {
             }
         }
 
-        #[test_case("aaaaa11111AAA".to_string(), Version::Normal(1), ECLevel::L, Palette::Mono)]
-        #[test_case("A11111111111111".repeat(2).to_string(), Version::Normal(2), ECLevel::L, Palette::Mono)]
-        #[test_case("A11111111111111".repeat(4).to_string(), Version::Normal(3), ECLevel::L, Palette::Mono)]
-        #[test_case("aAAAAAAAAAAA".repeat(5).to_string(), Version::Normal(4), ECLevel::L, Palette::Mono)]
-        #[test_case("aAAAAAAAAAAA".repeat(21).to_string(), Version::Normal(10), ECLevel::L, Palette::Mono)]
-        #[test_case("a".repeat(2953).to_string(), Version::Normal(40), ECLevel::L, Palette::Mono)]
+        #[test_case("aaaaa11111AAA".to_string(), Version::Normal(1), ECLevel::L, Palette::Mono; "test_find_optimal_ver_and_segments_1")]
+        #[test_case("A11111111111111".repeat(2).to_string(), Version::Normal(2), ECLevel::L, Palette::Mono; "test_find_optimal_ver_and_segments_2")]
+        #[test_case("A11111111111111".repeat(4).to_string(), Version::Normal(3), ECLevel::L, Palette::Mono; "test_find_optimal_ver_and_segments_3")]
+        #[test_case("aAAAAAAAAAAA".repeat(5).to_string(), Version::Normal(4), ECLevel::L, Palette::Mono; "test_find_optimal_ver_and_segments_4")]
+        #[test_case("aAAAAAAAAAAA".repeat(21).to_string(), Version::Normal(10), ECLevel::L, Palette::Mono; "test_find_optimal_ver_and_segments_5")]
+        #[test_case("a".repeat(2953).to_string(), Version::Normal(40), ECLevel::L, Palette::Mono; "test_find_optimal_ver_and_segments_6")]
         fn test_find_optimal_ver_and_segments(
             data: String,
             exp_ver: Version,

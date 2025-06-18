@@ -25,16 +25,13 @@ use crate::{
 #[cfg(test)]
 use image::RgbImage;
 
-#[cfg(test)]
-use std::path::Path;
-
 // Locates symbol based on 3 finder centres, their edge points & provisional grid size
 //------------------------------------------------------------------------------
 
 #[derive(Debug)]
 pub struct SymbolLocation {
     h: Homography,
-    anchors: [Point; 4],
+    _anchors: [Point; 4],
     ver: Version,
 }
 
@@ -126,9 +123,9 @@ impl SymbolLocation {
 
         let h = setup_homography(img, group, align, ver)?;
 
-        let anchors = [c1, c2, align, c0];
+        let _anchors = [c1, c2, align, c0];
 
-        Some(Self { h, anchors, ver })
+        Some(Self { h, _anchors, ver })
     }
 }
 
@@ -304,14 +301,14 @@ fn estimate_mod_count(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {
 pub struct Symbol<'a> {
     img: &'a BinaryImage,
     h: Homography,
-    anchors: [Point; 4],
+    _anchors: [Point; 4],
     pub ver: Version,
 }
 
 impl<'a> Symbol<'a> {
     pub fn new(img: &'a BinaryImage, sym_loc: SymbolLocation) -> Self {
-        let SymbolLocation { h, anchors, ver } = sym_loc;
-        Self { img, h, anchors, ver }
+        let SymbolLocation { h, _anchors, ver } = sym_loc;
+        Self { img, h, _anchors, ver }
     }
 
     pub fn decode(&mut self) -> QRResult<(Metadata, String)> {
@@ -371,19 +368,13 @@ impl<'a> Symbol<'a> {
     }
 
     #[cfg(test)]
-    #[inline]
-    pub fn save(&self, path: &Path) {
-        self.img.save(path).unwrap()
-    }
-
-    #[cfg(test)]
     pub fn highlight(&self, img: &mut RgbImage) {
         use super::utils::geometry::{BresenhamLine, X, Y};
         use crate::reader::utils::rnd_rgb;
 
         let color = rnd_rgb();
 
-        for p in self.anchors.iter() {
+        for p in self._anchors.iter() {
             p.highlight(img, color);
         }
 
@@ -703,7 +694,7 @@ mod symbol_tests {
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
         let symbols = locate_symbols(&mut img, groups);
-        for b in symbols[0].anchors {
+        for b in symbols[0]._anchors {
             assert!(exp_anchors.contains(&(b.x, b.y)), "Symbol not within bounds");
         }
     }

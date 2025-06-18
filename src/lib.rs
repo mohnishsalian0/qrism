@@ -1,7 +1,7 @@
 #![allow(
     clippy::items_after_test_module,
-    // unused_variables,
-    // dead_code,
+    unused_variables,
+    dead_code,
     mixed_script_confusables,
     clippy::suspicious_arithmetic_impl,
     clippy::suspicious_op_assign_impl
@@ -19,3 +19,6 @@ pub use reader::*;
 
 #[cfg(test)]
 pub(crate) use builder::Module;
+
+#[cfg(feature = "benchmark")]
+pub use common::utils::benchmark;

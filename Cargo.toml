@@ -12,13 +12,13 @@ proptest = "1.6.0"
 rand = "0.9.0"
 rqrr = "0.9.3"
 time = "0.3.41"
+walkdir = "2.5.0"
 
 [dev-dependencies]
 geo = "0.29.3"
 geo-booleanop = "0.3.2"
 rayon = "1.10.0"
 test-case = "3.3.1"
-walkdir = "2.5.0"
 
 [[bench]]
 name = "detection"

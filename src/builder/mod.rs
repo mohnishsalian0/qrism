@@ -108,10 +108,10 @@ impl QRBuilder<'_> {
             }
         };
 
-        let data_len = self.data.len();
+        let _data_len = self.data.len();
+        let _data_cap = ver.data_capacity(self.ecl, self.pal);
+        let _ec_cap = Self::ec_capacity(ver, self.ecl);
         let tot_cwds = ver.total_codewords(self.pal);
-        let data_cap = ver.data_capacity(self.ecl, self.pal);
-        let ec_cap = Self::ec_capacity(ver, self.ecl);
 
         debug_println!("Constructing payload with ecc & interleaving...");
         let mut pld = BitStream::new(tot_cwds << 3);
@@ -158,21 +158,21 @@ impl QRBuilder<'_> {
 
         let tot_mods = ver.width() * ver.width();
         let dark_mods = qr.count_dark_modules();
-        let lt_mods = tot_mods - dark_mods;
+        let _lt_mods = tot_mods - dark_mods;
 
         debug_println!("Report:");
         debug_println!("{}", qr.metadata());
-        debug_println!("Data capacity: {}, Error Capacity: {}", data_cap, ec_cap);
+        debug_println!("Data capacity: {}, Error Capacity: {}", _data_cap, _ec_cap);
         debug_println!(
             "Data size: {}, Encoded size: {}, Compression: {}%",
-            data_len,
+            _data_len,
             enc.len() >> 3,
-            (enc.len() >> 3) * 100 / data_len
+            (enc.len() >> 3) * 100 / _data_len
         );
         debug_println!(
             "Dark Cells: {}, Light Cells: {}, Balance: {}\n",
             dark_mods,
-            lt_mods,
+            _lt_mods,
             dark_mods * 100 / tot_mods
         );
 

@@ -1,4 +1,3 @@
-use image::{open, GrayImage};
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::path::Path;
@@ -70,3 +69,5 @@ where
 
     println!("{divider}");
 }
+
+fn main() {}

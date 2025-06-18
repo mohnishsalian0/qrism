@@ -26,10 +26,6 @@ impl Block {
         Self { data, len, dlen }
     }
 
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
     pub fn ec_len(&self) -> usize {
         self.len - self.dlen
     }

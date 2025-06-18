@@ -1,16 +1,13 @@
-use qrism::reader::detect;
 use rayon::prelude::*;
-use rqrr::PreparedImage;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use walkdir::WalkDir;
 
+use qrism::benchmark::{get_parent, is_image_file, parse_expected_decode_result, print_table};
 use qrism::reader::binarize::BinaryImage;
-
-mod utils;
-use utils::*;
+use qrism::reader::detect;
 
 fn benchmark(dataset_dir: &Path) {
     let image_paths: Vec<_> = WalkDir::new(dataset_dir)
@@ -25,7 +22,7 @@ fn benchmark(dataset_dir: &Path) {
 
     image_paths.par_iter().for_each(|img_path| {
         let parent = get_parent(img_path);
-        let path_str = img_path.to_str().unwrap();
+        let _path_str = img_path.to_str().unwrap();
 
         let gray = image::open(img_path).unwrap().to_luma8();
         for angle in [0, 90, 180, 270].iter() {
@@ -39,16 +36,16 @@ fn benchmark(dataset_dir: &Path) {
             let start = Instant::now();
             let mut img = BinaryImage::prepare(&img);
             let mut symbols = detect(&mut img);
-            // let mut img = PreparedImage::prepare(img);
+            // let mut img = rqrr::PreparedImage::prepare(img);
             // let mut symbols = img.detect_grids();
-            let mut passed = false;
+            let mut _passed = false;
 
             if !symbols.is_empty() {
                 if let Ok((_meta, msg)) = symbols[0].decode() {
                     let elapsed = start.elapsed();
 
                     let mut runtimes = runtimes.lock().unwrap();
-                    runtimes.entry(parent.clone()).or_default().push(elapsed.as_micros());
+                    runtimes.entry(parent.clone()).or_default().push(elapsed.as_millis());
 
                     let msg = msg.lines().map(String::from).collect::<Vec<_>>();
 
@@ -64,15 +61,15 @@ fn benchmark(dataset_dir: &Path) {
                             .entry(angle.to_string())
                             .or_default() += 1;
 
-                        passed = true;
+                        _passed = true;
                     }
                 }
             }
 
-            // if passed {
-            //     println!("\x1b[1;32m[PASS]\x1b[0m {} at {}deg", path_str, angle);
+            // if _passed {
+            //     println!("\x1b[1;32m[PASS]\x1b[0m {} at {}deg", _path_str, angle);
             // } else {
-            //     println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", path_str, angle);
+            //     println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", _path_str, angle);
             // }
         }
     });

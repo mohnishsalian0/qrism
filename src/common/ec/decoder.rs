@@ -162,8 +162,8 @@ mod ec_rectifier_tests {
     use super::Block;
     use test_case::test_case;
 
-    #[test_case(&[32, 91, 11, 45, 89, 123, 77, 44, 56, 99, 202], &[32, 91, 11, 45, 89, 46, 77, 44, 56, 99, 202, 0, 0, 0, 0])]
-    #[test_case(&[32, 91, 11, 45, 89, 123, 77, 44, 56, 99, 202], &[32, 91, 11, 45, 89, 46, 77, 44, 56, 99, 249, 0, 0, 0, 0])]
+    #[test_case(&[32, 91, 11, 45, 89, 123, 77, 44, 56, 99, 202], &[32, 91, 11, 45, 89, 46, 77, 44, 56, 99, 202, 0, 0, 0, 0]; "test_rectfier_1")]
+    #[test_case(&[32, 91, 11, 45, 89, 123, 77, 44, 56, 99, 202], &[32, 91, 11, 45, 89, 46, 77, 44, 56, 99, 249, 0, 0, 0, 0]; "test_rectfier_2")]
     fn test_rectifier(data: &[u8], bad: &[u8]) {
         let mut blk = Block::new(data, 15);
         blk.data[..11].copy_from_slice(&bad[..11]);
@@ -171,7 +171,7 @@ mod ec_rectifier_tests {
         assert_eq!(rect, data, "Rectified data and original data don't match: Rectified {rect:?}, Original data {data:?}");
     }
 
-    #[test_case(&[32, 91, 11, 45, 89, 123, 77, 44, 56, 99, 202], &[138, 91, 161, 45, 243, 46, 231, 44, 146, 99, 202, 0, 0, 0, 0])]
+    #[test_case(&[32, 91, 11, 45, 89, 123, 77, 44, 56, 99, 202], &[138, 91, 161, 45, 243, 46, 231, 44, 146, 99, 202, 0, 0, 0, 0]; "test_rectifier_panic")]
     #[should_panic]
     fn test_rectifier_fail(data: &[u8], bad: &[u8]) {
         let mut blk = Block::new(data, 15);

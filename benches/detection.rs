@@ -1,7 +1,4 @@
 use geo::{Area, BooleanOps, Coord, Polygon};
-use qrism::binarize::BinaryImage;
-use qrism::detect;
-use qrism::symbol::Symbol;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
@@ -9,8 +6,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use walkdir::WalkDir;
 
-mod utils;
-use utils::*;
+use qrism::benchmark::{get_parent, is_image_file, parse_expected_bounds_result, print_table};
+use qrism::binarize::BinaryImage;
+use qrism::detect;
+use qrism::symbol::Symbol;
 
 fn benchmark(dataset_dir: &Path) {
     let image_paths: Vec<_> = WalkDir::new(dataset_dir)
@@ -34,14 +33,14 @@ fn benchmark(dataset_dir: &Path) {
         let start = Instant::now();
         let mut img = BinaryImage::prepare(&gray);
         let symbols = detect(&mut img);
-        let symbols: Vec<Symbol> = symbols
-            .into_iter()
-            .filter_map(|mut s| if s.decode().is_ok() { Some(s) } else { None })
-            .collect();
+        // let symbols: Vec<Symbol> = symbols
+        //     .into_iter()
+        //     .filter_map(|mut s| if s.decode().is_ok() { Some(s) } else { None })
+        //     .collect();
         let time = start.elapsed().as_millis();
 
         let symbols = get_corners(&symbols);
-        let true_pos = matched_areas(&symbols, &exp_symbols);
+        let true_pos = match_areas(&symbols, &exp_symbols);
         let false_pos = symbols.len() - true_pos;
         let false_neg = exp_symbols.len() - true_pos;
 
@@ -101,7 +100,7 @@ fn benchmark(dataset_dir: &Path) {
         *total.entry("median_time".to_string()).or_default() += median_time;
     }
 
-    let count = results.len() as f64;
+    let count = results.iter().filter(|(_, v)| *v.get("true_pos").unwrap() > 0.0).count() as f64;
     *total.entry("precision".to_string()).or_default() /= count;
     *total.entry("recall".to_string()).or_default() /= count;
     *total.entry("fscore".to_string()).or_default() /= count;
@@ -153,7 +152,7 @@ pub fn get_corners(symbols: &[Symbol]) -> Vec<Vec<f64>> {
     symbol_corners
 }
 
-fn matched_areas(actual: &[Vec<f64>], expected: &[Vec<f64>]) -> usize {
+fn match_areas(actual: &[Vec<f64>], expected: &[Vec<f64>]) -> usize {
     let mut matched = [false; 100];
     let actual = actual.to_vec();
     let mut res = 0;
@@ -162,11 +161,9 @@ fn matched_areas(actual: &[Vec<f64>], expected: &[Vec<f64>]) -> usize {
             if matched[i] {
                 return false;
             }
-            let actual_area = quad_area(actual_corners);
             let exp_area = quad_area(exp_corners);
             let overlap_area = overlap_area(actual_corners, exp_corners);
-            let percent = overlap_area / actual_area.min(exp_area);
-            // let percent = overlap_area / exp_area;
+            let percent = overlap_area / exp_area;
             if percent > 0.2 {
                 matched[i] = true;
                 true
@@ -218,10 +215,9 @@ fn overlap_area(actual: &[f64], expected: &[f64]) -> f64 {
 }
 
 fn main() {
-    let dataset_dir = std::path::Path::new("benches/dataset/detection/lots");
+    let dataset_dir = std::path::Path::new("benches/dataset/detection");
 
     let start = Instant::now();
-    // test_get_corners();
     benchmark(dataset_dir);
-    println!("time elapsed: {:?}", start.elapsed());
+    println!("Time elapsed: {:?}", start.elapsed());
 }

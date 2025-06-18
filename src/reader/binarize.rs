@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 
 use image::{GenericImageView, Luma, Pixel as ImgPixel, Rgb, RgbImage};
-use imageproc::drawing::Canvas;
 
 use crate::metadata::Color;
 
@@ -699,8 +698,6 @@ impl BinaryImage {
 
 // Constants
 //------------------------------------------------------------------------------
-
-const BLOCK_SIZE: u32 = 40;
 
 // Number of blocks the shorter dimension of image should be divided into
 const BLOCK_COUNT: f64 = 20.0;

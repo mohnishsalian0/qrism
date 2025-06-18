@@ -647,7 +647,6 @@ static DATA_CODEWORDS_PER_BLOCK: [[(usize, usize, usize, usize); 4]; 44] = [
 ];
 
 pub static FORMAT_INFO_BIT_LEN: usize = 15;
-pub static FORMAT_ERROR_BIT_LEN: usize = 10;
 pub static FORMAT_ERROR_CAPACITY: u32 = 3;
 
 pub static FORMAT_MASK: u32 = 0b101010000010010;
