@@ -16,16 +16,16 @@ mod reader {
         let old_len = out.len();
         let (mode, char_cnt) = take_header(inp, ver)?;
 
-        match mode {
+        let decoded_len = match mode {
             Mode::Numeric => write_numeric(inp, char_cnt, out)?,
             Mode::Alphanumeric => write_alphanumeric(inp, char_cnt, out)?,
             Mode::Byte => write_byte(inp, char_cnt, out)?,
             Mode::Kanji => write_kanji(inp, char_cnt, out)?,
+            Mode::Eci => write_eci(inp, char_cnt, out)?,
             Mode::Terminator => return Ok(0),
         };
 
-        let seg_len = out.len() - old_len;
-        let encoded_len = mode.encoded_len(seg_len);
+        let encoded_len = mode.encoded_len(decoded_len);
         let bit_len = ver.mode_bits() + ver.char_cnt_bits(mode) + encoded_len;
 
         Ok(bit_len)
@@ -39,6 +39,7 @@ mod reader {
             1 => Mode::Numeric,
             2 => Mode::Alphanumeric,
             4 => Mode::Byte,
+            7 => Mode::Eci,
             8 => Mode::Kanji,
             _ => return Err(QRError::InvalidMode(mode_bits as u8)),
         };
@@ -49,44 +50,56 @@ mod reader {
         Ok((mode, char_cnt.into()))
     }
 
-    fn write_numeric(inp: &mut BitStream, mut char_cnt: usize, out: &mut String) -> QRResult<()> {
+    fn write_numeric(
+        inp: &mut BitStream,
+        mut char_cnt: usize,
+        out: &mut String,
+    ) -> QRResult<usize> {
+        let mut total_bit_len = 0;
+
         while char_cnt > 0 {
             let bit_len = if char_cnt > 2 { 10 } else { (char_cnt % 3) * 3 + 1 };
             let chunk = inp.take_bits(bit_len).ok_or(QRError::CorruptDataSegment)?;
             let decoded = Mode::Numeric.decode_chunk(chunk, bit_len);
+            total_bit_len += decoded.len();
             let decoded_str =
                 String::from_utf8(decoded).map_err(|_| QRError::InvalidUTF8Encoding)?;
             out.push_str(&decoded_str);
             char_cnt -= min(3, char_cnt);
         }
 
-        Ok(())
+        Ok(total_bit_len)
     }
 
     fn write_alphanumeric(
         inp: &mut BitStream,
         mut char_cnt: usize,
         out: &mut String,
-    ) -> QRResult<()> {
+    ) -> QRResult<usize> {
+        let mut total_bit_len = 0;
+
         while char_cnt > 0 {
             let bit_len = if char_cnt > 1 { 11 } else { 6 };
             let chunk = inp.take_bits(bit_len).ok_or(QRError::CorruptDataSegment)?;
             let decoded = Mode::Alphanumeric.decode_chunk(chunk, bit_len);
+            total_bit_len += decoded.len();
             let decoded_str =
                 String::from_utf8(decoded).map_err(|_| QRError::InvalidUTF8Encoding)?;
             out.push_str(&decoded_str);
             char_cnt -= min(2, char_cnt);
         }
 
-        Ok(())
+        Ok(total_bit_len)
     }
 
-    fn write_byte(inp: &mut BitStream, mut char_cnt: usize, out: &mut String) -> QRResult<()> {
+    fn write_byte(inp: &mut BitStream, mut char_cnt: usize, out: &mut String) -> QRResult<usize> {
+        let mut total_bit_len = 0;
         let mut bytes = Vec::with_capacity(char_cnt);
 
         while char_cnt > 0 {
             let chunk = inp.take_bits(8).ok_or(QRError::CorruptDataSegment)?;
             let decoded = Mode::Byte.decode_chunk(chunk, 8);
+            total_bit_len += 1;
             bytes.extend(decoded);
             char_cnt -= 1;
         }
@@ -104,13 +117,16 @@ mod reader {
             }
         }
 
-        Ok(())
+        Ok(total_bit_len)
     }
 
-    fn write_kanji(inp: &mut BitStream, mut char_cnt: usize, out: &mut String) -> QRResult<()> {
+    fn write_kanji(inp: &mut BitStream, mut char_cnt: usize, out: &mut String) -> QRResult<usize> {
+        let mut total_bit_len = 0;
+
         while char_cnt > 0 {
             let chunk = inp.take_bits(13).ok_or(QRError::CorruptDataSegment)?;
             let decoded = Mode::Kanji.decode_chunk(chunk, 13);
+            total_bit_len += decoded.len();
             let (decoded_str, _, has_err) = SHIFT_JIS.decode(&decoded);
 
             if has_err {
@@ -121,7 +137,22 @@ mod reader {
             char_cnt -= 1;
         }
 
-        Ok(())
+        Ok(total_bit_len)
+    }
+
+    fn write_eci(inp: &mut BitStream, _char_cnt: usize, _out: &mut str) -> QRResult<usize> {
+        let mut total_bit_len = 8;
+        let mut _eci = inp.take_bits(8).ok_or(QRError::CorruptDataSegment)? as u32;
+
+        if _eci & 0b1100_0000 == 0b1000_0000 {
+            _eci = (_eci << 8) | inp.take_bits(8).ok_or(QRError::CorruptDataSegment)? as u32;
+            total_bit_len += 8;
+        } else if _eci & 0b1110_0000 == 0b1100_0000 {
+            _eci = (_eci << 16) | inp.take_bits(16).ok_or(QRError::CorruptDataSegment)? as u32;
+            total_bit_len += 16;
+        }
+
+        Ok(total_bit_len)
     }
 
     #[cfg(test)]

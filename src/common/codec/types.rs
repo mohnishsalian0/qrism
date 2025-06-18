@@ -9,6 +9,7 @@ pub enum Mode {
     Alphanumeric = 0b0010,
     Byte = 0b0100,
     Kanji = 0b1000,
+    Eci = 0b0111,
     Terminator = 0b0000,
 }
 
@@ -78,6 +79,7 @@ impl Mode {
             },
             Self::Byte => mode_digit,
             Self::Kanji => todo!(),
+            Self::Eci => unreachable!("ECI mode doesn't have characters"),
             Self::Terminator => unreachable!("Terminator mode doesn't have characters"),
         }
     }
@@ -98,6 +100,7 @@ impl Mode {
                 data[0] as u16
             }
             Self::Kanji => todo!(),
+            Self::Eci => unreachable!("Cannot encode in ECI mode"),
             Self::Terminator => unreachable!("Cannot encode in terminator mode"),
         }
     }
@@ -112,6 +115,7 @@ impl Mode {
                 vec![data as u8]
             }
             Self::Kanji => Self::decode_kanji_chunk(data),
+            Self::Eci => unreachable!("Cannot decode in ECI mode"),
             Self::Terminator => unreachable!("Cannot decode in terminator mode"),
         }
     }
@@ -163,7 +167,7 @@ impl Mode {
             }
             Self::Byte => true,
             Self::Kanji => todo!(),
-            Self::Terminator => false,
+            Self::Eci | Self::Terminator => false,
         }
     }
 
@@ -173,6 +177,7 @@ impl Mode {
             Self::Alphanumeric => (len * 11 + 1) / 2,
             Self::Byte => len * 8,
             Self::Kanji => (len / 2) * 13,
+            Self::Eci => len,
             Self::Terminator => unreachable!("Cannot encode in terminator mode"),
         }
     }

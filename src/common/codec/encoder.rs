@@ -102,6 +102,9 @@ pub mod encode {
                     Mode::Alphanumeric => 33,
                     Mode::Byte => 48,
                     Mode::Kanji => todo!(),
+                    Mode::Eci => {
+                        unreachable!("Optimal segments should never have ECI mode")
+                    }
                     Mode::Terminator => {
                         unreachable!("Optimal segments should never have terminator mode")
                     }
@@ -343,6 +346,7 @@ pub(super) mod writer {
             Mode::Alphanumeric => push_alphanumeric_data(seg.data, out),
             Mode::Byte => push_byte_data(seg.data, out),
             Mode::Kanji => todo!(),
+            Mode::Eci => unreachable!("Cannot push segment in ECI mode"),
             Mode::Terminator => unreachable!("Cannot push segment in terminator mode"),
         }
     }

@@ -146,9 +146,7 @@ mod reader_tests {
             symbols.iter().for_each(|s| s.highlight(&mut out_img));
 
             symbols.iter_mut().enumerate().for_each(|(i, s)| {
-                if let Ok((meta, msg)) = s.decode() {
-                    println!("[{file_name}] id: {i}, Metadata: {meta:?}, Message: {msg}");
-                }
+                dbg!(s.decode());
             });
 
             let out_str = format!("assets/{parent}/{file_name}");
