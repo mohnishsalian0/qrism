@@ -34,10 +34,10 @@ fn benchmark(dataset_dir: &Path) {
         let start = Instant::now();
         let mut img = BinaryImage::prepare(&gray);
         let symbols = detect(&mut img);
-        // let symbols: Vec<Symbol> = symbols
-        //     .into_iter()
-        //     .filter_map(|mut s| if s.decode().is_ok() { Some(s) } else { None })
-        //     .collect();
+        let symbols: Vec<Symbol> = symbols
+            .into_iter()
+            .filter_map(|mut s| if s.decode().is_ok() { Some(s) } else { None })
+            .collect();
         let time = start.elapsed().as_millis();
 
         let symbols = get_corners(&symbols);
@@ -218,7 +218,7 @@ fn overlap_area(actual: &[f64], expected: &[f64]) -> f64 {
 }
 
 fn main() {
-    let dataset_dir = std::path::Path::new("benches/dataset/detection");
+    let dataset_dir = std::path::Path::new("benches/dataset/detection/lots");
 
     let start = Instant::now();
     // test_get_corners();

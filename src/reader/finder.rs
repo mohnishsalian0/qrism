@@ -250,7 +250,7 @@ impl FinderGroup {
 
 pub fn group_finders(finders: &[Point]) -> Vec<FinderGroup> {
     // Store all possible combinations of finders
-    let mut all_groups: Vec<FinderGroup> = Vec::new();
+    let mut groups: Vec<FinderGroup> = Vec::new();
     let right_angle = 90f64.to_radians();
 
     for (i1, f1) in finders.iter().enumerate() {
@@ -269,6 +269,9 @@ pub fn group_finders(finders: &[Point]) -> Vec<FinderGroup> {
 
                 // Closeness of the dist of bl and tr finders from tl finder
                 let symmetry_score = ((d12 as f64 / d13 as f64).sqrt() - 1.0).abs();
+                if symmetry_score > 0.75 {
+                    continue;
+                }
 
                 // Angle of c2-c1-c3
                 let angle = angle(f2, f1, f3);
@@ -282,14 +285,14 @@ pub fn group_finders(finders: &[Point]) -> Vec<FinderGroup> {
                 // Create and push group into groups
                 let finders = [*f3, *f1, *f2];
                 let group = FinderGroup { finders, score };
-                all_groups.push(group);
+                groups.push(group);
             }
         }
     }
 
-    all_groups.sort_unstable_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
+    groups.sort_unstable_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
 
-    all_groups
+    groups
 }
 
 // Angle between AB & BC in radians
