@@ -336,8 +336,9 @@ impl<'a> Symbol<'a> {
         }
 
         let msg = codec_decode(&mut enc, ver, ecl, pal)?;
+        let meta = Metadata::new(Some(ver), Some(ecl), Some(mask));
 
-        Ok((Metadata::new(Some(ver), Some(ecl), Some(mask)), msg))
+        Ok((meta, msg))
     }
 
     pub fn get(&self, x: i32, y: i32) -> Option<&Pixel> {

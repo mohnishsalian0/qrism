@@ -104,7 +104,7 @@ mod reader_tests {
         #[allow(unused_imports)]
         use rayon::prelude::*;
 
-        let dataset_dir = std::path::Path::new("benches/dataset/detection/high_version");
+        let dataset_dir = std::path::Path::new("benches/dataset/detection/monitor/image005.jpg");
 
         let image_paths: Vec<_> = walkdir::WalkDir::new(dataset_dir)
             .into_iter()
