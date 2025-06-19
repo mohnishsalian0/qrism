@@ -11,15 +11,16 @@ use image::RgbImage;
 // Finder line
 //------------------------------------------------------------------------------
 
-// **   ******   **  <- Finder line
-// ^    ^        ^
-// left |        right
-//      stone
+// ***   *********   ***  <- Finder line
+// ^     ^           ^ ^
+// left  |           | end
+//       stone       right
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct DatumLine {
     left: u32,
     stone: u32,
     right: u32,
+    end: u32,
     y: u32,
 }
 
@@ -66,6 +67,7 @@ impl LineScanner {
                 left: self.pos - 1 - self.buffer[..5].iter().sum::<u32>(),
                 stone: self.pos - 1 - self.buffer[2..5].iter().sum::<u32>(),
                 right: self.pos - 1 - self.buffer[4],
+                end: self.pos - 1 - self.buffer[0],
                 y: self.y,
             })
         } else {
@@ -99,9 +101,25 @@ impl LineScanner {
 // Locate finders
 //------------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Finder {
+    pub centre: Point,
+    pub mod_size: u32,
+}
+
+impl Finder {
+    #[cfg(test)]
+    pub fn highlight(&self, img: &mut RgbImage) {
+        use super::utils::rnd_rgb;
+
+        let color = rnd_rgb();
+        self.centre.highlight(img, color);
+    }
+}
+
 // ENTRY POINT FOR LOCATING FINDER
 // Returns a list of centres of potential finder
-pub fn locate_finders(img: &mut BinaryImage) -> Vec<Point> {
+pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
     let mut finders = Vec::with_capacity(100);
     let w = img.w;
     let h = img.h;
@@ -115,15 +133,15 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Point> {
                 None => continue,
             };
 
-            if let Some(centre) = verify_and_mark_finder(img, &datum) {
-                finders.push(centre);
+            if let Some((centre, mod_size)) = verify_and_mark_finder(img, &datum) {
+                finders.push(Finder { centre, mod_size });
             }
         }
 
         // Handles an edge case where the QR is located at the right edge of the image
         if let Some(datum) = scanner.advance(Color::White) {
-            if let Some(centre) = verify_and_mark_finder(img, &datum) {
-                finders.push(centre);
+            if let Some((centre, mod_size)) = verify_and_mark_finder(img, &datum) {
+                finders.push(Finder { centre, mod_size });
             }
         }
 
@@ -140,8 +158,8 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Point> {
 // 4. Area of stone region is roughly 37.5% of ring region
 // 5. Crosscheck 1:1:3:1:1 pattern along Y axis
 // Finally it marks the regions are candidate and returns the centre
-fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Point> {
-    let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
+fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<(Point, u32)> {
+    let (l, r, s, e, y) = (datum.left, datum.right, datum.stone, datum.end, datum.y);
 
     // If pixel has been visited, check if regions is already marked as finder
     if matches!(img.get(s, y), Some(Pixel::Visited(..))) {
@@ -181,7 +199,9 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Po
     img.get_region((r, y)).is_finder = true;
     img.get_region((s, y)).is_finder = true;
 
-    Some(stone.centre)
+    let mod_size = ((e - l + 1) + (b - t + 1)) / 14;
+
+    Some((stone.centre, mod_size))
 }
 
 #[cfg(test)]
@@ -217,7 +237,7 @@ mod finder_tests {
 
         for (i, f) in finders.iter().enumerate() {
             let cent_pt = Point { x: centres[i][0], y: centres[i][1] };
-            assert_eq!(*f, cent_pt, "Finder centre doesn't match");
+            assert_eq!(f.centre, cent_pt, "Finder centre doesn't match");
         }
     }
 }
@@ -227,8 +247,8 @@ mod finder_tests {
 
 #[derive(Debug, Clone)]
 pub struct FinderGroup {
-    pub finders: [Point; 3], // [BL, TL, TR]
-    pub score: f64,          // Timing pattern score + Estimate mod count score
+    pub finders: [Finder; 3], // [BL, TL, TR]
+    pub score: f64,           // Timing pattern score + Estimate mod count score
 }
 
 impl FinderGroup {
@@ -238,29 +258,34 @@ impl FinderGroup {
 
         let color = rnd_rgb();
         for f in self.finders.iter() {
-            f.highlight(img, color);
+            f.centre.highlight(img, color);
         }
     }
 }
 
-pub fn group_finders(finders: &[Point]) -> Vec<FinderGroup> {
+pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
     // Store all possible combinations of finders
     let mut groups: Vec<FinderGroup> = Vec::new();
     let right_angle = 90f64.to_radians();
 
     for (i1, f1) in finders.iter().enumerate() {
+        let c1 = f1.centre;
+
         for (i2, f2) in finders.iter().enumerate() {
             if i2 == i1 {
                 continue;
             }
+
+            let c2 = f2.centre;
 
             for (i3, f3) in finders.iter().enumerate() {
                 if i3 <= i2 || i3 == i1 {
                     continue;
                 }
 
-                let d12 = f1.dist_sq(f2);
-                let d13 = f1.dist_sq(f3);
+                let c3 = f3.centre;
+                let d12 = c1.dist_sq(&c2);
+                let d13 = c1.dist_sq(&c3);
 
                 // Closeness of the dist of bl and tr finders from tl finder
                 let symmetry_score = ((d12 as f64 / d13 as f64).sqrt() - 1.0).abs();
@@ -269,7 +294,7 @@ pub fn group_finders(finders: &[Point]) -> Vec<FinderGroup> {
                 }
 
                 // Angle of c2-c1-c3
-                let angle = angle(f2, f1, f3);
+                let angle = angle(&c2, &c1, &c3);
                 let angle_score = ((angle / right_angle) - 1.0).abs();
                 if angle_score > ANGLE_THRESHOLD {
                     continue;
@@ -339,7 +364,7 @@ mod group_finders_tests {
         let group = group_finders(&finders);
         assert!(!group.is_empty(), "No group found");
         for f in group[0].finders.iter() {
-            let c = (f.x, f.y);
+            let c = (f.centre.x, f.centre.y);
             assert!(centres.contains(&c))
         }
     }
