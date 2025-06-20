@@ -135,7 +135,7 @@ mod reader_tests {
 
             let finders = locate_finders(&mut bin_img);
             dbg!(file_name, finders.len());
-            finders.iter().for_each(|f| f.highlight(&mut out_img));
+            finders.iter().for_each(|f| f.highlight(&mut out_img, image::Rgb([255, 0, 0])));
 
             let groups = group_finders(&finders);
             dbg!(file_name, groups.len());
@@ -146,7 +146,7 @@ mod reader_tests {
             symbols.iter().for_each(|s| s.highlight(&mut out_img));
 
             symbols.iter_mut().enumerate().for_each(|(i, s)| {
-                let _ = dbg!(s.decode());
+                dbg!(s.decode());
             });
 
             let out_str = format!("assets/{parent}/{file_name}");

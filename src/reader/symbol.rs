@@ -1,6 +1,6 @@
 use super::{
     binarize::{BinaryImage, Pixel},
-    finder::{Finder, FinderGroup},
+    finder::FinderGroup,
     utils::{
         geometry::{Axis, BresenhamLine, Point, Slope},
         homography::Homography,
@@ -72,12 +72,7 @@ impl SymbolLocation {
     // ****************************
     // ****************************
     pub fn locate(img: &mut BinaryImage, group: &mut FinderGroup) -> Option<SymbolLocation> {
-        let mut c0 = group.finders[0].centre;
-        let c1 = group.finders[1].centre;
-        let mut c2 = group.finders[2].centre;
-        let ms0 = group.finders[0].mod_size;
-        let ms1 = group.finders[1].mod_size;
-        let ms2 = group.finders[2].mod_size;
+        let [mut c0, c1, mut c2] = group.finders;
 
         // Compute provisional location of alignment centre (c4)
         let dx = c2.x - c1.x;
@@ -105,12 +100,12 @@ impl SymbolLocation {
         // to measure timing patterns, and also to locate the provisional alignment centre for
         // versions above 1.
         let mids = [
-            find_edge_mid(img, &c0, &align, ms0)?,
-            find_edge_mid(img, &c0, &c1, ms0)?,
-            find_edge_mid(img, &c1, &c0, ms1)?,
-            find_edge_mid(img, &c1, &c2, ms1)?,
-            find_edge_mid(img, &c2, &c1, ms2)?,
-            find_edge_mid(img, &c2, &align, ms2)?,
+            find_edge_mid(img, &c0, &align)?,
+            find_edge_mid(img, &c0, &c1)?,
+            find_edge_mid(img, &c1, &c0)?,
+            find_edge_mid(img, &c1, &c2)?,
+            find_edge_mid(img, &c2, &c1)?,
+            find_edge_mid(img, &c2, &align)?,
         ];
 
         let size = verify_symbol_size(img, &group.finders, &mids)?;
@@ -137,19 +132,14 @@ impl SymbolLocation {
 // Validates the symbol and returns its size if valid. Validation involves:
 // 1. Ensuring the horizontal and vertical timing patterns are consistent.
 // 2. Verifying that the estimated number of modules along the center matches the timing patterns.
-fn verify_symbol_size(img: &BinaryImage, finders: &[Finder; 3], mids: &[Point; 6]) -> Option<u32> {
-    let c0 = finders[0].centre;
-    let c1 = finders[1].centre;
-    let c2 = finders[2].centre;
-    let ms0 = finders[0].mod_size;
-    let ms1 = finders[1].mod_size;
-    let ms2 = finders[2].mod_size;
+fn verify_symbol_size(img: &BinaryImage, finders: &[Point; 3], mids: &[Point; 6]) -> Option<u32> {
+    let [c0, c1, c2] = finders;
     let [m03, m01, m10, m12, m21, m23] = mids;
 
     // Estimate mod size along f1->f2 & f1->f0. This is used as threshold to filter noise in timing
     // pattern
-    let ms12 = (ms1 + ms2) as f64 / 2.0;
-    let ms10 = (ms1 + ms0) as f64 / 2.0;
+    let ms12 = estimate_mod_size(c1, m12, c2, m21);
+    let ms10 = estimate_mod_size(c1, m10, c0, m01);
 
     // Measure timing pattern from c1 to c2
     let t12 = measure_timing_patterns(img, m10, m23, ms12);
@@ -164,7 +154,7 @@ fn verify_symbol_size(img: &BinaryImage, finders: &[Finder; 3], mids: &[Point; 6
     }
 
     // Estimate module count from c1 to c2
-    let mc12 = estimate_mod_count(&c1, m12, &c2, m21);
+    let mc12 = estimate_mod_count(c1, m12, c2, m21);
     let mod_score12 = ((mc12 / (t12 + 6) as f64) - 1.0).abs();
 
     // Skip if one is more than twice as long as the other
@@ -173,7 +163,7 @@ fn verify_symbol_size(img: &BinaryImage, finders: &[Finder; 3], mids: &[Point; 6
     }
 
     // Estimate module count from c1 to c3
-    let mc10 = estimate_mod_count(&c1, m10, &c0, m01);
+    let mc10 = estimate_mod_count(c1, m10, c0, m01);
     let mod_score10 = ((mc10 / (t10 + 6) as f64) - 1.0).abs();
 
     // Skip if one is more than twice as long as the other
@@ -189,24 +179,28 @@ fn verify_symbol_size(img: &BinaryImage, finders: &[Finder; 3], mids: &[Point; 6
     Some(size)
 }
 
-fn find_edge_mid(img: &BinaryImage, from: &Point, to: &Point, mod_size: u32) -> Option<Point> {
+fn estimate_mod_size(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {
+    let d1 = c1.dist_sq(m1);
+    let d2 = c2.dist_sq(m2);
+
+    ((d1 + d2) as f64 / 18.0).sqrt()
+}
+
+fn find_edge_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point> {
     let dx = (to.x - from.x).abs();
     let dy = (to.y - from.y).abs();
     if dx > dy {
-        mid_scan::<X>(img, from, to, mod_size)
+        mid_scan::<X>(img, from, to)
     } else {
-        mid_scan::<Y>(img, from, to, mod_size)
+        mid_scan::<Y>(img, from, to)
     }
 }
 
-fn mid_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point, mod_size: u32) -> Option<Point>
+fn mid_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point>
 where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
     let mut flips = 0;
-    let mut run_len = 1;
-    let threshold = mod_size / 8; // Threshold to filter noise
-    let mut noise_found = true; // Tracks whether previous segment is a noise
     let mut buffer = Vec::with_capacity(100);
     let px = img.get_at_point(from).unwrap();
     let mut last = px.get_color();
@@ -217,35 +211,13 @@ where
         let color = px.get_color();
 
         if color != last {
-            // The below condition handles few scenarios. Consider the current run is
-            // supposed to be black;
-            // 1. If a white noise was encountered early on, such that the black run is below
-            //    threshold. The noise_found would be false in this case and the black run
-            //    will not be mistaken for noise
-            // 2. If 2 segments of noise are too close, such that the black run between them
-            //    is below the threshold. The noise found would be false during the black run
-            //    thus avoiding misinterpretation
-            // 3. The else block handles the case where 2 or more runs of black separated by
-            //    white noises aren't counted as separate runs.
-            if noise_found || run_len > threshold {
-                if flips == 3 {
-                    buffer.truncate(buffer.len() - run_len as usize);
-                    let idx = buffer.len() * 6 / 7;
-                    let mid = buffer[idx];
-                    return Some(mid);
-                }
-
-                flips += 1;
-                noise_found = false;
-            } else {
-                flips -= 1;
-                noise_found = true;
-            }
-
+            flips += 1;
             last = color;
-            run_len = 1;
-        } else {
-            run_len += 1;
+            if flips == 3 {
+                let idx = buffer.len() * 6 / 7;
+                let mid = buffer[idx];
+                return Some(mid);
+            }
         }
 
         buffer.push(p);
@@ -269,7 +241,7 @@ fn timing_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point, mod_size: f
 where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
-    let mut flips = [0; 3];
+    let mut transitions = [0; 3];
     let mut run_len = [0; 3];
     let threshold = (mod_size / 8.0) as u32; // Threshold to filter noise
     let mut noise_found = true; // Tracks whether previous segment is a noise
@@ -281,7 +253,7 @@ where
     for p in line {
         let px = img.get_at_point(&p).unwrap();
         let color = px.get_color() as u8;
-        for (i, t) in flips.iter_mut().enumerate() {
+        for (i, t) in transitions.iter_mut().enumerate() {
             if color >> i != last >> i {
                 // The below condition handles few scenarios. Consider the current run is
                 // supposed to be black;
@@ -309,7 +281,7 @@ where
         }
     }
 
-    *flips.iter().min().unwrap()
+    *transitions.iter().min().unwrap()
 }
 
 fn estimate_mod_count(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {
@@ -443,14 +415,12 @@ impl<'a> Symbol<'a> {
 
 fn locate_alignment_pattern(
     img: &mut BinaryImage,
-    finders: &[Finder; 3],
+    finders: &[Point; 3],
     mids: &[Point; 6],
     ver: &Version,
 ) -> Option<Point> {
     let (w, h) = (img.w, img.h);
-    let c0 = finders[0].centre;
-    let c1 = finders[1].centre;
-    let c2 = finders[2].centre;
+    let [c0, c1, c2] = finders;
     let pattern = [1.0, 1.0, 1.0];
 
     // Locate provisional alignment centre
@@ -465,8 +435,8 @@ fn locate_alignment_pattern(
     let mod_w_i32 = mod_w as i32;
 
     // Calculate estimate area of module by taking cross product of vectors
-    let v0 = Slope::new(&c0, &mids[0]);
-    let v1 = Slope::new(&c2, &mids[5]);
+    let v0 = Slope::new(c0, &mids[0]);
+    let v1 = Slope::new(c2, &mids[5]);
     let area = v0.cross(&v1).unsigned_abs() / 9;
     let threshold = area * 2;
 
@@ -544,9 +514,9 @@ fn setup_homography(
     let br_off = if *ver == 1 { 3.5 } else { 6.5 };
     let src = [(3.5, 3.5), (size - 3.5, 3.5), (size - br_off, size - br_off), (3.5, size - 3.5)];
 
-    let c0 = (group.finders[0].centre.x as f64, group.finders[0].centre.y as f64);
-    let c1 = (group.finders[1].centre.x as f64, group.finders[1].centre.y as f64);
-    let c2 = (group.finders[2].centre.x as f64, group.finders[2].centre.y as f64);
+    let c0 = (group.finders[0].x as f64, group.finders[0].y as f64);
+    let c1 = (group.finders[1].x as f64, group.finders[1].y as f64);
+    let c2 = (group.finders[2].x as f64, group.finders[2].y as f64);
     let ca = (align_centre.x as f64, align_centre.y as f64);
     let dst = [c1, c2, ca, c0];
 
