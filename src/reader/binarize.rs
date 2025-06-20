@@ -300,6 +300,99 @@ impl BinaryImage {
         Self { buffer, regions, w, h }
     }
 
+    /// Performs absolute/naive binarization
+    pub fn global_thresholding(img: RgbImage) -> Self {
+        let (w, h) = img.dimensions();
+        let mut buffer = Vec::with_capacity((w * h) as usize);
+
+        for p in img.pixels() {
+            let r = (p[0] > 127) as u8;
+            let g = (p[1] > 127) as u8;
+            let b = (p[2] > 127) as u8;
+            let np = Color::try_from(r << 2 | g << 1 | b).unwrap();
+            buffer.push(Pixel::Unvisited(np));
+        }
+        Self { buffer, regions: Vec::with_capacity(100), w, h }
+    }
+}
+
+// Otsu binarizing
+//------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy)]
+struct Histogram {
+    h: [u32; 256],
+    min: u8,
+    max: u8,
+    is_block: bool,
+}
+
+impl Histogram {
+    pub fn new(is_block: bool) -> Self {
+        Histogram { h: [0; 256], min: u8::MAX, max: u8::MIN, is_block }
+    }
+
+    pub fn accumulate(&mut self, val: u8) {
+        self.h[val as usize] += 1;
+        self.min = self.min.min(val);
+        self.max = self.max.max(val);
+    }
+
+    // Computes Otsu threshold
+    fn threshold(&self) -> u8 {
+        let dlen = 256.0;
+        let min = self.min as usize;
+        let max = self.max as usize;
+        let total = if self.is_block { 64 } else { 25 };
+
+        // Compute sum of normalized intensities
+        let mut sum = 0.0;
+        for (i, &h) in self.h[min..=max].iter().enumerate() {
+            let f = i as f64 / dlen;
+            sum += f * h as f64;
+        }
+
+        let mut sumb = 0.0;
+        let mut wb = 0; // Count of background pixels
+        let mut max_variance = 0.0;
+        let mut best_mb = 0.0; // Best background mean
+        let mut best_mf = 0.0; // Best foreground mean
+
+        for (i, &h) in self.h[min..max].iter().enumerate() {
+            wb += h;
+            let wf = total - wb;
+
+            let f = i as f64 / dlen;
+            sumb += f * self.h[i] as f64;
+
+            let mb = sumb / (wb as f64);
+            let mf = (sum - sumb) / (wf as f64);
+
+            let var_between = (wb as f64) * (wf as f64) * (mb - mf).powi(2);
+
+            if var_between > max_variance {
+                max_variance = var_between;
+                best_mb = mb;
+                best_mf = mf;
+            }
+        }
+
+        if !self.is_block && max >= min && max - min <= 60 {
+            let avg = (max + min) / 2;
+            if avg > 127 {
+                return 0;
+            }
+            return 255;
+        }
+
+        // Final threshold is average of both means, scaled back to 0..255
+        let threshold_f = (best_mb + best_mf) / 2.0;
+
+        (threshold_f * dlen).round() as u8
+    }
+}
+
+impl BinaryImage {
     pub fn otsu<I>(img: &I) -> Self
     where
         I: GenericImageView,
@@ -318,7 +411,7 @@ impl BinaryImage {
         let hsteps = (h + mask) >> block_pow;
         let len = (wsteps * hsteps) as usize;
 
-        let mut histogram = vec![[[0u32; 256]; 4]; len];
+        let mut histogram = vec![[Histogram::new(true); 4]; len];
 
         // Calculate sum of 8x8 pixels for each block
         // Skip last few pixels which form fractional blocks. The last block will be computed later
@@ -331,7 +424,7 @@ impl BinaryImage {
 
                 let px = img.get_pixel(x, y);
                 for (i, &val) in px.channels().iter().enumerate() {
-                    histogram[idx][i][val as usize] += 1;
+                    histogram[idx][i].accumulate(val);
                 }
             }
         }
@@ -343,7 +436,7 @@ impl BinaryImage {
                 for x in w - block_size..w {
                     let px = img.get_pixel(x, y);
                     for (i, &val) in px.channels().iter().enumerate() {
-                        histogram[idx][i][val as usize] += 1;
+                        histogram[idx][i].accumulate(val);
                     }
                 }
             }
@@ -358,7 +451,7 @@ impl BinaryImage {
 
                     let px = img.get_pixel(x, y);
                     for (i, &val) in px.channels().iter().enumerate() {
-                        histogram[idx][i][val as usize] += 1;
+                        histogram[idx][i].accumulate(val);
                     }
                 }
             }
@@ -370,7 +463,7 @@ impl BinaryImage {
                 for x in w - block_size..w {
                     let px = img.get_pixel(x, y);
                     for (i, &val) in px.channels().iter().enumerate() {
-                        histogram[len - 1][i][val as usize] += 1;
+                        histogram[len - 1][i].accumulate(val);
                     }
                 }
             }
@@ -403,19 +496,19 @@ impl BinaryImage {
 
                 let cx = std::cmp::max(x, half_grid);
                 let cy = std::cmp::max(y, half_grid);
-                let mut grid_hist = [[0; 256]; 4];
+                let mut grid_hist = [Histogram::new(false); 4];
                 for ny in cy - half_grid..=cy + half_grid {
                     let ni = ny * wsteps + cx;
                     for px_stat in &histogram[ni - half_grid..=ni + half_grid] {
                         for (i, chan_hist) in px_stat.iter().take(chan_count).enumerate() {
-                            let block_thresh = compute_threshold(chan_hist, block_area, false);
-                            grid_hist[i][block_thresh as usize] += 1;
+                            let block_thresh = chan_hist.threshold();
+                            grid_hist[i].accumulate(block_thresh);
                         }
                     }
                 }
 
                 for (c, t) in threshold[i].iter_mut().take(chan_count).enumerate() {
-                    *t = compute_threshold(&grid_hist[c], grid_area, false);
+                    *t = grid_hist[c].threshold();
                 }
             }
         }
@@ -449,85 +542,6 @@ impl BinaryImage {
         let regions = Vec::with_capacity(100);
         Self { buffer, regions, w, h }
     }
-
-    /// Performs absolute/naive binarization
-    pub fn global_thresholding(img: RgbImage) -> Self {
-        let (w, h) = img.dimensions();
-        let mut buffer = Vec::with_capacity((w * h) as usize);
-
-        for p in img.pixels() {
-            let r = (p[0] > 127) as u8;
-            let g = (p[1] > 127) as u8;
-            let b = (p[2] > 127) as u8;
-            let np = Color::try_from(r << 2 | g << 1 | b).unwrap();
-            buffer.push(Pixel::Unvisited(np));
-        }
-        Self { buffer, regions: Vec::with_capacity(100), w, h }
-    }
-}
-
-// Computes Otsu threshold
-fn compute_threshold(histogram: &[u32; 256], total_pixels: u32, is_block: bool) -> u8 {
-    let dlen = 256.0;
-
-    // Compute sum of normalized intensities
-    let mut sum = 0.0;
-    for (i, &h) in histogram.iter().enumerate() {
-        let f = i as f64 / dlen;
-        sum += f * h as f64;
-    }
-
-    let mut sumb = 0.0;
-    let mut wb = 0; // Count of background pixels
-    let mut max_variance = 0.0;
-    let mut best_mb = 0.0; // Best background mean
-    let mut best_mf = 0.0; // Best foreground mean
-    let mut min = u8::MAX as usize;
-    let mut max = u8::MIN as usize;
-
-    for (i, &h) in histogram.iter().enumerate() {
-        wb += h;
-        if wb == 0 {
-            continue;
-        }
-
-        let wf = total_pixels - wb;
-        if wf == 0 {
-            break;
-        }
-
-        let f = i as f64 / dlen;
-        sumb += f * histogram[i] as f64;
-
-        let mb = sumb / (wb as f64);
-        let mf = (sum - sumb) / (wf as f64);
-
-        let var_between = (wb as f64) * (wf as f64) * (mb - mf).powi(2);
-
-        if var_between > max_variance {
-            max_variance = var_between;
-            best_mb = mb;
-            best_mf = mf;
-        }
-
-        if h != 0 {
-            min = min.min(i);
-            max = max.max(i);
-        }
-    }
-
-    if is_block && max >= min && max - min <= 60 {
-        let avg = (max + min) / 2;
-        if avg > 127 {
-            return 0;
-        }
-        return 255;
-    }
-
-    // Final threshold is average of both means, scaled back to 0..255
-    let threshold_f = (best_mb + best_mf) / 2.0;
-
-    (threshold_f * dlen).round() as u8
 }
 
 // Util functions

@@ -113,7 +113,7 @@ mod reader_tests {
             .map(|e| e.path().to_path_buf())
             .collect();
 
-        image_paths.par_iter().for_each(|inp_path| {
+        image_paths.iter().for_each(|inp_path| {
             let parent = get_parent(inp_path);
             let file_name = inp_path.file_name().unwrap().to_str().unwrap();
             let img = image::open(inp_path).unwrap().to_luma8();
@@ -129,7 +129,7 @@ mod reader_tests {
 
             let inp_str = format!("assets/{parent}/{file_name}");
             let inp_path = std::path::Path::new(&inp_str);
-            let mut bin_img = BinaryImage::prepare(&img);
+            let mut bin_img = BinaryImage::otsu(&img);
             bin_img.save(inp_path).unwrap();
             let mut out_img = image::open(inp_path).unwrap().to_rgb8();
 
