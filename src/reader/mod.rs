@@ -146,7 +146,7 @@ mod reader_tests {
             symbols.iter().for_each(|s| s.highlight(&mut out_img));
 
             symbols.iter_mut().enumerate().for_each(|(i, s)| {
-                dbg!(s.decode());
+                let _ = dbg!(s.decode());
             });
 
             let out_str = format!("assets/{parent}/{file_name}");

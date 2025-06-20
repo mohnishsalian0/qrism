@@ -136,22 +136,22 @@ fn verify_symbol_size(img: &BinaryImage, finders: &[Point; 3], mids: &[Point; 6]
     let [c0, c1, c2] = finders;
     let [m03, m01, m10, m12, m21, m23] = mids;
 
-    // Estimate mod size along f1->f2 & f1->f0. This is used as threshold to filter noise in timing
-    // pattern
-    let ms12 = estimate_mod_size(c1, m12, c2, m21);
-    let ms10 = estimate_mod_size(c1, m10, c0, m01);
-
     // Measure timing pattern from c1 to c2
-    let t12 = measure_timing_patterns(img, m10, m23, ms12);
+    let t12 = measure_timing_patterns(img, m10, m23);
 
     // Measure timing pattern from c1 to c3
-    let t10 = measure_timing_patterns(img, m12, m03, ms10);
+    let t10 = measure_timing_patterns(img, m12, m03);
 
     // Closeness of horizontal and vertical timing patterns
     let timing_score = ((t12 as f64 / t10 as f64) - 1.0).abs();
     if timing_score > SYMBOL_HEURICTIC_THRESHOLD {
         return None;
     }
+
+    // Estimate mod size along f1->f2 & f1->f0. This is used as threshold to filter noise in timing
+    // pattern
+    let ms12 = estimate_mod_size(c1, m12, c2, m21);
+    let ms10 = estimate_mod_size(c1, m10, c0, m01);
 
     // Estimate module count from c1 to c2
     let mc12 = estimate_mod_count(c1, m12, c2, m21);
@@ -226,26 +226,22 @@ where
     None
 }
 
-pub fn measure_timing_patterns(img: &BinaryImage, from: &Point, to: &Point, mod_size: f64) -> u32 {
+pub fn measure_timing_patterns(img: &BinaryImage, from: &Point, to: &Point) -> u32 {
     let dx = (to.x - from.x).abs();
     let dy = (to.y - from.y).abs();
 
     if dx > dy {
-        timing_scan::<X>(img, from, to, mod_size)
+        timing_scan::<X>(img, from, to)
     } else {
-        timing_scan::<Y>(img, from, to, mod_size)
+        timing_scan::<Y>(img, from, to)
     }
 }
 
-fn timing_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point, mod_size: f64) -> u32
+fn timing_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> u32
 where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
     let mut transitions = [0; 3];
-    let mut run_len = [0; 3];
-    let threshold = (mod_size / 8.0) as u32; // Threshold to filter noise
-    let mut noise_found = true; // Tracks whether previous segment is a noise
-
     let px = img.get_at_point(from).unwrap();
     let mut last = px.get_color() as u8;
     let line = BresenhamLine::<A>::new(from, to);
@@ -255,28 +251,8 @@ where
         let color = px.get_color() as u8;
         for (i, t) in transitions.iter_mut().enumerate() {
             if color >> i != last >> i {
-                // The below condition handles few scenarios. Consider the current run is
-                // supposed to be black;
-                // 1. If a white noise was encountered early on, such that the black run is below
-                //    threshold. The noise_found would be false in this case and the black run
-                //    will not be mistaken for noise
-                // 2. If 2 segments of noise are too close, such that the black run between them
-                //    is below the threshold. The noise found would be false during the black run
-                //    thus avoiding misinterpretation
-                // 3. The else block handles the case where 2 or more runs of black separated by
-                //    white noises aren't counted as separate runs.
-                if noise_found || run_len[i] > threshold {
-                    *t += 1;
-                    noise_found = false;
-                } else {
-                    *t -= 1;
-                    noise_found = true;
-                }
-
+                *t += 1;
                 last ^= 1 << i;
-                run_len[i] = 1;
-            } else {
-                run_len[i] += 1;
             }
         }
     }
