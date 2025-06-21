@@ -347,9 +347,9 @@ impl Histogram {
 
         // Compute sum of normalized intensities
         let mut sum = 0.0;
-        for (i, &h) in self.h[min..=max].iter().enumerate() {
+        for i in min..=max {
             let f = i as f64 / dlen;
-            sum += f * h as f64;
+            sum += f * self.h[i] as f64;
         }
 
         let mut sumb = 0.0;
@@ -358,8 +358,8 @@ impl Histogram {
         let mut best_mb = 0.0; // Best background mean
         let mut best_mf = 0.0; // Best foreground mean
 
-        for (i, &h) in self.h[min..max].iter().enumerate() {
-            wb += h;
+        for i in min..max {
+            wb += self.h[i];
             let wf = total - wb;
 
             let f = i as f64 / dlen;
@@ -377,13 +377,13 @@ impl Histogram {
             }
         }
 
-        if !self.is_block && max >= min && max - min <= 60 {
-            let avg = (max + min) / 2;
-            if avg > 127 {
-                return 0;
-            }
-            return 255;
-        }
+        // if !self.is_block && max >= min && max - min <= 60 {
+        //     let avg = (max + min) / 2;
+        //     if avg > 127 {
+        //         return 0;
+        //     }
+        //     return 255;
+        // }
 
         // Final threshold is average of both means, scaled back to 0..255
         let threshold_f = (best_mb + best_mf) / 2.0;
@@ -508,7 +508,8 @@ impl BinaryImage {
                 }
 
                 for (c, t) in threshold[i].iter_mut().take(chan_count).enumerate() {
-                    *t = grid_hist[c].threshold();
+                    let grid_thresh = grid_hist[c].threshold();
+                    *t = grid_thresh;
                 }
             }
         }
