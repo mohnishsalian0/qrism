@@ -66,11 +66,11 @@ fn benchmark(dataset_dir: &Path) {
                 }
             }
 
-            // if _passed {
-            //     println!("\x1b[1;32m[PASS]\x1b[0m {} at {}deg", _path_str, angle);
-            // } else {
-            //     println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", _path_str, angle);
-            // }
+            if _passed {
+                println!("\x1b[1;32m[PASS]\x1b[0m {} at {}deg", _path_str, angle);
+            } else {
+                println!("\x1b[1;31m[FAIL]\x1b[0m {} at {}deg", _path_str, angle);
+            }
         }
     });
 
@@ -113,7 +113,7 @@ fn benchmark(dataset_dir: &Path) {
 }
 
 fn main() {
-    let dataset_dir = std::path::Path::new("benches/dataset/blackbox");
+    let dataset_dir = std::path::Path::new("benches/dataset/blackbox/qrcode-1");
     // let dataset_dir = std::path::Path::new("benches/dataset/decoding");
 
     let start = Instant::now();

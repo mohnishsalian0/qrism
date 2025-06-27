@@ -133,9 +133,7 @@ impl BinaryImage {
     {
         let (w, h) = img.dimensions();
         let chan_count = I::Pixel::CHANNEL_COUNT as usize;
-        // FIXME:
         let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
-        // let block_pow = 3;
         let block_size = 1 << block_pow;
         let mask = (1 << block_pow) - 1;
 
@@ -210,22 +208,24 @@ impl BinaryImage {
         let block_area_pow = 2 * block_pow;
         for i in 0..len {
             for j in 0..chan_count {
-                if stats[i][j].max - stats[i][j].min <= 25 {
-                    stats[i][j].avg = (stats[i][j].min as usize) / 2;
-                    if i > wsteps && i % wsteps > 0 {
-                        // Average of neighbors 2 * (x-1, y), (x, y-1), (x-1, y-1)
-                        let left = stats[i - 1][j].avg;
-                        let top = stats[i - wsteps][j].avg;
-                        let top_left = stats[i - wsteps - 1][j].avg;
-                        let ng_avg = (2 * left + top + top_left) / 4;
-                        if stats[i][j].min < ng_avg as u8 {
-                            stats[i][j].avg = ng_avg;
-                        }
-                    }
-                } else {
-                    // Convert block sum to average (divide by 64)
-                    stats[i][j].avg >>= block_area_pow;
-                }
+                // FIXME:
+                // if stats[i][j].max - stats[i][j].min <= 25 {
+                //     stats[i][j].avg = (stats[i][j].min as usize) / 2;
+                //     if i > wsteps && i % wsteps > 0 {
+                //         // Average of neighbors 2 * (x-1, y), (x, y-1), (x-1, y-1)
+                //         let left = stats[i - 1][j].avg;
+                //         let top = stats[i - wsteps][j].avg;
+                //         let top_left = stats[i - wsteps - 1][j].avg;
+                //         let ng_avg = (2 * left + top + top_left) / 4;
+                //         if stats[i][j].min < ng_avg as u8 {
+                //             stats[i][j].avg = ng_avg;
+                //         }
+                //     }
+                // } else {
+                //     // Convert block sum to average (divide by 64)
+                //     stats[i][j].avg >>= block_area_pow;
+                // }
+                stats[i][j].avg >>= block_area_pow;
             }
         }
 
@@ -322,6 +322,7 @@ impl BinaryImage {
 #[derive(Debug, Clone, Copy)]
 struct Histogram {
     h: [u32; 256],
+    total: u32,
     min: u8,
     max: u8,
     is_block: bool,
@@ -329,11 +330,12 @@ struct Histogram {
 
 impl Histogram {
     pub fn new(is_block: bool) -> Self {
-        Histogram { h: [0; 256], min: u8::MAX, max: u8::MIN, is_block }
+        Histogram { h: [0; 256], total: 0, min: u8::MAX, max: u8::MIN, is_block }
     }
 
     pub fn accumulate(&mut self, val: u8) {
         self.h[val as usize] += 1;
+        self.total += 1;
         self.min = self.min.min(val);
         self.max = self.max.max(val);
     }
@@ -343,7 +345,6 @@ impl Histogram {
         let dlen = 256.0;
         let min = self.min as usize;
         let max = self.max as usize;
-        let total = if self.is_block { 64 } else { 25 };
 
         // Compute sum of normalized intensities
         let mut sum = 0.0;
@@ -360,7 +361,7 @@ impl Histogram {
 
         for i in min..max {
             wb += self.h[i];
-            let wf = total - wb;
+            let wf = self.total - wb;
 
             let f = i as f64 / dlen;
             sumb += f * self.h[i] as f64;
@@ -400,9 +401,7 @@ impl BinaryImage {
     {
         let (w, h) = img.dimensions();
         let chan_count = I::Pixel::CHANNEL_COUNT as usize;
-        // FIXME:
-        // let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
-        let block_pow = 3;
+        let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
         let block_size = 1 << block_pow;
         let block_area = block_size * block_size;
         let mask = (1 << block_pow) - 1;

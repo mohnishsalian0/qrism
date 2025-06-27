@@ -104,7 +104,7 @@ mod reader_tests {
         #[allow(unused_imports)]
         use rayon::prelude::*;
 
-        let dataset_dir = std::path::Path::new("benches/dataset/detection/monitor/image005.jpg");
+        let dataset_dir = std::path::Path::new("benches/dataset/blackbox/qrcode-1/20.png");
 
         let image_paths: Vec<_> = walkdir::WalkDir::new(dataset_dir)
             .into_iter()
@@ -127,19 +127,20 @@ mod reader_tests {
             //     }
             // });
 
-            let inp_str = format!("assets/{parent}/{file_name}");
+            // let inp_str = format!("assets/{parent}/{file_name}");
+            let inp_str = "assets/inp1.png";
             let inp_path = std::path::Path::new(&inp_str);
-            let mut bin_img = BinaryImage::otsu(&img);
+            let mut bin_img = BinaryImage::prepare(&img);
             bin_img.save(inp_path).unwrap();
             let mut out_img = image::open(inp_path).unwrap().to_rgb8();
 
             let finders = locate_finders(&mut bin_img);
             dbg!(file_name, finders.len());
-            finders.iter().for_each(|f| f.highlight(&mut out_img, image::Rgb([255, 0, 0])));
+            // finders.iter().for_each(|f| f.highlight(&mut out_img, image::Rgb([255, 0, 0])));
 
             let groups = group_finders(&finders);
             dbg!(file_name, groups.len());
-            groups.iter().for_each(|g| g.highlight(&mut out_img));
+            // groups.iter().for_each(|g| g.highlight(&mut out_img));
 
             let mut symbols = locate_symbols(&mut bin_img, groups);
             dbg!(file_name, symbols.len());
@@ -149,7 +150,8 @@ mod reader_tests {
                 let _ = dbg!(s.decode());
             });
 
-            let out_str = format!("assets/{parent}/{file_name}");
+            // let out_str = format!("assets/{parent}/{file_name}");
+            let out_str = "assets/out1.png";
             let out_path = std::path::Path::new(&out_str);
             out_img.save(out_path).unwrap();
         })
