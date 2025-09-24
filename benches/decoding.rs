@@ -113,8 +113,7 @@ fn benchmark(dataset_dir: &Path) {
 }
 
 fn main() {
-    let dataset_dir = std::path::Path::new("benches/dataset/blackbox/qrcode-1");
-    // let dataset_dir = std::path::Path::new("benches/dataset/decoding");
+    let dataset_dir = std::path::Path::new("benches/dataset/decoding");
 
     let start = Instant::now();
     benchmark(dataset_dir);

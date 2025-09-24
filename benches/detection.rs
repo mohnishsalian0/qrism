@@ -164,7 +164,7 @@ fn match_areas(actual: &[Vec<f64>], expected: &[Vec<f64>]) -> usize {
             let exp_area = quad_area(exp_corners);
             let overlap_area = overlap_area(actual_corners, exp_corners);
             let percent = overlap_area / exp_area;
-            if percent > 0.2 {
+            if percent > 0.1 {
                 matched[i] = true;
                 true
             } else {

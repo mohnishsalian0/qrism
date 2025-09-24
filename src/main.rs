@@ -1,71 +1,40 @@
-#![allow(
-    clippy::items_after_test_module,
-    unused_imports,
-    unused_variables,
-    dead_code,
-    mixed_script_confusables
-)]
-
 use std::error::Error;
 use std::path::Path;
 
-use image::{GrayImage, Luma, RgbImage};
 use qrism::reader::binarize::BinaryImage;
 use qrism::reader::detect;
 use qrism::{ECLevel, Palette, Version};
 use qrism::{MaskPattern, QRBuilder};
-use rqrr::PreparedImage;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let data = "Winter is arriving";
-    let ver = Version::Normal(21); // Size
-    let ecl = ECLevel::L; // Error correction level
-    let pal = Palette::Mono; // Color scheme: Monochromatic (traditional qr) or Polychromatic
-    let mask = MaskPattern::new(5); // Mask pattern
+    // Create a QR code
+    // let data = "Hello, qrism! This is a demonstration of QR code generation and reading.";
+    // let qr = QRBuilder::new(data.as_bytes())
+    //     .version(Version::Normal(5)) // If not provided, finds smallest version to fit the data
+    //     .ec_level(ECLevel::M) // Defaults to ECLevel::M
+    //     .palette(Palette::Mono) // Defaults to Palette::Mono, use Palette::Poly for highcapacity QR
+    //     .mask(MaskPattern::new(1)) // If not provided, finds best mask based on penalty score
+    //     .build()?;
 
-    // QR Builder
-    let qrb = QRBuilder::new(data.as_bytes())
-        .version(ver) // if not provided, finds smallest version to fit the data
-        .ec_level(ecl)
-        .palette(pal)
-        // .mask(mask) // If not provided, finds best mask based on score
-        .build()
-        .unwrap();
+    // Save QR code as image
+    // let img = qr.to_image(4); // scale factor for output image size
+    // let output_path = Path::new("./assets/example6.png");
+    // img.save(output_path)?;
+    // println!("QR code saved to: {}", output_path.display());
 
-    let img = qrb.to_image(3);
-    let path = Path::new("benches/dataset/decoding/version21.png");
-    img.save(path).unwrap();
+    // Read the QR code back
+    let read_path = Path::new("./assets/example6.png");
+    let rgb_img = image::open(read_path)?.to_rgb8();
+    let mut binary_img = BinaryImage::prepare(&rgb_img);
+    let mut symbols = detect(&mut binary_img);
 
-    // QR Reader
-    // let path = Path::new("assets/test7.png");
-    // let img = image::open(path).unwrap().to_rgb8();
-    // let mut bin_img = BinaryImage::prepare(&img);
-    // let mut symbols = detect(&mut bin_img);
-    // assert!(symbols.len() > 0, "No symbol found");
-    // let msg = symbols[0].decode().unwrap();
-    // println!("\x1b[1;32mMessage:\x1b[0m");
-    // println!("{msg}");
-
-    // RQRR
-    // let path = std::path::Path::new("benches/dataset/detection/monitor/image001.jpg");
-    // let img = image::open(path).unwrap().to_luma8();
-    // let mut img = PreparedImage::prepare(img);
-    // let grids = img.detect_grids();
-    // assert!(!grids.is_empty());
-    // let msg = grids[0].decode().unwrap();
-    // println!("Message: {msg:?}");
-
-    use imageproc::distance_transform::Norm;
-    use imageproc::morphology::{close, open};
-
-    // Fill white noise in black regions
-    let path = std::path::Path::new("assets/inp.png");
-    let img = image::open(path).unwrap().to_luma8();
-    let closed = close(&img, Norm::L1, 1);
-
-    // Optionally remove white specks after
-    let cleaned = open(&closed, Norm::L1, 1);
-    cleaned.save("assets/cleaned.png").expect("Failed to save image");
+    if let Some(symbol) = symbols.first_mut() {
+        let (metadata, decoded_message) = symbol.decode()?;
+        println!("Decoded message: {}", decoded_message);
+        println!("QR metadata: {:?}", metadata);
+    } else {
+        println!("No QR code found in the image");
+    }
 
     Ok(())
 }

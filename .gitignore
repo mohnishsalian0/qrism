@@ -2,6 +2,7 @@
 Cargo.lock
 *.swp
 *.swo
+.DS_Store
 
 
 # Added by cargo

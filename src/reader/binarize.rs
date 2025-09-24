@@ -378,6 +378,7 @@ impl Histogram {
             }
         }
 
+        // FIXME:
         // if !self.is_block && max >= min && max - min <= 60 {
         //     let avg = (max + min) / 2;
         //     if avg > 127 {

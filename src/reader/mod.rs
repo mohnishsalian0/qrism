@@ -10,13 +10,13 @@ use finder::{group_finders, locate_finders, FinderGroup};
 use binarize::BinaryImage;
 use symbol::{Symbol, SymbolLocation};
 
-pub fn detect(img: &mut BinaryImage) -> Vec<Symbol> {
+pub fn detect(img: &'_ mut BinaryImage) -> Vec<Symbol<'_>> {
     let finders = locate_finders(img);
     let groups = group_finders(&finders);
     locate_symbols(img, groups)
 }
 
-fn locate_symbols(img: &mut BinaryImage, groups: Vec<FinderGroup>) -> Vec<Symbol> {
+fn locate_symbols(img: &'_ mut BinaryImage, groups: Vec<FinderGroup>) -> Vec<Symbol<'_>> {
     let mut is_grouped = HashSet::new();
     let mut sym_locs = Vec::with_capacity(100);
     for mut g in groups {
@@ -104,69 +104,32 @@ mod reader_tests {
         #[allow(unused_imports)]
         use rayon::prelude::*;
 
-        let dataset_dir = std::path::Path::new("benches/dataset/blackbox/qrcode-1/20.png");
+        let img_path = std::path::Path::new("assets/example6.png");
 
-        let image_paths: Vec<_> = walkdir::WalkDir::new(dataset_dir)
-            .into_iter()
-            .filter_map(Result::ok)
-            .filter(is_image_file)
-            .map(|e| e.path().to_path_buf())
-            .collect();
+        let img = image::open(img_path).unwrap().to_rgb8();
 
-        image_paths.iter().for_each(|inp_path| {
-            let parent = get_parent(inp_path);
-            let file_name = inp_path.file_name().unwrap().to_str().unwrap();
-            let img = image::open(inp_path).unwrap().to_luma8();
+        let prep_path = std::path::Path::new("assets/prep.png");
+        let mut bin_img = BinaryImage::prepare(&img);
+        bin_img.save(prep_path).unwrap();
+        let mut out_img = image::open(prep_path).unwrap().to_rgb8();
 
-            // let mut img = rqrr::PreparedImage::prepare(img);
-            // let symbols = img.detect_grids();
-            // dbg!(file_name, symbols.len());
-            // symbols.iter().enumerate().for_each(|(i, s)| {
-            //     if let Ok((meta, msg)) = s.decode() {
-            //         println!("[{file_name}] id: {i}, Metadata: {meta:?}, Message: {msg}");
-            //     }
-            // });
+        let finders = locate_finders(&mut bin_img);
+        dbg!(finders.len());
+        finders.iter().for_each(|f| f.highlight(&mut out_img, image::Rgb([255, 0, 0])));
 
-            // let inp_str = format!("assets/{parent}/{file_name}");
-            let inp_str = "assets/inp1.png";
-            let inp_path = std::path::Path::new(&inp_str);
-            let mut bin_img = BinaryImage::prepare(&img);
-            bin_img.save(inp_path).unwrap();
-            let mut out_img = image::open(inp_path).unwrap().to_rgb8();
+        let groups = group_finders(&finders);
+        dbg!(groups.len());
+        // groups.iter().for_each(|g| g.highlight(&mut out_img));
 
-            let finders = locate_finders(&mut bin_img);
-            dbg!(file_name, finders.len());
-            // finders.iter().for_each(|f| f.highlight(&mut out_img, image::Rgb([255, 0, 0])));
+        let mut symbols = locate_symbols(&mut bin_img, groups);
+        dbg!(symbols.len());
+        symbols.iter().for_each(|s| s.highlight(&mut out_img));
 
-            let groups = group_finders(&finders);
-            dbg!(file_name, groups.len());
-            // groups.iter().for_each(|g| g.highlight(&mut out_img));
+        symbols.iter_mut().enumerate().for_each(|(i, s)| {
+            let _ = dbg!(s.decode());
+        });
 
-            let mut symbols = locate_symbols(&mut bin_img, groups);
-            dbg!(file_name, symbols.len());
-            symbols.iter().for_each(|s| s.highlight(&mut out_img));
-
-            symbols.iter_mut().enumerate().for_each(|(i, s)| {
-                let _ = dbg!(s.decode());
-            });
-
-            // let out_str = format!("assets/{parent}/{file_name}");
-            let out_str = "assets/out1.png";
-            let out_path = std::path::Path::new(&out_str);
-            out_img.save(out_path).unwrap();
-        })
-    }
-
-    fn is_image_file(entry: &walkdir::DirEntry) -> bool {
-        entry.file_type().is_file()
-            && entry
-                .path()
-                .extension()
-                .map(|e| matches!(e.to_str(), Some("png" | "jpg" | "jpeg" | "bmp")))
-                .unwrap_or(false)
-    }
-
-    fn get_parent(path: &std::path::Path) -> String {
-        path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()).unwrap().to_string()
+        let out_path = std::path::Path::new("assets/detect.png");
+        out_img.save(out_path).unwrap();
     }
 }

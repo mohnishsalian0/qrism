@@ -52,10 +52,10 @@ pub mod encode {
     }
 
     fn find_optimal_version_and_segments(
-        data: &[u8],
+        data: &'_ [u8],
         ecl: ECLevel,
         pal: Palette,
-    ) -> QRResult<(Version, Vec<Segment>)> {
+    ) -> QRResult<(Version, Vec<Segment<'_>>)> {
         let mut segs = vec![];
         let mut sz = 0;
         for v in 1..=40 {
@@ -73,7 +73,7 @@ pub mod encode {
     }
 
     // Dynamic programming to compute optimum mode segments
-    fn compute_optimal_segments(data: &[u8], ver: Version) -> Vec<Segment> {
+    fn compute_optimal_segments(data: &'_ [u8], ver: Version) -> Vec<Segment<'_>> {
         debug_assert!(!data.is_empty(), "Empty data");
 
         let len = data.len();
@@ -117,7 +117,7 @@ pub mod encode {
 
                     let mut cost = encoded_char_size;
                     if to_mode != from_mode {
-                        cost += (prev_cost[k] + 5) / 6 * 6;
+                        cost += prev_cost[k].div_ceil(6) * 6;
                         cost += meta_bits[j];
                     } else {
                         if streaks[j] == max_chars[j] {
@@ -173,7 +173,7 @@ pub mod encode {
     }
 
     // Build segments encode char modes
-    fn build_segments(ver: Version, char_modes: Vec<Mode>, data: &[u8]) -> Vec<Segment> {
+    fn build_segments(ver: Version, char_modes: Vec<Mode>, data: &'_ [u8]) -> Vec<Segment<'_>> {
         let len = data.len();
         let mut segs: Vec<Segment> = vec![];
         let mut seg_start = 0;
@@ -221,19 +221,19 @@ pub mod encode {
                 Mode::Alphanumeric,
                 mode_bits,
                 ver.char_cnt_bits(Mode::Alphanumeric),
-                data[0..5].as_bytes(),
+                &data.as_bytes()[0..5],
             );
             let seg_2 = Segment::new(
                 Mode::Numeric,
                 mode_bits,
                 ver.char_cnt_bits(Mode::Numeric),
-                data[5..10].as_bytes(),
+                &data.as_bytes()[5..10],
             );
             let seg_3 = Segment::new(
                 Mode::Byte,
                 mode_bits,
                 ver.char_cnt_bits(Mode::Byte),
-                data[10..].as_bytes(),
+                &data.as_bytes()[10..],
             );
             assert_eq!(segs.len(), 3);
             assert_eq!(segs[0], seg_1);
@@ -264,8 +264,8 @@ pub mod encode {
             for (seg, &(mode, start, end)) in segs.iter().zip(chunks.iter()) {
                 let len_bits = ver.char_cnt_bits(mode);
                 let exp_seg = match end {
-                    Some(e) => Segment::new(mode, mode_bits, len_bits, data[start..e].as_bytes()),
-                    None => Segment::new(mode, mode_bits, len_bits, data[start..].as_bytes()),
+                    Some(e) => Segment::new(mode, mode_bits, len_bits, &data.as_bytes()[start..e]),
+                    None => Segment::new(mode, mode_bits, len_bits, &data.as_bytes()[start..]),
                 };
                 assert_eq!(*seg, exp_seg);
             }
@@ -364,7 +364,7 @@ pub(super) mod writer {
 
     fn push_numeric_data(data: &[u8], out: &mut BitStream) {
         for chunk in data.chunks(3) {
-            let len = (chunk.len() * 10 + 2) / 3;
+            let len = (chunk.len() * 10).div_ceil(3);
             let data = Mode::Numeric.encode_chunk(chunk);
             out.push_bits(data, len);
         }
@@ -372,7 +372,7 @@ pub(super) mod writer {
 
     fn push_alphanumeric_data(data: &[u8], out: &mut BitStream) {
         for chunk in data.chunks(2) {
-            let len = (chunk.len() * 11 + 1) / 2;
+            let len = (chunk.len() * 11).div_ceil(2);
             let data = Mode::Alphanumeric.encode_chunk(chunk);
             out.push_bits(data, len);
         }

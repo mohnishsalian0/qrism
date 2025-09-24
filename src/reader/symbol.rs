@@ -122,6 +122,7 @@ impl SymbolLocation {
         }
 
         let h = setup_homography(img, group, align, ver)?;
+        dbg!(align);
 
         let _anchors = [c1, c2, align, c0];
 
@@ -504,6 +505,7 @@ fn setup_homography(
 // Adjust the homography slightly to refine projection of qr
 fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Option<Homography> {
     let mut best = symbol_fitness(img, &h, ver);
+    dbg!(best);
 
     // Create an adjustment matrix by scaling the homography
     let mut adjustments = h.0.map(|x| x * 0.04);
@@ -528,6 +530,7 @@ fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Opti
         adjustments = adjustments.map(|x| x * 0.5);
     }
     let max_score = max_fitness_score(ver);
+    dbg!(best, max_score);
 
     if best >= max_score / 2 {
         Some(h)
@@ -546,6 +549,7 @@ fn symbol_fitness(img: &BinaryImage, h: &Homography, ver: Version) -> i32 {
         score += cell_fitness(img, h, i, 6) * flip;
         score += cell_fitness(img, h, 6, i) * flip;
     }
+    dbg!("Timing", score);
 
     // Score finders
     score += finder_fitness(img, h, 0, 0);
@@ -573,20 +577,20 @@ fn symbol_fitness(img: &BinaryImage, h: &Homography, ver: Version) -> i32 {
 }
 
 fn max_fitness_score(ver: Version) -> i32 {
-    let mut max_score = 0;
+    let mut total_mods = 0;
 
-    // Finder score
-    max_score += 49 * 3;
+    // Finder modules
+    total_mods += 49 * 3;
 
-    // Timing score
+    // Timing modules
     let grid_size = ver.width() as i32;
-    max_score += (grid_size - 14) * 2;
+    total_mods += (grid_size - 14) * 2;
 
-    // Alignment score
+    // Alignment modules
     let align_count = ver.alignment_pattern().len();
-    max_score += 25 * align_count as i32;
+    total_mods += 25 * align_count as i32;
 
-    max_score
+    total_mods * 9 // Each module has a maximum score of 9
 }
 
 fn finder_fitness(img: &BinaryImage, h: &Homography, x: i32, y: i32) -> i32 {
