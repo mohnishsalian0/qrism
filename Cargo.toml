@@ -6,7 +6,13 @@ description = "A Rust library for generating and reading QR codes with Reed-Solo
 license = "MIT"
 repository = "https://github.com/mohnishsalian0/qrism"
 homepage = "https://github.com/mohnishsalian0/qrism"
-keywords = ["qr-code", "barcode", "multiplex-qr", "reed-solomon", "error-correction"]
+keywords = [
+	"qr-code",
+	"barcode",
+	"multiplex-qr",
+	"reed-solomon",
+	"error-correction",
+]
 categories = ["encoding", "multimedia::images", "computer-vision"]
 authors = ["Mohnish Salian"]
 readme = "README.md"
@@ -29,12 +35,7 @@ rayon = "1.10.0"
 test-case = "3.3.1"
 
 [[bench]]
-name = "detection"
-harness = false
-required-features = ["benchmark"]
-
-[[bench]]
-name = "decoding"
+name = "main"
 harness = false
 required-features = ["benchmark"]
 

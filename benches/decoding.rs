@@ -5,10 +5,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use walkdir::WalkDir;
 
-use qrism::benchmark::{get_parent, is_image_file, parse_expected_decode_result, print_table};
-use qrism::reader::{detect_hc_qr, detect_qr};
+use qrism::reader::detect_qr;
+use crate::utils::{get_parent, is_image_file, parse_expected_decode_result, print_table};
 
-fn benchmark(dataset_dir: &Path) {
+pub fn benchmark_decoding(dataset_dir: &Path) {
     let image_paths: Vec<_> = WalkDir::new(dataset_dir)
         .into_iter()
         .filter_map(Result::ok)
@@ -23,17 +23,17 @@ fn benchmark(dataset_dir: &Path) {
         let parent = get_parent(img_path);
         let _path_str = img_path.to_str().unwrap();
 
-        let img = image::open(img_path).unwrap();
+        let img = image::open(img_path).unwrap().to_luma8();
         for angle in [0, 90, 180, 270].iter() {
-            let img = match angle {
-                90 => image::imageops::rotate90(&gray),
-                180 => image::imageops::rotate180(&gray),
-                270 => image::imageops::rotate270(&gray),
-                _ => gray.clone(),
-            };
+            let img = image::DynamicImage::ImageLuma8(match angle {
+                90 => image::imageops::rotate90(&img),
+                180 => image::imageops::rotate180(&img),
+                270 => image::imageops::rotate270(&img),
+                _ => img.clone(),
+            });
 
             let start = Instant::now();
-            let mut res = detect(&img);
+            let mut res = detect_qr(&img);
             let mut _passed = false;
 
             if !res.symbols().is_empty() {
@@ -106,12 +106,4 @@ fn benchmark(dataset_dir: &Path) {
 
     println!("\nResult:");
     print_table(&results, &rows, &cols);
-}
-
-fn main() {
-    let dataset_dir = std::path::Path::new("benches/dataset/decoding");
-
-    let start = Instant::now();
-    benchmark(dataset_dir);
-    println!("Time elapsed: {:?}", start.elapsed());
 }

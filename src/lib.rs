@@ -153,6 +153,3 @@ pub use reader::*;
 
 #[cfg(test)]
 pub(crate) use builder::Module;
-
-#[cfg(feature = "benchmark")]
-pub use common::utils::benchmark;
