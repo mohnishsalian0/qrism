@@ -19,7 +19,7 @@ use crate::{
         verify_alignment_pattern,
     },
     utils::{BitArray, BitStream, EncRegionIter, QRError, QRResult},
-    ECLevel, MaskPattern, Palette, Version,
+    ECLevel, MaskPattern, Version,
 };
 
 #[cfg(test)]
@@ -122,7 +122,6 @@ impl SymbolLocation {
         }
 
         let h = setup_homography(img, group, align, ver)?;
-        dbg!(align);
 
         let _anchors = [c1, c2, align, c0];
 
@@ -294,7 +293,7 @@ impl<'a> Symbol<'a> {
             self.ver = self.read_version_info()?;
         }
         let ver = self.ver;
-        let pal = self.read_palette_info()?;
+        let hi_cap = self.read_capacity_info()?;
 
         let pld = self.extract_payload(&mask)?;
 
@@ -312,7 +311,7 @@ impl<'a> Symbol<'a> {
             }
         }
 
-        let msg = codec_decode(&mut enc, ver, ecl, pal)?;
+        let msg = codec_decode(&mut enc, ver, ecl, hi_cap)?;
         let meta = Metadata::new(Some(ver), Some(ecl), Some(mask));
 
         Ok((meta, msg))
@@ -505,7 +504,6 @@ fn setup_homography(
 // Adjust the homography slightly to refine projection of qr
 fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Option<Homography> {
     let mut best = symbol_fitness(img, &h, ver);
-    dbg!(best);
 
     // Create an adjustment matrix by scaling the homography
     let mut adjustments = h.0.map(|x| x * 0.04);
@@ -530,7 +528,6 @@ fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Opti
         adjustments = adjustments.map(|x| x * 0.5);
     }
     let max_score = max_fitness_score(ver);
-    dbg!(best, max_score);
 
     if best >= max_score / 2 {
         Some(h)
@@ -549,7 +546,6 @@ fn symbol_fitness(img: &BinaryImage, h: &Homography, ver: Version) -> i32 {
         score += cell_fitness(img, h, i, 6) * flip;
         score += cell_fitness(img, h, 6, i) * flip;
     }
-    dbg!("Timing", score);
 
     // Score finders
     score += finder_fitness(img, h, 0, 0);
@@ -649,7 +645,7 @@ mod symbol_tests {
             finder::{group_finders, locate_finders},
             locate_symbols,
         },
-        ECLevel, MaskPattern, Palette, QRBuilder, Version,
+        ECLevel, MaskPattern, QRBuilder, Version,
     };
 
     #[test]
@@ -658,12 +654,12 @@ mod symbol_tests {
         let ver = Version::Normal(4);
         let ecl = ECLevel::L;
         let mask = MaskPattern::new(1);
-        let pal = Palette::Mono;
+        let hi_cap = false;
 
         let qr = QRBuilder::new(data.as_bytes())
             .version(ver)
             .ec_level(ecl)
-            .palette(pal)
+            .high_capacity(hi_cap)
             .mask(mask)
             .build()
             .unwrap();
@@ -681,7 +677,7 @@ mod symbol_tests {
     }
 }
 
-// Read format, version & palette info
+// Read format, version & capacity info
 //------------------------------------------------------------------------------
 
 impl Symbol<'_> {
@@ -725,18 +721,18 @@ impl Symbol<'_> {
         Err(QRError::InvalidVersionInfo)
     }
 
-    pub fn read_palette_info(&self) -> QRResult<Palette> {
+    pub fn read_capacity_info(&self) -> QRResult<bool> {
         if let Some(px) = self.get(8, -8) {
             let color = px.get_color();
 
             if color == Color::Black {
-                return Ok(Palette::Mono);
+                return Ok(false); // Standard capacity
             } else {
-                return Ok(Palette::Poly);
+                return Ok(true); // High capacity
             }
         }
 
-        Err(QRError::InvalidPaletteInfo)
+        Err(QRError::InvalidCapacityInfo)
     }
 
     pub fn get_number(&self, coords: &[(i32, i32)]) -> Option<u32> {
@@ -1012,7 +1008,7 @@ mod reader_tests {
 
     use crate::{
         builder::QRBuilder,
-        metadata::{ECLevel, Palette, Version},
+        metadata::{ECLevel, Version},
         reader::symbol::deinterleave,
         utils::BitStream,
     };
@@ -1026,7 +1022,7 @@ mod reader_tests {
 
         let exp_blks = QRBuilder::blockify(data, ver, ecl);
 
-        let mut bs = BitStream::new(ver.total_codewords(Palette::Mono) << 3);
+        let mut bs = BitStream::new(ver.total_codewords(false) << 3);
         QRBuilder::interleave_into(&exp_blks, &mut bs);
 
         let blk_info = ver.data_codewords_per_block(ecl);

@@ -162,7 +162,7 @@ mod reader {
             Mode,
         };
         use crate::common::codec::encoder::encode_with_version;
-        use crate::{ECLevel, Palette, Version};
+        use crate::{ECLevel, Version};
 
         #[test]
         fn test_take_header_v1() {
@@ -221,8 +221,8 @@ mod reader {
             let data = "12345".as_bytes();
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
+            let hi_cap = false;
+            let mut bs = encode_with_version(data, ver, ecl, hi_cap).unwrap();
             let mut out = String::with_capacity(100);
 
             take_header(&mut bs, ver).unwrap();
@@ -236,7 +236,7 @@ mod reader {
             out.clear();
 
             let data = "6".as_bytes();
-            let mut bs = encode_with_version(data, ver, ECLevel::L, pal).unwrap();
+            let mut bs = encode_with_version(data, ver, ECLevel::L, hi_cap).unwrap();
             take_header(&mut bs, ver).unwrap();
             write_numeric(&mut bs, 1, &mut out).unwrap();
             assert_eq!(out, "6");
@@ -247,8 +247,8 @@ mod reader {
             let data = "AC-".as_bytes();
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
+            let hi_cap = false;
+            let mut bs = encode_with_version(data, ver, ecl, hi_cap).unwrap();
             let mut out = String::with_capacity(100);
 
             take_header(&mut bs, ver).unwrap();
@@ -262,7 +262,7 @@ mod reader {
             out.clear();
 
             let data = "%".as_bytes();
-            let mut bs = encode_with_version(data, ver, ECLevel::L, pal).unwrap();
+            let mut bs = encode_with_version(data, ver, ECLevel::L, hi_cap).unwrap();
             take_header(&mut bs, ver).unwrap();
             write_alphanumeric(&mut bs, 1, &mut out).unwrap();
             assert_eq!(out, "%");
@@ -273,8 +273,8 @@ mod reader {
             let data = "abc".as_bytes();
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
+            let hi_cap = false;
+            let mut bs = encode_with_version(data, ver, ecl, hi_cap).unwrap();
             let mut out = String::with_capacity(100);
 
             take_header(&mut bs, ver).unwrap();
@@ -292,8 +292,8 @@ mod reader {
             let data = "abcABCDEF1234567890123ABCDEFabc".as_bytes();
             let ver = Version::Normal(2);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            let mut bs = encode_with_version(data, ver, ecl, pal).unwrap();
+            let hi_cap = false;
+            let mut bs = encode_with_version(data, ver, ecl, hi_cap).unwrap();
             let mut out = String::with_capacity(100);
 
             write_segment(&mut bs, ver, &mut out).unwrap();
@@ -324,15 +324,15 @@ mod reader {
 pub mod decode {
     use super::reader::write_segment;
     use crate::utils::{BitStream, QRResult};
-    use crate::{ECLevel, Palette, Version};
+    use crate::{ECLevel, Version};
 
     pub fn decode(
         encoded: &mut BitStream,
         ver: Version,
         ecl: ECLevel,
-        pal: Palette,
+        hi_cap: bool,
     ) -> QRResult<String> {
-        let bcap = ver.data_bit_capacity(ecl, Palette::Mono);
+        let bcap = ver.data_bit_capacity(ecl, false);
         let mut res = String::with_capacity(encoded.len());
         let mut bit_len = 0;
         loop {
@@ -346,7 +346,7 @@ pub mod decode {
             // Handles an edge case where the diff between capacity and data len is less than
             // 4 bits, in which case there isn't enough space for 4 terminator bits, in the
             // absence of which the decoder would proceed to the next channel
-            if bit_len <= bcap && bcap - bit_len < 4 && pal == Palette::Mono {
+            if bit_len <= bcap && bcap - bit_len < 4 && !hi_cap {
                 break;
             }
         }
@@ -357,16 +357,16 @@ pub mod decode {
     mod decode_tests {
         use super::decode;
         use crate::codec::encode_with_version;
-        use crate::{ECLevel, Palette, Version};
+        use crate::{ECLevel, Version};
 
         #[test]
         fn test_decode() {
             let data = "abcABCDEF1234567890123ABCDEFabc";
             let ver = Version::Normal(2);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            let mut bs = encode_with_version(data.as_bytes(), ver, ecl, pal).unwrap();
-            let decoded_data = decode(&mut bs, ver, ecl, pal).unwrap();
+            let hi_cap = false;
+            let mut bs = encode_with_version(data.as_bytes(), ver, ecl, hi_cap).unwrap();
+            let decoded_data = decode(&mut bs, ver, ecl, hi_cap).unwrap();
             assert_eq!(decoded_data, data);
         }
     }

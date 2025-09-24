@@ -7,15 +7,15 @@ pub mod encode {
     use std::mem::swap;
 
     use crate::codec::{Mode, Segment, MODES};
-    use crate::metadata::{ECLevel, Palette, Version};
+    use crate::metadata::{ECLevel, Version};
     use crate::utils::{BitStream, QRError, QRResult};
 
     use super::writer::{pad_remaining_capacity, push_segment, push_terminator};
 
     // TODO: Write testcases
-    pub fn encode(data: &[u8], ecl: ECLevel, pal: Palette) -> QRResult<(BitStream, Version)> {
-        let (ver, segs) = find_optimal_version_and_segments(data, ecl, pal)?;
-        let bcap = ver.data_bit_capacity(ecl, pal);
+    pub fn encode(data: &[u8], ecl: ECLevel, hi_cap: bool) -> QRResult<(BitStream, Version)> {
+        let (ver, segs) = find_optimal_version_and_segments(data, ecl, hi_cap)?;
+        let bcap = ver.data_bit_capacity(ecl, hi_cap);
         let mut bs = BitStream::new(bcap);
 
         for seg in segs {
@@ -32,15 +32,15 @@ pub mod encode {
         data: &[u8],
         ver: Version,
         ecl: ECLevel,
-        pal: Palette,
+        hi_cap: bool,
     ) -> QRResult<BitStream> {
-        let bcap = ver.data_bit_capacity(ecl, pal);
+        let bcap = ver.data_bit_capacity(ecl, hi_cap);
         let segs = compute_optimal_segments(data, ver);
         let sz: usize = segs.iter().map(|s| s.bit_len()).sum();
         if sz > bcap {
             return Err(QRError::DataTooLong);
         }
-        let bcap = ver.data_bit_capacity(ecl, pal);
+        let bcap = ver.data_bit_capacity(ecl, hi_cap);
         let mut bs = BitStream::new(bcap);
 
         for seg in segs {
@@ -54,13 +54,13 @@ pub mod encode {
     fn find_optimal_version_and_segments(
         data: &'_ [u8],
         ecl: ECLevel,
-        pal: Palette,
+        hi_cap: bool,
     ) -> QRResult<(Version, Vec<Segment<'_>>)> {
         let mut segs = vec![];
         let mut sz = 0;
         for v in 1..=40 {
             let ver = Version::Normal(v);
-            let bcap = ver.data_bit_capacity(ecl, pal);
+            let bcap = ver.data_bit_capacity(ecl, hi_cap);
             if v == 1 || v == 10 || v == 27 {
                 segs = compute_optimal_segments(data, ver);
                 sz = segs.iter().map(|s| s.bit_len()).sum();
@@ -205,7 +205,7 @@ pub mod encode {
 
         use super::{
             build_segments, compute_optimal_segments, encode_with_version,
-            find_optimal_version_and_segments, ECLevel, Mode, Palette, Segment, Version,
+            find_optimal_version_and_segments, ECLevel, Mode, Segment, Version,
         };
 
         #[test]
@@ -296,19 +296,19 @@ pub mod encode {
             }
         }
 
-        #[test_case("aaaaa11111AAA".to_string(), Version::Normal(1), ECLevel::L, Palette::Mono; "test_find_optimal_ver_and_segments_1")]
-        #[test_case("A11111111111111".repeat(2).to_string(), Version::Normal(2), ECLevel::L, Palette::Mono; "test_find_optimal_ver_and_segments_2")]
-        #[test_case("A11111111111111".repeat(4).to_string(), Version::Normal(3), ECLevel::L, Palette::Mono; "test_find_optimal_ver_and_segments_3")]
-        #[test_case("aAAAAAAAAAAA".repeat(5).to_string(), Version::Normal(4), ECLevel::L, Palette::Mono; "test_find_optimal_ver_and_segments_4")]
-        #[test_case("aAAAAAAAAAAA".repeat(21).to_string(), Version::Normal(10), ECLevel::L, Palette::Mono; "test_find_optimal_ver_and_segments_5")]
-        #[test_case("a".repeat(2953).to_string(), Version::Normal(40), ECLevel::L, Palette::Mono; "test_find_optimal_ver_and_segments_6")]
+        #[test_case("aaaaa11111AAA".to_string(), Version::Normal(1), ECLevel::L, false; "test_find_optimal_ver_and_segments_1")]
+        #[test_case("A11111111111111".repeat(2).to_string(), Version::Normal(2), ECLevel::L, false; "test_find_optimal_ver_and_segments_2")]
+        #[test_case("A11111111111111".repeat(4).to_string(), Version::Normal(3), ECLevel::L, false; "test_find_optimal_ver_and_segments_3")]
+        #[test_case("aAAAAAAAAAAA".repeat(5).to_string(), Version::Normal(4), ECLevel::L, false; "test_find_optimal_ver_and_segments_4")]
+        #[test_case("aAAAAAAAAAAA".repeat(21).to_string(), Version::Normal(10), ECLevel::L, false; "test_find_optimal_ver_and_segments_5")]
+        #[test_case("a".repeat(2953).to_string(), Version::Normal(40), ECLevel::L, false; "test_find_optimal_ver_and_segments_6")]
         fn test_find_optimal_ver_and_segments(
             data: String,
             exp_ver: Version,
             ecl: ECLevel,
-            pal: Palette,
+            hi_cap: bool,
         ) {
-            let (ver, _) = find_optimal_version_and_segments(data.as_bytes(), ecl, pal).unwrap();
+            let (ver, _) = find_optimal_version_and_segments(data.as_bytes(), ecl, hi_cap).unwrap();
             assert_eq!(ver, exp_ver);
         }
 
@@ -317,8 +317,8 @@ pub mod encode {
         fn test_find_optimal_ver_and_segments_panic() {
             let data = "a".repeat(2954);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            find_optimal_version_and_segments(data.as_bytes(), ecl, pal).unwrap();
+            let hi_cap = false;
+            find_optimal_version_and_segments(data.as_bytes(), ecl, hi_cap).unwrap();
         }
 
         #[test]
@@ -326,8 +326,8 @@ pub mod encode {
             let data = "!".repeat(256);
             let ver = Version::Normal(9);
             let ecl = ECLevel::L;
-            let pal = Palette::Poly;
-            let _ = encode_with_version(data.as_bytes(), ver, ecl, pal).unwrap();
+            let hi_cap = true;
+            let _ = encode_with_version(data.as_bytes(), ver, ecl, hi_cap).unwrap();
         }
     }
 }
@@ -428,15 +428,15 @@ pub(super) mod writer {
             push_alphanumeric_data, push_byte_data, push_header, push_numeric_data,
             push_padding_bits, push_padding_codewords, push_terminator,
         };
-        use crate::metadata::{ECLevel, Palette, Version};
+        use crate::metadata::{ECLevel, Version};
         use crate::utils::BitStream;
 
         #[test]
         fn test_push_header_v1() {
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            let bit_capacity = ver.data_bit_capacity(ecl, pal);
+            let hi_cap = false;
+            let bit_capacity = ver.data_bit_capacity(ecl, hi_cap);
             let mode_bits = ver.mode_bits();
             let exp_vecs: Vec<Vec<u8>> = vec![
                 vec![0b00011111, 0b11111100],
@@ -459,8 +459,8 @@ pub(super) mod writer {
         fn test_push_header_v10() {
             let ver = Version::Normal(10);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            let bit_capacity = ver.data_bit_capacity(ecl, pal);
+            let hi_cap = false;
+            let bit_capacity = ver.data_bit_capacity(ecl, hi_cap);
             let mode_bits = ver.mode_bits();
             let exp_vecs: Vec<Vec<u8>> = vec![
                 vec![0b00011111, 0b11111111],
@@ -483,8 +483,8 @@ pub(super) mod writer {
         fn test_push_header_v27() {
             let ver = Version::Normal(27);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            let bit_capacity = ver.data_bit_capacity(ecl, pal);
+            let hi_cap = false;
+            let bit_capacity = ver.data_bit_capacity(ecl, hi_cap);
             let mode_bits = ver.mode_bits();
             let exp_vecs: Vec<Vec<u8>> = vec![
                 vec![0b00011111, 0b11111111, 0b11000000],
@@ -507,8 +507,8 @@ pub(super) mod writer {
         fn test_push_numeric_data() {
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            let bit_capacity = ver.data_bit_capacity(ecl, pal);
+            let hi_cap = false;
+            let bit_capacity = ver.data_bit_capacity(ecl, hi_cap);
             let mut bs = BitStream::new(bit_capacity);
             push_numeric_data("01234567".as_bytes(), &mut bs);
             assert_eq!(bs.data(), vec![0b00000011, 0b00010101, 0b10011000, 0b01100000]);
@@ -521,8 +521,8 @@ pub(super) mod writer {
         fn test_push_alphanumeric_data() {
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            let bit_capacity = ver.data_bit_capacity(ecl, pal);
+            let hi_cap = false;
+            let bit_capacity = ver.data_bit_capacity(ecl, hi_cap);
             let mut bs = BitStream::new(bit_capacity);
             push_alphanumeric_data("AC-42".as_bytes(), &mut bs);
             assert_eq!(bs.data(), vec![0b00111001, 0b11011100, 0b11100100, 0b00100000])
@@ -532,8 +532,8 @@ pub(super) mod writer {
         fn test_push_byte_data() {
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            let bit_capacity = ver.data_bit_capacity(ecl, pal);
+            let hi_cap = false;
+            let bit_capacity = ver.data_bit_capacity(ecl, hi_cap);
             let mut bs = BitStream::new(bit_capacity);
             push_byte_data("a".as_bytes(), &mut bs);
             assert_eq!(bs.data(), vec![0b01100001])
@@ -543,8 +543,8 @@ pub(super) mod writer {
         fn test_push_terminator() {
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            let bit_capacity = ver.data_bit_capacity(ecl, pal);
+            let hi_cap = false;
+            let bit_capacity = ver.data_bit_capacity(ecl, hi_cap);
             let capacity = (bit_capacity + 7) >> 3;
             let mut bs = BitStream::new(bit_capacity);
             bs.push_bits(0b1, 1);
@@ -562,8 +562,8 @@ pub(super) mod writer {
         fn test_push_padding_bits() {
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            let bit_capacity = ver.data_bit_capacity(ecl, pal);
+            let hi_cap = false;
+            let bit_capacity = ver.data_bit_capacity(ecl, hi_cap);
             let mut bs = BitStream::new(bit_capacity);
             bs.push_bits(1, 0b1);
             push_padding_bits(&mut bs);
@@ -575,8 +575,8 @@ pub(super) mod writer {
         fn test_push_padding_codewords() {
             let ver = Version::Normal(1);
             let ecl = ECLevel::L;
-            let pal = Palette::Mono;
-            let bit_capacity = ver.data_bit_capacity(ecl, pal);
+            let hi_cap = false;
+            let bit_capacity = ver.data_bit_capacity(ecl, hi_cap);
             let mut bs = BitStream::new(bit_capacity);
             bs.push_bits(1, 0b1);
             push_padding_bits(&mut bs);

@@ -189,7 +189,7 @@ mod finder_tests {
 
     use crate::{
         reader::{binarize::BinaryImage, utils::geometry::Point},
-        ECLevel, MaskPattern, Palette, QRBuilder, Version,
+        ECLevel, MaskPattern, QRBuilder, Version,
     };
 
     use super::locate_finders;
@@ -200,12 +200,12 @@ mod finder_tests {
         let ver = Version::Normal(4);
         let ecl = ECLevel::L;
         let mask = MaskPattern::new(1);
-        let pal = Palette::Mono;
+        let hi_cap = false;
 
         let qr = QRBuilder::new(data.as_bytes())
             .version(ver)
             .ec_level(ecl)
-            .palette(pal)
+            .high_capacity(hi_cap)
             .mask(mask)
             .build()
             .unwrap();
@@ -311,7 +311,7 @@ fn angle(a: &Point, b: &Point, c: &Point) -> f64 {
 #[cfg(test)]
 mod group_finders_tests {
 
-    use crate::{reader::binarize::BinaryImage, ECLevel, MaskPattern, Palette, QRBuilder, Version};
+    use crate::{reader::binarize::BinaryImage, ECLevel, MaskPattern, QRBuilder, Version};
 
     use super::{group_finders, locate_finders};
 
@@ -321,12 +321,12 @@ mod group_finders_tests {
         let ver = Version::Normal(4);
         let ecl = ECLevel::L;
         let mask = MaskPattern::new(1);
-        let pal = Palette::Mono;
+        let hi_cap = false;
 
         let qr = QRBuilder::new(data.as_bytes())
             .version(ver)
             .ec_level(ecl)
-            .palette(pal)
+            .high_capacity(hi_cap)
             .mask(mask)
             .build()
             .unwrap();

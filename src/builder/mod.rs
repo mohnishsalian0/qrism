@@ -7,7 +7,7 @@ use crate::{
         codec::{encode, encode_with_version},
         ec::Block,
         mask::{apply_best_mask, MaskPattern},
-        metadata::{ECLevel, Palette, Version},
+        metadata::{ECLevel, Version},
         utils::{BitStream, QRError, QRResult},
     },
     debug_println,
@@ -20,13 +20,13 @@ pub struct QRBuilder<'a> {
     data: &'a [u8],
     ver: Option<Version>,
     ecl: ECLevel,
-    pal: Palette,
+    hi_cap: bool,
     mask: Option<MaskPattern>,
 }
 
 impl<'a> QRBuilder<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Self { data, ver: None, ecl: ECLevel::M, pal: Palette::Mono, mask: None }
+        Self { data, ver: None, ecl: ECLevel::M, hi_cap: false, mask: None }
     }
 
     pub fn data(&mut self, data: &'a [u8]) -> &mut Self {
@@ -49,8 +49,8 @@ impl<'a> QRBuilder<'a> {
         self
     }
 
-    pub fn palette(&mut self, pal: Palette) -> &mut Self {
-        self.pal = pal;
+    pub fn high_capacity(&mut self, enabled: bool) -> &mut Self {
+        self.hi_cap = enabled;
         self
     }
 
@@ -62,11 +62,14 @@ impl<'a> QRBuilder<'a> {
     pub fn metadata(&self) -> String {
         match self.ver {
             Some(v) => format!(
-                "{{ Version: {:?}, Ec level: {:?}, Palette: {:?} }}",
-                *v, self.ecl, self.pal
+                "{{ Version: {:?}, Ec level: {:?}, High Capacity: {:?} }}",
+                *v, self.ecl, self.hi_cap
             ),
             None => {
-                format!("{{ Version: None, Ec level: {:?}, Palette: {:?} }}", self.ecl, self.pal)
+                format!(
+                    "{{ Version: None, Ec level: {:?}, High Capacity: {:?} }}",
+                    self.ecl, self.hi_cap
+                )
             }
         }
     }
@@ -75,19 +78,18 @@ impl<'a> QRBuilder<'a> {
 #[cfg(test)]
 mod qrbuilder_util_tests {
     use super::QRBuilder;
-    use crate::metadata::{ECLevel, Palette, Version};
+    use crate::metadata::{ECLevel, Version};
 
     #[test]
     fn test_metadata() {
         let data = "Hello, world!".as_bytes();
         let ver = Version::Normal(1);
         let ecl = ECLevel::L;
-        let pal = Palette::Mono;
         let mut qr_bldr = QRBuilder::new(data);
-        qr_bldr.version(ver).ec_level(ecl).palette(pal);
-        assert_eq!(qr_bldr.metadata(), "{ Version: 1, Ec level: L, Palette: Mono }");
+        qr_bldr.version(ver).ec_level(ecl).high_capacity(false);
+        assert_eq!(qr_bldr.metadata(), "{ Version: 1, Ec level: L, High Capacity: false }");
         qr_bldr.unset_version();
-        assert_eq!(qr_bldr.metadata(), "{ Version: None, Ec level: L, Palette: Mono }");
+        assert_eq!(qr_bldr.metadata(), "{ Version: None, Ec level: L, High Capacity: false }");
     }
 }
 
@@ -101,17 +103,17 @@ impl QRBuilder<'_> {
         // Encode data optimally
         debug_println!("Encoding data...");
         let (enc, ver) = match self.ver {
-            Some(v) => (encode_with_version(self.data, v, self.ecl, self.pal)?, v),
+            Some(v) => (encode_with_version(self.data, v, self.ecl, self.hi_cap)?, v),
             None => {
                 debug_println!("Finding best version...");
-                encode(self.data, self.ecl, self.pal)?
+                encode(self.data, self.ecl, self.hi_cap)?
             }
         };
 
         let _data_len = self.data.len();
-        let _data_cap = ver.data_capacity(self.ecl, self.pal);
+        let _data_cap = ver.data_capacity(self.ecl, self.hi_cap);
         let _ec_cap = Self::ec_capacity(ver, self.ecl);
-        let tot_cwds = ver.total_codewords(self.pal);
+        let tot_cwds = ver.total_codewords(self.hi_cap);
 
         debug_println!("Constructing payload with ecc & interleaving...");
         let mut pld = BitStream::new(tot_cwds << 3);
@@ -133,7 +135,7 @@ impl QRBuilder<'_> {
 
         // Construct QR
         debug_println!("Constructing QR...");
-        let mut qr = QR::new(ver, self.ecl, self.pal);
+        let mut qr = QR::new(ver, self.ecl, self.hi_cap);
 
         debug_println!("Drawing functional patterns...");
         qr.draw_all_function_patterns();

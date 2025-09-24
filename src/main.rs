@@ -3,7 +3,7 @@ use std::path::Path;
 
 use qrism::reader::binarize::BinaryImage;
 use qrism::reader::detect;
-use qrism::{ECLevel, Palette, Version};
+use qrism::{ECLevel, Version};
 use qrism::{MaskPattern, QRBuilder};
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // let qr = QRBuilder::new(data.as_bytes())
     //     .version(Version::Normal(5)) // If not provided, finds smallest version to fit the data
     //     .ec_level(ECLevel::M) // Defaults to ECLevel::M
-    //     .palette(Palette::Mono) // Defaults to Palette::Mono, use Palette::Poly for highcapacity QR
+    //     .high_capacity(false) // Defaults to false, use true for high capacity QR
     //     .mask(MaskPattern::new(1)) // If not provided, finds best mask based on penalty score
     //     .build()?;
 

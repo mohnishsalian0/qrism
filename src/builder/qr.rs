@@ -34,7 +34,7 @@ pub struct QR {
     w: usize,
     ver: Version,
     ecl: ECLevel,
-    pal: Palette,
+    hi_cap: bool,
     mask: Option<MaskPattern>,
 }
 
@@ -42,14 +42,14 @@ pub struct QR {
 //------------------------------------------------------------------------------
 
 impl QR {
-    pub fn new(ver: Version, ecl: ECLevel, pal: Palette) -> Self {
+    pub fn new(ver: Version, ecl: ECLevel, hi_cap: bool) -> Self {
         debug_assert!(
             matches!(ver, Version::Micro(1..=4) | Version::Normal(1..=40)),
             "Invalid version"
         );
 
         let w = ver.width();
-        Self { grid: Box::new([Module::Empty; MAX_QR_SIZE]), w, ver, ecl, pal, mask: None }
+        Self { grid: Box::new([Module::Empty; MAX_QR_SIZE]), w, ver, ecl, hi_cap, mask: None }
     }
 
     pub fn grid(&self) -> &[Module] {
@@ -68,8 +68,8 @@ impl QR {
         self.ecl
     }
 
-    pub fn palette(&self) -> Palette {
-        self.pal
+    pub fn high_capacity(&self) -> bool {
+        self.hi_cap
     }
 
     pub fn mask(&self) -> Option<MaskPattern> {
@@ -136,11 +136,11 @@ impl QR {
 #[cfg(test)]
 mod qr_util_tests {
     use crate::builder::{Module, QR};
-    use crate::common::metadata::{Color, ECLevel, Palette, Version};
+    use crate::common::metadata::{Color, ECLevel, Version};
 
     #[test]
     fn test_index_wrap() {
-        let mut qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
+        let mut qr = QR::new(Version::Normal(1), ECLevel::L, false);
         let w = qr.w as i32;
         qr.set(-1, -1, Module::Func(Color::Black));
         assert_eq!(qr.get(w - 1, w - 1), Module::Func(Color::Black));
@@ -151,7 +151,7 @@ mod qr_util_tests {
     #[test]
     #[should_panic]
     fn test_row_out_of_bound() {
-        let qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
+        let qr = QR::new(Version::Normal(1), ECLevel::L, false);
         let w = qr.w as i32;
         qr.get(w, 0);
     }
@@ -159,7 +159,7 @@ mod qr_util_tests {
     #[test]
     #[should_panic]
     fn test_col_out_of_bound() {
-        let qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
+        let qr = QR::new(Version::Normal(1), ECLevel::L, false);
         let w = qr.w as i32;
         qr.get(0, w);
     }
@@ -167,7 +167,7 @@ mod qr_util_tests {
     #[test]
     #[should_panic]
     fn test_row_index_overwrap() {
-        let qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
+        let qr = QR::new(Version::Normal(1), ECLevel::L, false);
         let w = qr.w as i32;
         qr.get(-(w + 1), 0);
     }
@@ -175,7 +175,7 @@ mod qr_util_tests {
     #[test]
     #[should_panic]
     fn test_col_index_overwrap() {
-        let qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
+        let qr = QR::new(Version::Normal(1), ECLevel::L, false);
         let w = qr.w as i32;
         qr.get(0, -(w + 1));
     }
@@ -219,11 +219,11 @@ impl QR {
 #[cfg(test)]
 mod finder_pattern_tests {
     use crate::builder::QR;
-    use crate::common::metadata::{ECLevel, Palette, Version};
+    use crate::common::metadata::{ECLevel, Version};
 
     #[test]
     fn test_finder_pattern_qr() {
-        let mut qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
+        let mut qr = QR::new(Version::Normal(1), ECLevel::L, false);
         qr.draw_finder_patterns();
         assert_eq!(
             qr.to_debug_str(),
@@ -287,11 +287,11 @@ impl QR {
 #[cfg(test)]
 mod timing_pattern_tests {
     use crate::builder::QR;
-    use crate::common::metadata::{ECLevel, Palette, Version};
+    use crate::common::metadata::{ECLevel, Version};
 
     #[test]
     fn test_timing_pattern_1() {
-        let mut qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
+        let mut qr = QR::new(Version::Normal(1), ECLevel::L, false);
         qr.draw_timing_pattern();
         assert_eq!(
             qr.to_debug_str(),
@@ -357,11 +357,11 @@ impl QR {
 #[cfg(test)]
 mod alignment_pattern_tests {
     use crate::builder::QR;
-    use crate::common::metadata::{ECLevel, Palette, Version};
+    use crate::common::metadata::{ECLevel, Version};
 
     #[test]
     fn test_alignment_pattern_1() {
-        let mut qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
+        let mut qr = QR::new(Version::Normal(1), ECLevel::L, false);
         qr.draw_finder_patterns();
         qr.draw_alignment_patterns();
         assert_eq!(
@@ -393,7 +393,7 @@ mod alignment_pattern_tests {
 
     #[test]
     fn test_alignment_pattern_3() {
-        let mut qr = QR::new(Version::Normal(3), ECLevel::L, Palette::Mono);
+        let mut qr = QR::new(Version::Normal(3), ECLevel::L, false);
         qr.draw_finder_patterns();
         qr.draw_alignment_patterns();
         assert_eq!(
@@ -433,7 +433,7 @@ mod alignment_pattern_tests {
 
     #[test]
     fn test_alignment_pattern_7() {
-        let mut qr = QR::new(Version::Normal(7), ECLevel::L, Palette::Mono);
+        let mut qr = QR::new(Version::Normal(7), ECLevel::L, false);
         qr.draw_finder_patterns();
         qr.draw_alignment_patterns();
         assert_eq!(
@@ -502,11 +502,11 @@ impl QR {
 #[cfg(test)]
 mod all_function_patterns_test {
     use crate::builder::QR;
-    use crate::common::metadata::{ECLevel, Palette, Version};
+    use crate::common::metadata::{ECLevel, Version};
 
     #[test]
     fn test_all_function_patterns() {
-        let mut qr = QR::new(Version::Normal(3), ECLevel::L, Palette::Mono);
+        let mut qr = QR::new(Version::Normal(3), ECLevel::L, false);
         qr.draw_all_function_patterns();
         assert_eq!(
             qr.to_debug_str(),
@@ -622,11 +622,11 @@ impl QR {
 #[cfg(test)]
 mod qr_information_tests {
     use crate::builder::QR;
-    use crate::common::metadata::{ECLevel, Palette, Version};
+    use crate::common::metadata::{ECLevel, Version};
 
     #[test]
     fn test_version_info_1() {
-        let mut qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
+        let mut qr = QR::new(Version::Normal(1), ECLevel::L, false);
         qr.draw_version_info();
         assert_eq!(
             qr.to_debug_str(),
@@ -657,7 +657,7 @@ mod qr_information_tests {
 
     #[test]
     fn test_version_info_7() {
-        let mut qr = QR::new(Version::Normal(7), ECLevel::L, Palette::Mono);
+        let mut qr = QR::new(Version::Normal(7), ECLevel::L, false);
         qr.draw_version_info();
         assert_eq!(
             qr.to_debug_str(),
@@ -712,7 +712,7 @@ mod qr_information_tests {
 
     #[test]
     fn test_reserve_format_info_qr() {
-        let mut qr = QR::new(Version::Normal(1), ECLevel::L, Palette::Mono);
+        let mut qr = QR::new(Version::Normal(1), ECLevel::L, false);
         qr.reserve_format_area();
         assert_eq!(
             qr.to_debug_str(),
@@ -743,7 +743,7 @@ mod qr_information_tests {
 
     #[test]
     fn test_all_function_patterns_and_qr_info() {
-        let mut qr = QR::new(Version::Normal(7), ECLevel::L, Palette::Mono);
+        let mut qr = QR::new(Version::Normal(7), ECLevel::L, false);
         qr.draw_all_function_patterns();
         qr.draw_version_info();
         qr.reserve_format_area();
@@ -807,12 +807,11 @@ impl QR {
         self.reserve_format_area();
         self.draw_version_info();
 
-        match self.pal {
-            Palette::Mono => self.draw_payload(payload),
-            Palette::Poly => {
-                self.set(8, -8, Module::Format(Color::White));
-                self.draw_payload_rgb(payload)
-            }
+        if self.hi_cap {
+            self.set(8, -8, Module::Format(Color::White));
+            self.draw_payload_rgb(payload)
+        } else {
+            self.draw_payload(payload)
         }
 
         let w = self.ver.width();

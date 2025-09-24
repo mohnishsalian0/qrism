@@ -129,34 +129,34 @@ impl Version {
         }
     }
 
-    pub fn data_bit_capacity(self, ecl: ECLevel, pal: Palette) -> usize {
+    pub fn data_bit_capacity(self, ecl: ECLevel, hi_cap: bool) -> usize {
         let mut bc = match self {
             Version::Micro(v) => VERSION_DATA_BIT_CAPACITY[39 + v][ecl as usize],
             Version::Normal(v) => VERSION_DATA_BIT_CAPACITY[v - 1][ecl as usize],
         };
-        if matches!(pal, Palette::Poly) {
+        if hi_cap {
             bc *= 3;
         }
         bc
     }
 
-    pub fn data_capacity(self, ecl: ECLevel, pal: Palette) -> usize {
+    pub fn data_capacity(self, ecl: ECLevel, hi_cap: bool) -> usize {
         let mut bc = match self {
             Version::Micro(v) => VERSION_DATA_BIT_CAPACITY[39 + v][ecl as usize],
             Version::Normal(v) => VERSION_DATA_BIT_CAPACITY[v - 1][ecl as usize],
         };
-        if matches!(pal, Palette::Poly) {
+        if hi_cap {
             bc *= 3;
         }
         bc >> 3
     }
 
-    pub fn total_codewords(self, pal: Palette) -> usize {
+    pub fn total_codewords(self, hi_cap: bool) -> usize {
         let mut tc = match self {
             Version::Micro(v) => VERSION_TOTAL_CODEWORDS[39 + v],
             Version::Normal(v) => VERSION_TOTAL_CODEWORDS[v - 1],
         };
-        if matches!(pal, Palette::Poly) {
+        if hi_cap {
             tc *= 3;
         }
         tc
@@ -324,14 +324,6 @@ impl From<u8> for ECLevel {
     }
 }
 
-// Palette
-//------------------------------------------------------------------------------
-
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum Palette {
-    Mono,
-    Poly,
-}
 
 // Color
 //------------------------------------------------------------------------------

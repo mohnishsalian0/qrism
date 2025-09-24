@@ -37,7 +37,7 @@ mod reader_tests {
 
     use crate::{
         builder::QRBuilder,
-        metadata::{ECLevel, Palette, Version},
+        metadata::{ECLevel, Version},
         reader::{binarize::BinaryImage, detect},
         MaskPattern,
     };
@@ -48,12 +48,12 @@ mod reader_tests {
         let ver = Version::Normal(1);
         let ecl = ECLevel::L;
         let mask = MaskPattern::new(1);
-        let pal = Palette::Mono;
+        let hi_cap = false;
 
         let qr = QRBuilder::new(msg.as_bytes())
             .version(ver)
             .ec_level(ecl)
-            .palette(pal)
+            .high_capacity(hi_cap)
             .mask(mask)
             .build()
             .unwrap();
@@ -72,12 +72,12 @@ mod reader_tests {
         let ver = Version::Normal(2);
         let ecl = ECLevel::L;
         let mask = MaskPattern::new(1);
-        let pal = Palette::Poly;
+        let hi_cap = true;
 
         let qr = QRBuilder::new(exp_msg.as_bytes())
             .version(ver)
             .ec_level(ecl)
-            .palette(pal)
+            .high_capacity(hi_cap)
             .mask(mask)
             .build()
             .unwrap();
