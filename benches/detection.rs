@@ -6,9 +6,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use walkdir::WalkDir;
 
-use crate::utils::{get_parent, is_image_file, parse_expected_bounds_result, print_table};
 use qrism::detect_qr;
 use qrism::symbol::Symbol;
+
+#[path = "utils.rs"]
+mod utils;
+use utils::{get_parent, is_image_file, parse_expected_bounds_result, print_table};
 
 pub fn benchmark_detection(dataset_dir: &Path) {
     let image_paths: Vec<_> = WalkDir::new(dataset_dir)
@@ -214,3 +217,11 @@ fn overlap_area(actual: &[f64], expected: &[f64]) -> f64 {
     intersection.unsigned_area()
 }
 
+fn main() {
+    println!("Running Detection Benchmarks...");
+    println!("---------------------------------");
+    let detection_start = Instant::now();
+    benchmark_detection(Path::new("benches/dataset/detection"));
+    let detection_time = detection_start.elapsed();
+    println!("Detection benchmark completed in: {:?}\n", detection_time);
+}

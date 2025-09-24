@@ -25,7 +25,6 @@ num-traits = "0.2.19"
 rand = "0.9.0"
 rqrr = "0.9.3"
 time = "0.3.41"
-walkdir = { version = "2.5.0", optional = true }
 
 [dev-dependencies]
 geo = "0.29.3"
@@ -33,11 +32,17 @@ geo-booleanop = "0.3.2"
 proptest = "1.6.0"
 rayon = "1.10.0"
 test-case = "3.3.1"
+walkdir = "2.5.0"
 
 [[bench]]
-name = "main"
+name = "detection"
+harness = false
+required-features = ["benchmark"]
+
+[[bench]]
+name = "decoding"
 harness = false
 required-features = ["benchmark"]
 
 [features]
-benchmark = ["walkdir"]
+benchmark = []

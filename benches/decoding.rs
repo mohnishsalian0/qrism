@@ -6,7 +6,10 @@ use std::time::Instant;
 use walkdir::WalkDir;
 
 use qrism::reader::detect_qr;
-use crate::utils::{get_parent, is_image_file, parse_expected_decode_result, print_table};
+
+#[path = "utils.rs"]
+mod utils;
+use utils::{get_parent, is_image_file, parse_expected_decode_result, print_table};
 
 pub fn benchmark_decoding(dataset_dir: &Path) {
     let image_paths: Vec<_> = WalkDir::new(dataset_dir)
@@ -106,4 +109,22 @@ pub fn benchmark_decoding(dataset_dir: &Path) {
 
     println!("\nResult:");
     print_table(&results, &rows, &cols);
+}
+
+fn main() {
+    // Run decoding benchmarks on blackbox dataset
+    println!("Running Decoding Benchmarks (Blackbox)...");
+    println!("--------------------------------------------");
+    let decoding1_start = Instant::now();
+    benchmark_decoding(Path::new("benches/dataset/blackbox"));
+    let decoding1_time = decoding1_start.elapsed();
+    println!("Decoding (blackbox) benchmark completed in: {:?}\n", decoding1_time);
+
+    // Run decoding benchmarks on decoding dataset
+    println!("Running Decoding Benchmarks (Decoding)...");
+    println!("--------------------------------------------");
+    let decoding2_start = Instant::now();
+    benchmark_decoding(Path::new("benches/dataset/decoding"));
+    let decoding2_time = decoding2_start.elapsed();
+    println!("Decoding (decoding) benchmark completed in: {:?}\n", decoding2_time);
 }
