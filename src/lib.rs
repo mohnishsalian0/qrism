@@ -53,16 +53,34 @@
 //! ### Reading a QR Code
 //!
 //! ```rust,no_run
-//! use qrism::reader::{binarize::BinaryImage, detect};
+//! use qrism::reader::detect_qr;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Load and prepare image
-//! let img = image::open("qr_code.png")?.to_rgb8();
-//! let mut binary_img = BinaryImage::prepare(&img);
+//! let img = image::open("qr_code.png")?;
 //!
 //! // Detect and decode QR codes
-//! let mut symbols = detect(&mut binary_img);
-//! if let Some(symbol) = symbols.first_mut() {
+//! let mut res = detect_qr(&img);
+//! if let Some(symbol) = res.symbols().first_mut() {
+//!     let (metadata, message) = symbol.decode()?;
+//!     println!("Decoded: {}", message);
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Reading a high capacity multi color QR
+//!
+//! ```rust,no_run
+//! use qrism::reader::detect_hc_qr;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Load and prepare image
+//! let img = image::open("qr_code.png")?;
+//!
+//! // Detect and decode QR codes
+//! let mut res = detect_hc_qr(&img);
+//! if let Some(symbol) = res.symbols().first_mut() {
 //!     let (metadata, message) = symbol.decode()?;
 //!     println!("Decoded: {}", message);
 //! }

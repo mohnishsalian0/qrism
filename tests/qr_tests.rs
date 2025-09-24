@@ -5,7 +5,7 @@ mod qr_proptests {
     use proptest::prelude::*;
 
     use qrism::*;
-    use reader::{binarize::BinaryImage, detect};
+    use reader::{detect_hc_qr, detect_qr};
 
     pub fn ec_level_strategy() -> BoxedStrategy<ECLevel> {
         prop_oneof![Just(ECLevel::L), Just(ECLevel::M), Just(ECLevel::Q), Just(ECLevel::H)].boxed()
@@ -37,11 +37,11 @@ mod qr_proptests {
         fn proptest_numeric(params in qr_strategy("[0-9]".to_string())) {
             let (ecl, hi_cap, data) = params;
 
-            let qr = QRBuilder::new(data.as_bytes()).ec_level(ecl).high_capacity(hi_cap).build().unwrap().to_image(3);
+            let qr = QRBuilder::new(data.as_bytes()).ec_level(ecl).high_capacity(hi_cap).build().unwrap();
 
-        let mut img = BinaryImage::prepare(&qr);
-        let mut symbols = detect(&mut img);
-        let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
+            let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
+            let mut res = if hi_cap { detect_hc_qr(&img) } else {detect_qr(&img)};
+            let (_meta, decoded) = res.symbols()[0].decode().expect("Failed to read QR");
 
             prop_assert_eq!(data, decoded);
         }
@@ -51,11 +51,11 @@ mod qr_proptests {
         fn proptest_alphanumeric(params in qr_strategy(r"[0-9A-Z $%*+\-./:]".to_string())) {
             let (ecl, hi_cap, data) = params;
 
-            let qr = QRBuilder::new(data.as_bytes()).ec_level(ecl).high_capacity(hi_cap).build().unwrap().to_image(3);
+            let qr = QRBuilder::new(data.as_bytes()).ec_level(ecl).high_capacity(hi_cap).build().unwrap();
 
-        let mut img = BinaryImage::prepare(&qr);
-        let mut symbols = detect(&mut img);
-        let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
+            let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
+            let mut res = if hi_cap { detect_hc_qr(&img) } else {detect_qr(&img)};
+            let (_meta, decoded) = res.symbols()[0].decode().expect("Failed to read QR");
 
             prop_assert_eq!(data, decoded);
         }
@@ -67,7 +67,7 @@ mod qr_tests {
     use test_case::test_case;
 
     use qrism::{
-        reader::{binarize::BinaryImage, detect},
+        reader::{detect_hc_qr, detect_qr},
         ECLevel, QRBuilder, Version,
     };
 
@@ -99,12 +99,11 @@ mod qr_tests {
             .ec_level(ecl)
             .high_capacity(hi_cap)
             .build()
-            .unwrap()
-            .to_image(3);
+            .unwrap();
 
-        let mut img = BinaryImage::prepare(&qr);
-        let mut symbols = detect(&mut img);
-        let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
+        let mut res = if hi_cap { detect_hc_qr(&img) } else { detect_qr(&img) };
+        let (_meta, decoded) = res.symbols()[0].decode().expect("Failed to read QR");
 
         assert_eq!(data, decoded);
     }
@@ -115,16 +114,12 @@ mod qr_tests {
         let ecl = ECLevel::M;
         let hi_cap = false;
 
-        let qr = QRBuilder::new(data.as_bytes())
-            .ec_level(ecl)
-            .high_capacity(hi_cap)
-            .build()
-            .unwrap()
-            .to_image(3);
+        let qr =
+            QRBuilder::new(data.as_bytes()).ec_level(ecl).high_capacity(hi_cap).build().unwrap();
 
-        let mut img = BinaryImage::prepare(&qr);
-        let mut symbols = detect(&mut img);
-        let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
+        let mut res = if hi_cap { detect_hc_qr(&img) } else { detect_qr(&img) };
+        let (_meta, decoded) = res.symbols()[0].decode().expect("Failed to read QR");
 
         assert_eq!(data, decoded);
     }
@@ -135,16 +130,12 @@ mod qr_tests {
         let ecl = ECLevel::M;
         let hi_cap = false;
 
-        let qr = QRBuilder::new(data.as_bytes())
-            .ec_level(ecl)
-            .high_capacity(hi_cap)
-            .build()
-            .unwrap()
-            .to_image(3);
+        let qr =
+            QRBuilder::new(data.as_bytes()).ec_level(ecl).high_capacity(hi_cap).build().unwrap();
 
-        let mut img = BinaryImage::prepare(&qr);
-        let mut symbols = detect(&mut img);
-        let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
+        let mut res = if hi_cap { detect_hc_qr(&img) } else { detect_qr(&img) };
+        let (_meta, decoded) = res.symbols()[0].decode().expect("Failed to read QR");
 
         assert_eq!(data, decoded);
     }
@@ -155,16 +146,12 @@ mod qr_tests {
         let ecl = ECLevel::Q;
         let hi_cap = false;
 
-        let qr = QRBuilder::new(data.as_bytes())
-            .ec_level(ecl)
-            .high_capacity(hi_cap)
-            .build()
-            .unwrap()
-            .to_image(3);
+        let qr =
+            QRBuilder::new(data.as_bytes()).ec_level(ecl).high_capacity(hi_cap).build().unwrap();
 
-        let mut img = BinaryImage::prepare(&qr);
-        let mut symbols = detect(&mut img);
-        let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
+        let mut res = if hi_cap { detect_hc_qr(&img) } else { detect_qr(&img) };
+        let (_meta, decoded) = res.symbols()[0].decode().expect("Failed to read QR");
 
         assert_eq!(data, decoded);
     }
@@ -175,16 +162,12 @@ mod qr_tests {
         let ecl = ECLevel::H;
         let hi_cap = true;
 
-        let qr = QRBuilder::new(data.as_bytes())
-            .ec_level(ecl)
-            .high_capacity(hi_cap)
-            .build()
-            .unwrap()
-            .to_image(3);
+        let qr =
+            QRBuilder::new(data.as_bytes()).ec_level(ecl).high_capacity(hi_cap).build().unwrap();
 
-        let mut img = BinaryImage::prepare(&qr);
-        let mut symbols = detect(&mut img);
-        let (_meta, decoded) = symbols[0].decode().expect("Failed to read QR");
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
+        let mut res = if hi_cap { detect_hc_qr(&img) } else { detect_qr(&img) };
+        let (_meta, decoded) = res.symbols()[0].decode().expect("Failed to read QR");
 
         assert_eq!(data, decoded);
     }
@@ -195,19 +178,12 @@ mod qr_tests {
         let ecl = ECLevel::H;
         let hi_cap = true;
 
-        let qr = QRBuilder::new(data.as_bytes())
-            .ec_level(ecl)
-            .high_capacity(hi_cap)
-            .build()
-            .unwrap()
-            .to_image(3);
+        let qr =
+            QRBuilder::new(data.as_bytes()).ec_level(ecl).high_capacity(hi_cap).build().unwrap();
 
-        let path = std::path::Path::new("assets/built.png");
-        qr.save(path).unwrap();
-
-        let mut img = BinaryImage::prepare(&qr);
-        let mut symbols = detect(&mut img);
-        let (_meta, decoded) = symbols[0].decode().unwrap();
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
+        let mut res = if hi_cap { detect_hc_qr(&img) } else { detect_qr(&img) };
+        let (_meta, decoded) = res.symbols()[0].decode().expect("Failed to read QR");
 
         assert_eq!(data, decoded);
     }

@@ -6,8 +6,7 @@ use std::time::Instant;
 use walkdir::WalkDir;
 
 use qrism::benchmark::{get_parent, is_image_file, parse_expected_decode_result, print_table};
-use qrism::reader::binarize::BinaryImage;
-use qrism::reader::detect;
+use qrism::reader::{detect_hc_qr, detect_qr};
 
 fn benchmark(dataset_dir: &Path) {
     let image_paths: Vec<_> = WalkDir::new(dataset_dir)
@@ -24,7 +23,7 @@ fn benchmark(dataset_dir: &Path) {
         let parent = get_parent(img_path);
         let _path_str = img_path.to_str().unwrap();
 
-        let gray = image::open(img_path).unwrap().to_luma8();
+        let img = image::open(img_path).unwrap();
         for angle in [0, 90, 180, 270].iter() {
             let img = match angle {
                 90 => image::imageops::rotate90(&gray),
@@ -34,14 +33,11 @@ fn benchmark(dataset_dir: &Path) {
             };
 
             let start = Instant::now();
-            let mut img = BinaryImage::prepare(&img);
-            let mut symbols = detect(&mut img);
-            // let mut img = rqrr::PreparedImage::prepare(img);
-            // let mut symbols = img.detect_grids();
+            let mut res = detect(&img);
             let mut _passed = false;
 
-            if !symbols.is_empty() {
-                if let Ok((_meta, msg)) = symbols[0].decode() {
+            if !res.symbols().is_empty() {
+                if let Ok((_meta, msg)) = res.symbols()[0].decode() {
                     let elapsed = start.elapsed();
 
                     let mut runtimes = runtimes.lock().unwrap();

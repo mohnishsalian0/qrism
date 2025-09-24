@@ -1,17 +1,16 @@
 use std::error::Error;
 
-use qrism::reader::{binarize::BinaryImage, detect};
+use qrism::reader::detect_hc_qr;
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Read an existing QR code from the assets directory
     let qr_path = "assets/example4.png";
-    let rgb_img = image::open(qr_path)?.to_rgb8();
-    let mut binary_img = BinaryImage::prepare(&rgb_img);
+    let img = image::open(qr_path)?;
 
     // Detect and decode QR codes in the image
-    let mut symbols = detect(&mut binary_img);
+    let mut res = detect_hc_qr(&img);
 
-    if let Some(symbol) = symbols.first_mut() {
+    if let Some(symbol) = res.symbols().first_mut() {
         let (metadata, decoded_message) = symbol.decode()?;
         println!("Successfully decoded QR code from: {}", qr_path);
         println!("Decoded message: {}", decoded_message);

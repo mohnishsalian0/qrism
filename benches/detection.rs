@@ -7,8 +7,7 @@ use std::time::Instant;
 use walkdir::WalkDir;
 
 use qrism::benchmark::{get_parent, is_image_file, parse_expected_bounds_result, print_table};
-use qrism::binarize::BinaryImage;
-use qrism::detect;
+use qrism::detect_qr;
 use qrism::symbol::Symbol;
 
 fn benchmark(dataset_dir: &Path) {
@@ -28,14 +27,15 @@ fn benchmark(dataset_dir: &Path) {
         let exp_path = img_path.with_extension("txt");
         let exp_symbols = parse_expected_bounds_result(&exp_path);
 
-        let gray = image::open(img_path).unwrap().to_luma8();
+        let img = image::open(img_path).unwrap();
 
+        // Filters QRs which can be decoded correctly. Measures time to decode all QRs
         let start = Instant::now();
-        let mut img = BinaryImage::prepare(&gray);
-        let symbols = detect(&mut img);
-        let symbols: Vec<Symbol> = symbols
-            .into_iter()
-            .filter_map(|mut s| if s.decode().is_ok() { Some(s) } else { None })
+        let mut res = detect_qr(&img);
+        let symbols: Vec<&mut Symbol> = res
+            .symbols()
+            .iter_mut()
+            .filter_map(|s| if s.decode().is_ok() { Some(s) } else { None })
             .collect();
         let time = start.elapsed().as_millis();
 
@@ -124,7 +124,7 @@ fn benchmark(dataset_dir: &Path) {
     print_table(&results, &rows, &cols);
 }
 
-pub fn get_corners(symbols: &[Symbol]) -> Vec<Vec<f64>> {
+pub fn get_corners(symbols: &[&mut Symbol]) -> Vec<Vec<f64>> {
     let mut symbol_corners = Vec::with_capacity(100);
     for sym in symbols {
         let sz = sym.ver.width() as f64;

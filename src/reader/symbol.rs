@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::{
     binarize::{BinaryImage, Pixel},
     finder::FinderGroup,
@@ -274,15 +276,15 @@ fn estimate_mod_count(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {
 //------------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
-pub struct Symbol<'a> {
-    img: &'a BinaryImage,
+pub struct Symbol {
+    img: Arc<BinaryImage>,
     h: Homography,
     _anchors: [Point; 4],
     pub ver: Version,
 }
 
-impl<'a> Symbol<'a> {
-    pub fn new(img: &'a BinaryImage, sym_loc: SymbolLocation) -> Self {
+impl Symbol {
+    pub fn new(img: Arc<BinaryImage>, sym_loc: SymbolLocation) -> Self {
         let SymbolLocation { h, _anchors, ver } = sym_loc;
         Self { img, h, _anchors, ver }
     }
@@ -680,7 +682,7 @@ mod symbol_tests {
 // Read format, version & capacity info
 //------------------------------------------------------------------------------
 
-impl Symbol<'_> {
+impl Symbol {
     pub fn read_format_info(&self) -> QRResult<(ECLevel, MaskPattern)> {
         // Parse main format area
         if let Some(main) = self.get_number(&FORMAT_INFO_COORDS_QR_MAIN) {
@@ -750,13 +752,7 @@ impl Symbol<'_> {
 mod symbol_infos_tests {
 
     use crate::{
-        metadata::Color,
-        reader::{
-            binarize::BinaryImage,
-            finder::{group_finders, locate_finders},
-            locate_symbols,
-        },
-        ECLevel, MaskPattern, Module, QRBuilder, Version,
+        metadata::Color, reader::detect_qr, ECLevel, MaskPattern, Module, QRBuilder, Version,
     };
 
     #[test]
@@ -768,14 +764,11 @@ mod symbol_infos_tests {
 
         let qr =
             QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).mask(mask).build().unwrap();
-        let img = qr.to_image(3);
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
 
-        let mut img = BinaryImage::prepare(&img);
-        let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
-        let symbols = locate_symbols(&mut img, groups);
+        let mut res = detect_qr(&img);
 
-        let fmt_info = symbols[0].read_format_info().expect("Failed to read format info");
+        let fmt_info = res.symbols()[0].read_format_info().expect("Failed to read format info");
         assert_eq!(fmt_info, (ecl, mask));
     }
 
@@ -791,14 +784,11 @@ mod symbol_infos_tests {
         qr.set(1, 8, Module::Format(Color::White));
         qr.set(2, 8, Module::Format(Color::White));
         qr.set(4, 8, Module::Format(Color::Black));
-        let img = qr.to_image(3);
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
 
-        let mut img = BinaryImage::prepare(&img);
-        let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
-        let symbols = locate_symbols(&mut img, groups);
+        let mut res = detect_qr(&img);
 
-        let fmt_info = symbols[0].read_format_info().expect("Failed to read format info");
+        let fmt_info = res.symbols()[0].read_format_info().expect("Failed to read format info");
         assert_eq!(fmt_info, (ecl, mask));
     }
 
@@ -815,14 +805,11 @@ mod symbol_infos_tests {
         qr.set(2, 8, Module::Format(Color::White));
         qr.set(3, 8, Module::Format(Color::Black));
         qr.set(4, 8, Module::Format(Color::Black));
-        let img = qr.to_image(3);
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
 
-        let mut img = BinaryImage::prepare(&img);
-        let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
-        let symbols = locate_symbols(&mut img, groups);
+        let mut res = detect_qr(&img);
 
-        let fmt_info = symbols[0].read_format_info().expect("Failed to read format info");
+        let fmt_info = res.symbols()[0].read_format_info().expect("Failed to read format info");
         assert_eq!(fmt_info, (ecl, mask));
     }
 
@@ -844,14 +831,11 @@ mod symbol_infos_tests {
         qr.set(8, -3, Module::Format(Color::White));
         qr.set(8, -4, Module::Format(Color::Black));
         qr.set(8, -5, Module::Format(Color::Black));
-        let img = qr.to_image(3);
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
 
-        let mut img = BinaryImage::prepare(&img);
-        let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
-        let symbols = locate_symbols(&mut img, groups);
+        let mut res = detect_qr(&img);
 
-        let _ = symbols[0].read_format_info().expect("Failed to read format info");
+        let _ = res.symbols()[0].read_format_info().expect("Failed to read format info");
     }
 
     #[test]
@@ -861,14 +845,11 @@ mod symbol_infos_tests {
         let ecl = ECLevel::L;
 
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
-        let img = qr.to_image(3);
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
 
-        let mut img = BinaryImage::prepare(&img);
-        let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
-        let symbols = locate_symbols(&mut img, groups);
+        let mut res = detect_qr(&img);
 
-        let scanned_ver = symbols[0].read_version_info().expect("Failed to read format info");
+        let scanned_ver = res.symbols()[0].read_version_info().expect("Failed to read format info");
         assert_eq!(scanned_ver, ver);
     }
 
@@ -882,14 +863,11 @@ mod symbol_infos_tests {
         qr.set(5, -9, Module::Format(Color::Black));
         qr.set(5, -10, Module::Format(Color::Black));
         qr.set(5, -11, Module::Format(Color::Black));
-        let img = qr.to_image(3);
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
 
-        let mut img = BinaryImage::prepare(&img);
-        let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
-        let symbols = locate_symbols(&mut img, groups);
+        let mut res = detect_qr(&img);
 
-        let scanned_ver = symbols[0].read_version_info().expect("Failed to read format info");
+        let scanned_ver = res.symbols()[0].read_version_info().expect("Failed to read format info");
         assert_eq!(scanned_ver, ver);
     }
 
@@ -904,14 +882,11 @@ mod symbol_infos_tests {
         qr.set(5, -10, Module::Format(Color::Black));
         qr.set(5, -11, Module::Format(Color::Black));
         qr.set(4, -9, Module::Format(Color::White));
-        let img = qr.to_image(3);
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
 
-        let mut img = BinaryImage::prepare(&img);
-        let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
-        let symbols = locate_symbols(&mut img, groups);
+        let mut res = detect_qr(&img);
 
-        let scanned_ver = symbols[0].read_version_info().expect("Failed to read format info");
+        let scanned_ver = res.symbols()[0].read_version_info().expect("Failed to read format info");
         assert_eq!(scanned_ver, ver);
     }
 
@@ -931,21 +906,18 @@ mod symbol_infos_tests {
         qr.set(-10, 5, Module::Format(Color::Black));
         qr.set(-11, 5, Module::Format(Color::Black));
         qr.set(-9, 4, Module::Format(Color::White));
-        let img = qr.to_image(3);
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
 
-        let mut img = BinaryImage::prepare(&img);
-        let finders = locate_finders(&mut img);
-        let groups = group_finders(&finders);
-        let symbols = locate_symbols(&mut img, groups);
+        let mut res = detect_qr(&img);
 
-        let _ = symbols[0].read_version_info().expect("Failed to read format info");
+        let _ = res.symbols()[0].read_version_info().expect("Failed to read format info");
     }
 }
 
 // Extracts encoded data codewords and error correction codewords
 //------------------------------------------------------------------------------
 
-impl Symbol<'_> {
+impl Symbol {
     pub fn extract_payload(&self, mask: &MaskPattern) -> QRResult<BitArray> {
         let ver = self.ver;
         let mask_fn = mask.mask_functions();
