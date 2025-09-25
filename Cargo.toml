@@ -16,21 +16,34 @@ keywords = [
 categories = ["encoding", "multimedia::images", "computer-vision"]
 authors = ["Mohnish Salian"]
 readme = "README.md"
+documentation = "https://docs.rs/qrism"
+include = [
+    "src/**/*",
+    "examples/**/*",
+    "tests/**/*",
+    "benches/**/*",
+    "assets/**/*",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE.txt",
+    "CHANGELOG.md",
+    "rustfmt.toml",
+]
 
 [dependencies]
 encoding_rs = "0.8.35"
 image = "0.25.2"
 imageproc = "0.25.0"
 num-traits = "0.2.19"
-rand = "0.9.0"
-time = "0.3.41"
 
 [dev-dependencies]
 geo = "0.29.3"
 geo-booleanop = "0.3.2"
 proptest = "1.6.0"
+rand = "0.9.0"
 rayon = "1.10.0"
 test-case = "3.3.1"
+time = "0.3.41"
 walkdir = "2.5.0"
 
 [[bench]]

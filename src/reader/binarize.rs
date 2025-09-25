@@ -206,6 +206,7 @@ impl BinaryImage {
         let wsteps = wsteps as usize;
         let hsteps = hsteps as usize;
         let block_area_pow = 2 * block_pow;
+        #[allow(clippy::needless_range_loop)]
         for i in 0..len {
             for j in 0..chan_count {
                 // FIXME:

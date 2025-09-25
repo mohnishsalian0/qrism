@@ -7,8 +7,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let qr = QRBuilder::new(b"Hello, World!").build()?;
 
     // Convert to image and save
-    let img = qr.to_image(4); // 4x scale factor
-                              // img.save("./assets/simple_qr.png")?; // Save image
+    let _img = qr.to_image(4); // 4x scale factor
+
+    // _img.save("./assets/simple_qr.png")?; // Save image
 
     Ok(())
 }
