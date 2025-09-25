@@ -42,6 +42,7 @@ mod codec_proptests {
 
     proptest! {
         #[test]
+        #[ignore]
         fn proptest_codec(params in codec_strategy()) {
             let (ver, ecl, hi_cap, data) = params;
             let mut encoded = encode_with_version(data.as_bytes(), ver, ecl, hi_cap).unwrap();

@@ -530,7 +530,6 @@ fn jiggle_homography(img: &BinaryImage, mut h: Homography, ver: Version) -> Opti
         adjustments = adjustments.map(|x| x * 0.5);
     }
     let max_score = max_fitness_score(ver);
-    dbg!(best, max_score);
 
     // 60% tolerance
     if best >= max_score * 4 / 10 {
