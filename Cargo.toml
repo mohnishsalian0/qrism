@@ -19,15 +19,10 @@ readme = "README.md"
 documentation = "https://docs.rs/qrism"
 include = [
 	"src/**/*",
-	"examples/**/*",
-	"tests/**/*",
-	"benches/**/*",
-	"assets/**/*",
 	"Cargo.toml",
 	"README.md",
 	"LICENSE.txt",
 	"CHANGELOG.md",
-	"rustfmt.toml",
 ]
 
 [dependencies]
