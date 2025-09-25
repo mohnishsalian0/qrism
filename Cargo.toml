@@ -23,7 +23,6 @@ image = "0.25.2"
 imageproc = "0.25.0"
 num-traits = "0.2.19"
 rand = "0.9.0"
-rqrr = "0.9.3"
 time = "0.3.41"
 
 [dev-dependencies]

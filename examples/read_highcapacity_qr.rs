@@ -3,11 +3,11 @@ use std::error::Error;
 use qrism::reader::detect_hc_qr;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // Read an existing QR code from the assets directory
+    // Read an existing high capacity QR code from the assets directory
     let qr_path = "assets/example4.png";
     let img = image::open(qr_path)?;
 
-    // Detect and decode QR codes in the image
+    // Detect and decode high capacity QR codes in the image
     let mut res = detect_hc_qr(&img);
 
     if let Some(symbol) = res.symbols().first_mut() {

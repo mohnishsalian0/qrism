@@ -8,9 +8,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Convert to image and save
     let img = qr.to_image(4); // 4x scale factor
-    img.save("./assets/simple_qr.png")?;
+                              // img.save("./assets/simple_qr.png")?; // Save image
 
-    println!("Simple QR code saved to: assets/simple_qr.png");
     Ok(())
 }
-

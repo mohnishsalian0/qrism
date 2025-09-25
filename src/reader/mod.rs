@@ -11,7 +11,7 @@ use binarize::BinaryImage;
 use image::DynamicImage;
 use symbol::{Symbol, SymbolLocation};
 
-// Symbols
+// Decode result
 //------------------------------------------------------------------------------
 
 pub struct DecodeResult {
@@ -150,35 +150,35 @@ mod reader_tests {
         #[allow(unused_imports)]
         use std::sync::Arc;
 
-        let img_path = std::path::Path::new("assets/example6.png");
+        let img_path = std::path::Path::new("assets/example1.png");
 
-        let img = image::open(img_path).unwrap().to_rgb8();
+        let mut img = image::open(img_path).unwrap().to_rgb8();
 
         let prep_path = std::path::Path::new("assets/prep.png");
         let mut bin_img = BinaryImage::prepare(&img);
-        bin_img.save(prep_path).unwrap();
-        let mut out_img = image::open(prep_path).unwrap().to_rgb8();
+        // bin_img.save(prep_path).unwrap();
+        // let mut img = image::open(prep_path).unwrap().to_rgb8();
 
         let finders = locate_finders(&mut bin_img);
         dbg!(finders.len());
-        finders.iter().for_each(|f| f.highlight(&mut out_img, image::Rgb([255, 0, 0])));
+        finders.iter().for_each(|f| f.highlight(&mut img, image::Rgb([255, 0, 0])));
 
         let groups = group_finders(&finders);
         dbg!(groups.len());
-        // groups.iter().for_each(|g| g.highlight(&mut out_img));
+        // groups.iter().for_each(|g| g.highlight(&mut img));
 
         let sym_locs = locate_symbols(&mut bin_img, groups);
+        dbg!(sym_locs.len());
         let bin_img = Arc::new(bin_img);
         let mut symbols: Vec<Symbol> =
             sym_locs.into_iter().map(|sl| Symbol::new(bin_img.clone(), sl)).collect::<_>();
-        dbg!(symbols.len());
-        symbols.iter().for_each(|s| s.highlight(&mut out_img));
+        symbols.iter().for_each(|s| s.highlight(&mut img));
 
         symbols.iter_mut().enumerate().for_each(|(i, s)| {
             let _ = dbg!(s.decode());
         });
 
         let out_path = std::path::Path::new("assets/detect.png");
-        out_img.save(out_path).unwrap();
+        // img.save(out_path).unwrap();
     }
 }

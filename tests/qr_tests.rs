@@ -187,4 +187,20 @@ mod qr_tests {
 
         assert_eq!(data, decoded);
     }
+
+    #[test]
+    fn test_qr_5() {
+        let data = "00000000000000000000000000000000000000000000000000014380226481707025880629545205418101012114371312287100366226947258937700641166832759946553142503222415011240149015588632380645684100065990477178263323372273076487509115093667693379407964480541023078559434152288914820868617346689341593548964613611040646884666752073660444026127183819322580983113509673040354082060039410640795366314922014311779787944589901366974029327724862762371191220057908729".to_string();
+        let ecl = ECLevel::Q;
+        let hi_cap = true;
+
+        let qr =
+            QRBuilder::new(data.as_bytes()).ec_level(ecl).high_capacity(hi_cap).build().unwrap();
+
+        let img = image::DynamicImage::ImageRgb8(qr.to_image(3));
+        let mut res = if hi_cap { detect_hc_qr(&img) } else { detect_qr(&img) };
+        let (_meta, decoded) = res.symbols()[0].decode().expect("Failed to read QR");
+
+        assert_eq!(data, decoded);
+    }
 }

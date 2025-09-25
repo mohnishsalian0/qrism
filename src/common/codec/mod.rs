@@ -9,44 +9,47 @@ pub use types::*;
 // Codec proptesting
 //------------------------------------------------------------------------------
 
-// TODO: Update the testcase to accept String data as input
-// #[cfg(test)]
-// mod codec_proptests {
-//
-//     use proptest::prelude::*;
-//
-//     use super::{decode, encode_with_version};
-//     use crate::metadata::{ECLevel,  Version};
-//
-//     pub fn version_strategy() -> impl Strategy<Value = Version> {
-//         (1usize..=40).prop_map(Version::Normal)
-//     }
-//
-//     pub fn ec_level_strategy() -> BoxedStrategy<ECLevel> {
-//         prop_oneof![Just(ECLevel::L), Just(ECLevel::M), Just(ECLevel::Q), Just(ECLevel::H)].boxed()
-//     }
-//     pub fn capacity_strategy() -> BoxedStrategy<bool> {
-//         prop_oneof![Just(false), Just(true)].boxed()
-//     }
-//     pub fn codec_strategy() -> impl Strategy<Value = (Version, ECLevel, bool, Vec<u8>)> {
-//         (version_strategy(), ec_level_strategy(), capacity_strategy()).prop_flat_map(
-//             |(ver, ecl, hi_cap)| {
-//                 prop::collection::vec(any::<u8>(), 1..(ver.data_capacity(ecl, hi_cap) - 3))
-//                     .prop_map(move |data| (ver, ecl, hi_cap, data))
-//             },
-//         )
-//     }
-//
-//     proptest! {
-//         #[test]
-//         fn proptest_codec(params in codec_strategy()) {
-//             let (ver, ecl, hi_cap, data) = params;
-//             let mut encoded = encode_with_version(&data, ver, ecl, hi_cap).unwrap();
-//             let decoded = decode(&mut encoded, ver, ecl, hi_cap).unwrap();
-//             prop_assert_eq!(data, decoded);
-//         }
-//     }
-// }
+#[cfg(test)]
+mod codec_proptests {
+
+    use proptest::prelude::*;
+
+    use super::{decode, encode_with_version};
+    use crate::metadata::{ECLevel, Version};
+
+    pub fn version_strategy() -> impl Strategy<Value = Version> {
+        (1usize..=40).prop_map(Version::Normal)
+    }
+
+    pub fn ec_level_strategy() -> BoxedStrategy<ECLevel> {
+        prop_oneof![Just(ECLevel::L), Just(ECLevel::M), Just(ECLevel::Q), Just(ECLevel::H)].boxed()
+    }
+    pub fn capacity_strategy() -> BoxedStrategy<bool> {
+        prop_oneof![Just(false), Just(true)].boxed()
+    }
+    pub fn codec_strategy() -> impl Strategy<Value = (Version, ECLevel, bool, String)> {
+        (version_strategy(), ec_level_strategy(), capacity_strategy()).prop_flat_map(
+            |(ver, ecl, hi_cap)| {
+                "[a-zA-Z0-9 .,!?-]+".prop_map(move |data| {
+                    let max_len = ver.data_capacity(ecl, hi_cap).saturating_sub(3);
+                    let truncated =
+                        if data.len() > max_len { data[..max_len].to_string() } else { data };
+                    (ver, ecl, hi_cap, truncated)
+                })
+            },
+        )
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_codec(params in codec_strategy()) {
+            let (ver, ecl, hi_cap, data) = params;
+            let mut encoded = encode_with_version(data.as_bytes(), ver, ecl, hi_cap).unwrap();
+            let decoded = decode(&mut encoded, ver, ecl, hi_cap).unwrap();
+            prop_assert_eq!(data, decoded);
+        }
+    }
+}
 
 #[cfg(test)]
 mod codec_tests {
