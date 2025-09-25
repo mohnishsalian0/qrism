@@ -173,8 +173,8 @@ impl Mode {
 
     pub fn encoded_len(&self, len: usize) -> usize {
         match *self {
-            Self::Numeric => (len * 10 + 2) / 3,
-            Self::Alphanumeric => (len * 11 + 1) / 2,
+            Self::Numeric => (len * 10).div_ceil(3),
+            Self::Alphanumeric => (len * 11).div_ceil(2),
             Self::Byte => len * 8,
             Self::Kanji => (len / 2) * 13,
             Self::Eci => len,
