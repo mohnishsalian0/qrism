@@ -57,6 +57,7 @@ pub fn benchmark_detection(dataset_dir: &Path) {
         *score.entry("true_pos".to_string()).or_default() += true_pos as f64;
         *score.entry("false_pos".to_string()).or_default() += false_pos as f64;
         *score.entry("false_neg".to_string()).or_default() += false_neg as f64;
+        *score.entry("total_qrs".to_string()).or_default() += exp_symbols.len() as f64;
 
         runtimes.entry(parent).or_default().push(time);
     });
@@ -70,6 +71,7 @@ pub fn benchmark_detection(dataset_dir: &Path) {
         let true_pos = *v.get("true_pos").unwrap();
         let false_pos = *v.get("false_pos").unwrap();
         let false_neg = *v.get("false_neg").unwrap();
+        let total_images = *v.get("total_qrs").unwrap();
 
         let precision_den = true_pos + false_pos;
         let precision = if precision_den > 0.0 { true_pos / precision_den } else { 0.0 };
@@ -97,6 +99,7 @@ pub fn benchmark_detection(dataset_dir: &Path) {
         *total.entry("true_pos".to_string()).or_default() += true_pos;
         *total.entry("false_pos".to_string()).or_default() += false_pos;
         *total.entry("false_neg".to_string()).or_default() += false_neg;
+        *total.entry("total_qrs".to_string()).or_default() += total_images;
         *total.entry("precision".to_string()).or_default() += precision;
         *total.entry("recall".to_string()).or_default() += recall;
         *total.entry("fscore".to_string()).or_default() += fscore;
@@ -118,6 +121,7 @@ pub fn benchmark_detection(dataset_dir: &Path) {
         "true_pos",
         "false_pos",
         "false_neg",
+        "total_qrs",
         "precision",
         "recall",
         "fscore",

@@ -556,23 +556,25 @@ fn symbol_fitness(img: &BinaryImage, h: &Homography, ver: Version) -> i32 {
     score += finder_fitness(img, h, 0, grid_size - 7);
 
     // Score alignment patterns
-    if *ver == 1 {
-        return score;
-    }
-    let aps = ver.alignment_pattern();
-    let len = aps.len();
-
-    for i in aps[1..len - 1].iter() {
-        score += alignment_fitness(img, h, 6, *i);
-        score += alignment_fitness(img, h, *i, 6);
-    }
-    for i in aps[1..].iter() {
-        for j in aps[1..].iter() {
-            score += alignment_fitness(img, h, *i, *j);
-        }
+    for (x, y) in alignment_centres(ver) {
+        score += alignment_fitness(img, h, x, y);
     }
 
     score
+}
+
+// Centres of every alignment pattern in the symbol, in module coordinates. The alignment
+// coordinates form a grid, minus the three corners occupied by the finders. Version 1 has
+// no alignment coordinates, so this yields nothing.
+fn alignment_centres(ver: Version) -> impl Iterator<Item = (i32, i32)> {
+    let aps = ver.alignment_pattern();
+    let len = aps.len();
+    let last = len.saturating_sub(1);
+
+    (0..len)
+        .flat_map(move |i| (0..len).map(move |j| (i, j)))
+        .filter(move |ij| ![(0, 0), (0, last), (last, 0)].contains(ij))
+        .map(move |(i, j)| (aps[i], aps[j]))
 }
 
 fn max_fitness_score(ver: Version) -> i32 {
@@ -586,8 +588,7 @@ fn max_fitness_score(ver: Version) -> i32 {
     total_mods += (grid_size - 14) * 2;
 
     // Alignment modules
-    let align_count = ver.alignment_pattern().len();
-    total_mods += 25 * align_count as i32;
+    total_mods += 25 * alignment_centres(ver).count() as i32;
 
     total_mods * 9 // Each module has a maximum score of 9
 }
@@ -608,7 +609,7 @@ fn ring_fitness(img: &BinaryImage, h: &Homography, cx: i32, cy: i32, r: i32) -> 
     for i in 0..r * 2 {
         score += cell_fitness(img, h, cx - r + i, cy - r);
         score += cell_fitness(img, h, cx - r, cy + r - i);
-        score += cell_fitness(img, h, cx + r, cy - r + 1);
+        score += cell_fitness(img, h, cx + r, cy - r + i);
         score += cell_fitness(img, h, cx + r - i, cy + r);
     }
 
@@ -637,6 +638,82 @@ fn cell_fitness(img: &BinaryImage, hm: &Homography, x: i32, y: i32) -> i32 {
         }
     }
     score
+}
+
+#[cfg(test)]
+mod fitness_tests {
+    use super::{alignment_centres, max_fitness_score};
+    use crate::metadata::Version;
+    use std::collections::HashSet;
+
+    // Alignment pattern counts per version from ISO/IEC 18004 Annex E: the alignment
+    // coordinates form an n x n grid, minus the three cells taken by the finders.
+    fn spec_alignment_count(v: usize) -> usize {
+        let n = match v {
+            1 => return 0,
+            2..=6 => 2,
+            7..=13 => 3,
+            14..=20 => 4,
+            21..=27 => 5,
+            28..=34 => 6,
+            35..=40 => 7,
+            _ => unreachable!(),
+        };
+        n * n - 3
+    }
+
+    #[test]
+    fn alignment_centres_matches_spec_count() {
+        for v in 1..=40 {
+            assert_eq!(
+                alignment_centres(Version::Normal(v)).count(),
+                spec_alignment_count(v),
+                "version {v}: wrong number of alignment patterns"
+            );
+        }
+    }
+
+    #[test]
+    fn alignment_centres_skips_finder_corners_and_has_no_duplicates() {
+        for v in 2..=40 {
+            let ver = Version::Normal(v);
+            let aps = ver.alignment_pattern();
+            let (first, last) = (aps[0], aps[aps.len() - 1]);
+            let centres: Vec<_> = alignment_centres(ver).collect();
+            let uniq: HashSet<_> = centres.iter().copied().collect();
+
+            assert_eq!(uniq.len(), centres.len(), "version {v}: duplicate alignment centres");
+            for corner in [(first, first), (first, last), (last, first)] {
+                assert!(
+                    !uniq.contains(&corner),
+                    "version {v}: {corner:?} collides with a finder but was emitted"
+                );
+            }
+        }
+    }
+
+    // Version 1 has no alignment patterns; the iterator must stay empty rather than panic.
+    #[test]
+    fn version_1_has_no_alignment_centres() {
+        assert_eq!(alignment_centres(Version::Normal(1)).count(), 0);
+        assert_eq!(max_fitness_score(Version::Normal(1)), (49 * 3 + (21 - 14) * 2) * 9);
+    }
+
+    #[test]
+    fn max_fitness_score_accounts_for_every_scored_module() {
+        for v in 1..=40 {
+            let ver = Version::Normal(v);
+            let grid_size = ver.width() as i32;
+            let expected_mods = 49 * 3                                  // 3 finders
+                + (grid_size - 14) * 2                                  // 2 timing patterns
+                + 25 * spec_alignment_count(v) as i32; // alignment patterns
+            assert_eq!(
+                max_fitness_score(ver),
+                expected_mods * 9,
+                "version {v}: max_fitness_score disagrees with what symbol_fitness scores"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
