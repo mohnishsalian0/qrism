@@ -1,7 +1,7 @@
 use crate::metadata::Color;
 
 use super::{
-    binarize::{BinaryImage, Pixel},
+    binarize::BinaryImage,
     utils::{geometry::Point, verify_finder_pattern, FINDER_PATTERN_TOLERANCE},
 };
 
@@ -109,7 +109,7 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Point> {
 
     for y in 0..h {
         for x in 0..w {
-            let color = img.get(x, y).unwrap().get_color();
+            let color = img.get(x, y).unwrap();
             let datum = match scanner.advance(color) {
                 Some(d) => d,
                 None => continue,
@@ -144,7 +144,7 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Po
     let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
 
     // If pixel has been visited, check if regions is already marked as finder
-    if matches!(img.get(s, y), Some(Pixel::Visited(..))) {
+    if img.get_region_id(s, y).is_some() {
         let stone = img.get_region((s, y));
 
         // Exit if stone is already made a candidate from previous iterations
@@ -165,16 +165,16 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Po
     let ring = img.get_region((r, y)).clone();
 
     // Check if left, top and bottom points lie within the ring
-    let lid = img.get(l, y)?.get_id()?;
-    let tid = img.get(sx, t)?.get_id()?;
-    let bid = img.get(sx, b)?.get_id()?;
+    let lid = img.get_region_id(l, y)? as usize;
+    let tid = img.get_region_id(sx, t)? as usize;
+    let bid = img.get_region_id(sx, b)? as usize;
     if lid != ring.id || tid != ring.id || bid != ring.id {
         return None;
     }
 
     // False if ring & stone are connected, or if ring to stone area is not roughly 37,5%
     let ratio = stone.area * 100 / ring.area;
-    if img.get(r, y) == img.get(s, y) || ratio <= 10 || 70 <= ratio {
+    if stone.id == ring.id || ratio <= 10 || 70 <= ratio {
         return None;
     }
 

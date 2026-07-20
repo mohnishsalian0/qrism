@@ -324,7 +324,6 @@ impl From<u8> for ECLevel {
     }
 }
 
-
 // Color
 //------------------------------------------------------------------------------
 
@@ -344,6 +343,24 @@ impl TryFrom<u8> for Color {
     type Error = ();
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value & 0b111 {
+            0b000 => Ok(Color::Black),
+            0b100 => Ok(Color::Red),
+            0b010 => Ok(Color::Green),
+            0b001 => Ok(Color::Blue),
+            0b110 => Ok(Color::Yellow),
+            0b101 => Ok(Color::Magenta),
+            0b011 => Ok(Color::Cyan),
+            0b111 => Ok(Color::White),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<u64> for Color {
+    type Error = ();
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
         match value & 0b111 {
             0b000 => Ok(Color::Black),
             0b100 => Ok(Color::Red),

@@ -1,8 +1,9 @@
 use std::collections::VecDeque;
 
-use image::{GenericImageView, Luma, Pixel as ImgPixel, Rgb, RgbImage};
+use image::{GenericImageView, Pixel as ImgPixel, RgbImage};
 
 use crate::metadata::Color;
+use crate::utils::BitMatrix;
 
 use super::utils::accumulate::AreaAndCentreLocator;
 use super::utils::{
@@ -15,39 +16,6 @@ use std::path::Path;
 
 #[cfg(test)]
 use image::ImageResult;
-
-// Pixel
-//------------------------------------------------------------------------------
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Pixel {
-    Visited(usize, Color), // Contains id of associated region
-    Unvisited(Color),      // Default tag
-}
-
-impl From<Pixel> for Rgb<u8> {
-    fn from(p: Pixel) -> Self {
-        match p {
-            Pixel::Visited(_, c) | Pixel::Unvisited(c) => c.into(),
-        }
-    }
-}
-
-impl Pixel {
-    pub fn get_id(&self) -> Option<usize> {
-        match self {
-            Pixel::Visited(id, _) => Some(*id),
-            _ => None,
-        }
-    }
-
-    pub fn get_color(&self) -> Color {
-        match self {
-            Pixel::Visited(_, c) => *c,
-            Pixel::Unvisited(c) => *c,
-        }
-    }
-}
 
 // Region
 //------------------------------------------------------------------------------
@@ -84,35 +52,17 @@ impl Stat {
     }
 }
 
-// Binarize trait for pixel types in image crate
-//------------------------------------------------------------------------------
-
-pub trait Binarize {
-    fn binarize(value: u8) -> Color;
-}
-
-impl Binarize for Rgb<u8> {
-    fn binarize(value: u8) -> Color {
-        Color::try_from(value).unwrap()
-    }
-}
-
-impl Binarize for Luma<u8> {
-    fn binarize(value: u8) -> Color {
-        let value = value != 0;
-        Color::from(value)
-    }
-}
-
 // Image type for reader
 //------------------------------------------------------------------------------
 
 #[derive(Debug)]
 pub struct BinaryImage {
-    pub buffer: Vec<Pixel>,
+    pub buffer: BitMatrix,
+    px_reg: Vec<u16>,     // Region each pixel belongs to
     regions: Vec<Region>, // Areas of visited regions. Index is id
     pub w: u32,
     pub h: u32,
+    color_size: u32, // Bit len of color. B&W=1, multicolor=4
 }
 
 // Binarizing functions
@@ -129,7 +79,7 @@ impl BinaryImage {
     pub fn prepare<I>(img: &I) -> Self
     where
         I: GenericImageView,
-        I::Pixel: ImgPixel<Subpixel = u8> + Binarize,
+        I::Pixel: ImgPixel<Subpixel = u8>,
     {
         let (w, h) = img.dimensions();
         let chan_count = I::Pixel::CHANNEL_COUNT as usize;
@@ -272,48 +222,47 @@ impl BinaryImage {
         }
 
         // Initially mark all pixels as unvisited; will be used for flood fill later.
-        let mut buffer = vec![Pixel::Unvisited(Color::White); (w * h) as usize];
+        let color_size = chan_count.next_power_of_two() as u32;
+        let mut buffer = BitMatrix::new(w, h);
         for y in 0..h {
-            let row_off = y * w;
             let thresh_row_off = (y as usize >> block_pow) * wsteps;
             for x in 0..w {
                 let p = img.get_pixel(x, y);
 
-                let idx = (row_off + x) as usize;
                 let xsteps = x as usize >> block_pow;
                 let thresh_idx = thresh_row_off + xsteps;
 
-                let mut color_byte = 0;
-                for (i, &val) in p.channels().iter().rev().enumerate() {
-                    if val > threshold[thresh_idx][i] {
-                        color_byte |= 1 << i;
-                    }
+                let mut color_byte = 0u64;
+                for (i, &val) in p.channels().iter().enumerate() {
+                    color_byte = (color_byte << 1) | u64::from(val > threshold[thresh_idx][i]);
                 }
 
-                let color = <I::Pixel>::binarize(color_byte);
-                if color != Color::White {
-                    buffer[idx] = Pixel::Unvisited(color);
+                if color_byte != 0 {
+                    buffer.put_bits(x, y, color_byte, color_size);
                 }
             }
         }
 
+        let px_reg = vec![u16::MAX; (w * h) as usize];
         let regions = Vec::with_capacity(100);
-        Self { buffer, regions, w, h }
+        Self { buffer, px_reg, regions, w, h, color_size }
     }
 
     /// Performs absolute/naive binarization
     pub fn global_thresholding(img: RgbImage) -> Self {
         let (w, h) = img.dimensions();
-        let mut buffer = Vec::with_capacity((w * h) as usize);
+        let mut buffer = BitMatrix::new(w, h);
+        let px_reg = vec![u16::MAX; (w * h) as usize];
+        let color_size = 4;
 
-        for p in img.pixels() {
+        for (x, y, p) in img.enumerate_pixels() {
             let r = (p[0] > 127) as u8;
             let g = (p[1] > 127) as u8;
             let b = (p[2] > 127) as u8;
-            let np = Color::try_from(r << 2 | g << 1 | b).unwrap();
-            buffer.push(Pixel::Unvisited(np));
+            let color_byte = (r << 2 | g << 1 | b) as u64;
+            buffer.put_bits(x, y, color_byte, color_size);
         }
-        Self { buffer, regions: Vec::with_capacity(100), w, h }
+        Self { buffer, px_reg, regions: Vec::with_capacity(100), w, h, color_size }
     }
 }
 
@@ -399,13 +348,12 @@ impl BinaryImage {
     pub fn otsu<I>(img: &I) -> Self
     where
         I: GenericImageView,
-        I::Pixel: ImgPixel<Subpixel = u8> + Binarize,
+        I::Pixel: ImgPixel<Subpixel = u8>,
     {
         let (w, h) = img.dimensions();
         let chan_count = I::Pixel::CHANNEL_COUNT as usize;
         let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
         let block_size = 1 << block_pow;
-        let block_area = block_size * block_size;
         let mask = (1 << block_pow) - 1;
 
         let wsteps = (w + mask) >> block_pow;
@@ -474,7 +422,6 @@ impl BinaryImage {
         let wsteps = wsteps as usize;
         let hsteps = hsteps as usize;
         let half_grid = BLOCK_GRID_SIZE / 2;
-        let grid_area = (BLOCK_GRID_SIZE * BLOCK_GRID_SIZE) as u32;
         let (maxx, maxy) = (wsteps - half_grid, hsteps - half_grid);
         let mut threshold = vec![[0u8; 4]; wsteps * hsteps];
 
@@ -516,51 +463,44 @@ impl BinaryImage {
         }
 
         // Initially mark all pixels as unvisited; will be used for flood fill later.
-        let mut buffer = vec![Pixel::Unvisited(Color::White); (w * h) as usize];
+        let color_size = chan_count.next_power_of_two() as u32;
+        let mut buffer = BitMatrix::new(w, h);
         for y in 0..h {
-            let row_off = y * w;
             let thresh_row_off = (y as usize >> block_pow) * wsteps;
             for x in 0..w {
                 let p = img.get_pixel(x, y);
 
-                let idx = (row_off + x) as usize;
                 let xsteps = x as usize >> block_pow;
                 let thresh_idx = thresh_row_off + xsteps;
 
-                let mut color_byte = 0;
-                for (i, &val) in p.channels().iter().rev().enumerate() {
-                    if val > threshold[thresh_idx][i] {
-                        color_byte |= 1 << i;
-                    }
+                let mut color_byte = 0u64;
+                for (i, &val) in p.channels().iter().enumerate() {
+                    color_byte = (color_byte << 1) | u64::from(val > threshold[thresh_idx][i]);
                 }
 
-                let color = <I::Pixel>::binarize(color_byte);
-                if color != Color::White {
-                    buffer[idx] = Pixel::Unvisited(color);
+                if color_byte != 0 {
+                    buffer.put_bits(x, y, color_byte, color_size);
                 }
             }
         }
 
+        let px_reg = vec![u16::MAX; (w * h) as usize];
         let regions = Vec::with_capacity(100);
-        Self { buffer, regions, w, h }
+        Self { buffer, px_reg, regions, w, h, color_size }
     }
 }
 
 // Util functions
 impl BinaryImage {
-    pub fn get(&self, x: u32, y: u32) -> Option<Pixel> {
-        let w = self.w;
-        let h = self.h;
-
-        if x >= w || y >= h {
+    pub fn get(&self, x: u32, y: u32) -> Option<Color> {
+        if x >= self.w || y >= self.h {
             return None;
         }
-
-        let idx = (y * w + x) as usize;
-        Some(self.buffer[idx])
+        let bits = self.buffer.get_bits(x, y, self.color_size);
+        Some(if self.color_size == 1 { Color::from(bits != 0) } else { bits.try_into().ok()? })
     }
 
-    fn coord_to_index(&self, x: i32, y: i32) -> Option<usize> {
+    fn wrap_coords(&self, x: i32, y: i32) -> Option<(u32, u32)> {
         let w = self.w as i32;
         let h = self.h as i32;
 
@@ -571,53 +511,52 @@ impl BinaryImage {
         let x = if x < 0 { x + w } else { x };
         let y = if y < 0 { y + h } else { y };
 
-        Some((y * w + x) as _)
+        Some((x as u32, y as u32))
     }
 
-    pub fn get_at_point(&self, pt: &Point) -> Option<&Pixel> {
-        let idx = self.coord_to_index(pt.x, pt.y)?;
-        Some(&self.buffer[idx])
+    pub fn get_at_point(&self, pt: &Point) -> Option<Color> {
+        let (x, y) = self.wrap_coords(pt.x, pt.y)?;
+        let bits = self.buffer.get_bits(x, y, self.color_size);
+        Some(if self.color_size == 1 { Color::from(bits != 0) } else { bits.try_into().ok()? })
     }
 
-    pub fn get_mut(&mut self, x: u32, y: u32) -> Option<&mut Pixel> {
-        let w = self.w;
-        let h = self.h;
-
-        if x >= w || y >= h {
+    /// Flood-fill region label at (x, y), or None if unlabeled or out of bounds.
+    pub fn get_region_id(&self, x: u32, y: u32) -> Option<u16> {
+        if x >= self.w || y >= self.h {
             return None;
         }
 
-        let idx = (y * w + x) as usize;
-        Some(&mut self.buffer[idx])
+        let id = self.px_reg[(y * self.w + x) as usize];
+        (id != u16::MAX).then_some(id)
     }
 
-    pub fn get_mut_at_point(&mut self, pt: &Point) -> Option<&mut Pixel> {
-        let idx = self.coord_to_index(pt.x, pt.y)?;
-        Some(&mut self.buffer[idx])
-    }
-
-    pub fn set(&mut self, x: u32, y: u32, px: Pixel) {
-        if let Some(pt) = self.get_mut(x, y) {
-            *pt = px;
-        }
-    }
-
-    pub fn set_at_point(&mut self, pt: &Point, px: Pixel) {
-        if let Some(pt) = self.get_mut_at_point(pt) {
-            *pt = px;
+    pub fn set_region_id(&mut self, x: u32, y: u32, reg_id: u16) {
+        if x < self.w && y < self.h {
+            self.px_reg[(y * self.w + x) as usize] = reg_id;
         }
     }
 
     #[cfg(test)]
     pub fn save(&self, path: &Path) -> ImageResult<()> {
-        let w = self.w;
-        let mut img = RgbImage::new(w, self.h);
-        for (i, p) in self.buffer.iter().enumerate() {
-            let i = i as u32;
-            let (x, y) = (i % w, i / w);
-            img.put_pixel(x, y, (*p).into());
+        let mut img = RgbImage::new(self.w, self.h);
+        for y in 0..self.h {
+            for x in 0..self.w {
+                let bits = self.buffer.get_bits(x, y, self.color_size);
+                let rgb = if self.color_size == 1 {
+                    // B&W: 1 = light/white, 0 = dark/black
+                    if bits == 0 {
+                        image::Rgb([0, 0, 0])
+                    } else {
+                        image::Rgb([255, 255, 255])
+                    }
+                } else {
+                    // Multicolor: low 3 bits are R<<2 | G<<1 | B, i.e. a Color
+                    Color::try_from(bits as u8).unwrap_or(Color::White).into()
+                };
+                img.put_pixel(x, y, rgb);
+            }
         }
-        img.save(path).unwrap();
+        img.save(path)?;
         Ok(())
     }
 }
@@ -625,15 +564,16 @@ impl BinaryImage {
 // Flood fill related functions
 impl BinaryImage {
     pub(crate) fn get_region(&mut self, src: (u32, u32)) -> &mut Region {
-        let px = self.get(src.0, src.1).unwrap();
+        let color = self.get(src.0, src.1).unwrap();
+        let reg = self.get_region_id(src.0, src.1);
 
-        match px {
-            Pixel::Unvisited(color) => {
+        match reg {
+            None => {
                 let reg_id = self.regions.len();
+                debug_assert!(reg_id < u16::MAX as usize, "Number of regions exceed 65,535 (u16)");
 
                 let acl = AreaAndCentreLocator::new();
-                let to = Pixel::Visited(reg_id, color);
-                let acl = self.fill_and_accumulate(src, to, acl);
+                let acl = self.fill_and_accumulate(src, reg_id as u16, acl);
                 let new_reg = Region {
                     id: reg_id,
                     src,
@@ -647,8 +587,8 @@ impl BinaryImage {
 
                 self.regions.get_mut(reg_id).expect("Region not found after saving")
             }
-            Pixel::Visited(id, _) => {
-                self.regions.get_mut(id).expect("No region found for visited pixel")
+            Some(id) => {
+                self.regions.get_mut(id as usize).expect("No region found for visited pixel")
             }
         }
     }
@@ -657,12 +597,10 @@ impl BinaryImage {
     pub fn fill_and_accumulate<A: Accumulator>(
         &mut self,
         src: (u32, u32),
-        target: Pixel,
+        target: u16,
         mut acc: A,
     ) -> A {
-        let from = self.get(src.0, src.1).unwrap();
-
-        debug_assert!(from != target, "Cannot fill same color: From {from:?}, To {target:?}");
+        let clr = self.get(src.0, src.1).unwrap();
 
         // Flood fill algorithm
         let w = self.w;
@@ -674,18 +612,24 @@ impl BinaryImage {
             let (x, y) = pt;
             let mut left = x;
             let mut right = x;
-            self.set(x, y, target);
+
+            // Already claimed by this fill (via another seed) — skip; the run is done.
+            if self.get_region_id(x, y).is_some() {
+                continue;
+            }
+
+            self.set_region_id(x, y, target);
 
             // Travel left till boundary
-            while left > 0 && self.get(left - 1, y).unwrap() == from {
+            while left > 0 && self.get(left - 1, y).unwrap() == clr {
                 left -= 1;
-                self.set(left, y, target);
+                self.set_region_id(left, y, target);
             }
 
             // Travel right till boundary
-            while right < w - 1 && self.get(right + 1, y).unwrap() == from {
+            while right < w - 1 && self.get(right + 1, y).unwrap() == clr {
                 right += 1;
-                self.set(right, y, target);
+                self.set_region_id(right, y, target);
             }
 
             acc.accumulate(Row { left, right, y });
@@ -694,8 +638,8 @@ impl BinaryImage {
                 if ny != y && ny < h {
                     let mut seg_len = 0;
                     for x in left..=right {
-                        let px = self.get(x, ny).unwrap();
-                        if px == from {
+                        let nclr = self.get(x, ny).unwrap();
+                        if nclr == clr {
                             seg_len += 1;
                         } else if seg_len > 0 {
                             queue.push_back((x - 1, ny));

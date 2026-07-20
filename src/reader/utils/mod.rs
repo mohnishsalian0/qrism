@@ -16,7 +16,6 @@ pub fn verify_finder_pattern(
     pattern: &[f64],
     max_run: u32,
 ) -> Option<(u32, u32)> {
-    let px = img.get_at_point(seed).unwrap();
     let pat_len = pattern.len();
 
     let mut run_len = vec![0; pat_len];
@@ -25,14 +24,14 @@ pub fn verify_finder_pattern(
     // Count upward
     let mut pos = *seed;
     let mut flips = pat_len / 2;
-    let mut initial = px.get_color();
+    let mut initial = img.get_at_point(seed).unwrap();
     while run_len[flips] <= max_run {
         pos.y -= 1;
         if pos.y < 0 {
             break;
         }
 
-        let color = img.get_at_point(&pos).unwrap().get_color();
+        let color = img.get_at_point(&pos).unwrap();
         if initial != color {
             if flips == 0 {
                 break;
@@ -47,14 +46,14 @@ pub fn verify_finder_pattern(
     // Count downward
     let mut pos = *seed;
     let mut flips = pat_len / 2;
-    let mut initial = px.get_color();
+    let mut initial = img.get_at_point(seed).unwrap();
     while run_len[flips] <= max_run {
         pos.y += 1;
         if img.h == pos.y as u32 {
             break;
         }
 
-        let color = img.get_at_point(&pos).unwrap().get_color();
+        let color = img.get_at_point(&pos).unwrap();
         if initial != color {
             if flips == pat_len - 1 {
                 break;
@@ -97,14 +96,14 @@ pub fn verify_alignment_pattern<A: Axis>(
     let mut pos = *seed;
     let dir = (-1, -1);
     let mut flips = pat_len / 2;
-    let mut initial = px.get_color();
+    let mut initial = img.get_at_point(seed).unwrap();
     while run_len[flips] <= max_run {
         A::shift(&mut pos, &dir);
         if !A::bound_check(img, &pos) {
             break;
         }
 
-        let color = img.get_at_point(&pos).unwrap().get_color();
+        let color = img.get_at_point(&pos).unwrap();
         if initial != color {
             if flips == 0 {
                 break;
@@ -119,14 +118,14 @@ pub fn verify_alignment_pattern<A: Axis>(
     let mut pos = *seed;
     let dir = (1, 1);
     let mut flips = pat_len / 2;
-    let mut initial = px.get_color();
+    let mut initial = img.get_at_point(seed).unwrap();
     while A::bound_check(img, &pos) && run_len[flips] <= max_run {
         A::shift(&mut pos, &dir);
         if !A::bound_check(img, &pos) {
             break;
         }
 
-        let color = img.get_at_point(&pos).unwrap().get_color();
+        let color = img.get_at_point(&pos).unwrap();
         if initial != color {
             if flips == pat_len - 1 {
                 break;

@@ -374,6 +374,465 @@ impl BitArray {
     }
 }
 
+// Bit matrix
+//------------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct BitMatrix {
+    data: Vec<u64>,
+    w: u32,
+    h: u32,
+}
+
+impl BitMatrix {
+    pub fn new(w: u32, h: u32) -> Self {
+        let cap = ((w * h + 63) >> 6) as usize;
+        Self { data: vec![0u64; cap], w, h }
+    }
+
+    pub fn width(&self) -> u32 {
+        self.w
+    }
+
+    pub fn height(&self) -> u32 {
+        self.h
+    }
+
+    pub fn data(&self) -> &[u64] {
+        &self.data
+    }
+}
+
+// Put bits for bit matrix
+//------------------------------------------------------------------------------
+
+impl BitMatrix {
+    pub fn get(&self, x: u32, y: u32) -> bool {
+        debug_assert!(x < self.w, "X coordinate is out of bounds: Width {}, X {}", self.w, x);
+        debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
+
+        let flat_pos = y * self.w + x;
+        let idx = (flat_pos >> 6) as usize;
+        let off = flat_pos & 63;
+
+        debug_assert!(
+            idx < self.data.len(),
+            "Out of bit matrix bounds: Len {}, Index {}",
+            self.data.len(),
+            idx
+        );
+
+        ((self.data[idx] >> off) & 1) == 1
+    }
+
+    pub fn get_bits(&self, x: u32, y: u32, size: u32) -> u64 {
+        debug_assert!((1..=64).contains(&size), "size must be 1..=64: Size {size}");
+        debug_assert!(x < self.w, "X coordinate is out of bounds: Width {}, X {}", self.w, x);
+        debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
+
+        let flat_pos = y * self.w + x;
+        let idx = (flat_pos >> 6) as usize;
+        let off = flat_pos & 63;
+
+        debug_assert!(
+            idx < self.data.len(),
+            "Out of bit matrix bounds: Len {}, Index {}",
+            self.data.len(),
+            idx
+        );
+
+        // Bits that come from word at `idx`; the rest comes from `idx + 1`.
+        let in_first = (64 - off).min(size);
+        let first_mask = if in_first == 64 { u64::MAX } else { (1u64 << in_first) - 1 };
+        let mut bits = (self.data[idx] & (first_mask << off)) >> off;
+
+        let remaining = size - in_first;
+        if remaining > 0 {
+            debug_assert!(
+                idx + 1 < self.data.len(),
+                "Bit matrix capacity overflow when fetching bits"
+            );
+            let carry_mask = (1u64 << remaining) - 1;
+            bits |= (self.data[idx + 1] & carry_mask) << in_first;
+        }
+
+        bits
+    }
+
+    pub fn put(&mut self, x: u32, y: u32, bit: bool) {
+        debug_assert!(x < self.w, "X coordinate is out of bounds: Width {}, X {}", self.w, x);
+        debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
+
+        let flat_pos = y * self.w + x;
+        let idx = (flat_pos >> 6) as usize;
+        let off = flat_pos & 63;
+
+        debug_assert!(
+            idx < self.data.len(),
+            "Out of bit matrix bounds: Len {}, Index {}",
+            self.data.len(),
+            idx
+        );
+
+        if bit {
+            self.data[idx] |= 1u64 << off;
+        } else {
+            self.data[idx] &= !(1u64 << off);
+        }
+    }
+
+    pub fn put_bits(&mut self, x: u32, y: u32, bits: u64, size: u32) {
+        debug_assert!((1..=64).contains(&size), "size must be 1..=64: Size {size}");
+        debug_assert!(x < self.w, "X coordinate is out of bounds: Width {}, X {}", self.w, x);
+        debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
+
+        let flat_pos = y * self.w + x;
+        let idx = (flat_pos >> 6) as usize;
+        let off = flat_pos & 63;
+
+        debug_assert!(
+            idx < self.data.len(),
+            "Out of bit matrix bounds: Len {}, Index {}",
+            self.data.len(),
+            idx
+        );
+
+        let payload = if size == 64 { bits } else { bits & ((1u64 << size) - 1) };
+
+        // Bits that land in word `idx`; the rest spill into `idx + 1`.
+        let in_first = (64 - off).min(size);
+        let first_mask = if in_first == 64 { u64::MAX } else { (1u64 << in_first) - 1 };
+        self.data[idx] = (self.data[idx] & !(first_mask << off)) | ((payload & first_mask) << off);
+
+        let remaining = size - in_first;
+        if remaining > 0 {
+            debug_assert!(idx + 1 < self.data.len(), "Bit matrix capacity overflow");
+            let carry_mask = (1u64 << remaining) - 1;
+            self.data[idx + 1] =
+                (self.data[idx + 1] & !carry_mask) | ((payload >> in_first) & carry_mask);
+        }
+    }
+}
+
+#[cfg(test)]
+mod bit_matrix_tests {
+
+    use super::BitMatrix;
+
+    #[test]
+    fn test_new_is_all_zero() {
+        let (w, h) = (10, 7);
+        let bm = BitMatrix::new(w, h);
+        assert_eq!(bm.width(), w);
+        assert_eq!(bm.height(), h);
+        // ceil(70 / 64) = 2 words
+        assert_eq!(bm.data().len(), 2);
+        for y in 0..h {
+            for x in 0..w {
+                assert!(!bm.get(x, y), "fresh matrix should be all false at ({x}, {y})");
+            }
+        }
+    }
+
+    #[test]
+    fn test_put_get_roundtrip() {
+        let mut bm = BitMatrix::new(10, 7);
+        bm.put(3, 2, true);
+        assert!(bm.get(3, 2));
+        // Clearing a set bit
+        bm.put(3, 2, false);
+        assert!(!bm.get(3, 2));
+    }
+
+    // A transposed get/put (x*w+y instead of y*w+x) passes on the diagonal but fails
+    // off it. Use a non-square matrix and an asymmetric cell to catch that.
+    #[test]
+    fn test_not_transposed() {
+        let mut bm = BitMatrix::new(10, 7);
+        bm.put(6, 2, true);
+        assert!(bm.get(6, 2), "the exact cell that was set must read back true");
+        // The mirror cell is a different location and must stay false.
+        assert!(!bm.get(2, 6), "mirror cell must be unaffected");
+    }
+
+    #[test]
+    fn test_bits_are_independent() {
+        let mut bm = BitMatrix::new(10, 7);
+        bm.put(4, 3, true);
+        // Every 4-neighbour stays false.
+        assert!(!bm.get(3, 3));
+        assert!(!bm.get(5, 3));
+        assert!(!bm.get(4, 2));
+        assert!(!bm.get(4, 4));
+        // Clearing a neighbour doesn't disturb the set bit.
+        bm.put(5, 3, false);
+        assert!(bm.get(4, 3));
+    }
+
+    // Bits either side of a 64-bit word boundary must land in different words.
+    #[test]
+    fn test_word_boundary() {
+        let mut bm = BitMatrix::new(100, 2);
+        // Row 0: flat 63 -> word 0 bit 63, flat 64 -> word 1 bit 0.
+        bm.put(63, 0, true);
+        bm.put(64, 0, true);
+        assert!(bm.get(63, 0));
+        assert!(bm.get(64, 0));
+        assert_eq!(bm.data()[0].count_ones(), 1);
+        assert_eq!(bm.data()[1].count_ones(), 1);
+        // They are genuinely distinct cells.
+        bm.put(63, 0, false);
+        assert!(!bm.get(63, 0));
+        assert!(bm.get(64, 0));
+    }
+
+    // Fill a full non-square matrix with a checkerboard and read it all back.
+    #[test]
+    fn test_checkerboard_full_coverage() {
+        let (w, h) = (13, 9);
+        let mut bm = BitMatrix::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                if (x + y) % 2 == 0 {
+                    bm.put(x, y, true);
+                }
+            }
+        }
+        for y in 0..h {
+            for x in 0..w {
+                assert_eq!(bm.get(x, y), (x + y) % 2 == 0, "mismatch at ({x}, {y})");
+            }
+        }
+    }
+
+    #[test]
+    fn test_last_cell() {
+        let (w, h) = (10, 7);
+        let mut bm = BitMatrix::new(w, h);
+        bm.put(w - 1, h - 1, true);
+        assert!(bm.get(w - 1, h - 1));
+        assert_eq!(bm.data().iter().map(|word| word.count_ones()).sum::<u32>(), 1);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_get_x_out_of_bounds() {
+        let bm = BitMatrix::new(10, 7);
+        bm.get(10, 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_get_y_out_of_bounds() {
+        let bm = BitMatrix::new(10, 7);
+        bm.get(0, 7);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_put_x_out_of_bounds() {
+        let mut bm = BitMatrix::new(10, 7);
+        bm.put(10, 0, true);
+    }
+
+    // ---- put_bits ----
+
+    // Word-aligned write (off == 0) — the case that used to make `bits >> 64` overflow.
+    #[test]
+    fn test_put_bits_word_aligned_full_word() {
+        let mut bm = BitMatrix::new(200, 1);
+        let pattern = 0xF0F0_F0F0_0F0F_0F0Fu64;
+        bm.put_bits(0, 0, pattern, 64);
+        assert_eq!(bm.get_bits(0, 0, 64), pattern);
+        assert!(!bm.get(64, 0), "nothing should spill past the run");
+    }
+
+    // Partial write fully inside one word.
+    #[test]
+    fn test_put_bits_within_word() {
+        let mut bm = BitMatrix::new(200, 1);
+        bm.put_bits(4, 0, 0b1011, 4);
+        assert_eq!(bm.get_bits(4, 0, 4), 0b1011);
+        assert!(!bm.get(3, 0));
+        assert!(!bm.get(8, 0));
+    }
+
+    // Bits above `size` in the payload must be ignored, not written.
+    #[test]
+    fn test_put_bits_ignores_bits_above_size() {
+        let mut bm = BitMatrix::new(200, 1);
+        bm.put_bits(10, 0, 0b1111_1101, 3); // only low 3 bits (0b101) count
+        assert_eq!(bm.get_bits(10, 0, 3), 0b101);
+        assert!(!bm.get(13, 0), "the 4th payload bit must not be written");
+    }
+
+    // Run straddling the 64-bit word boundary: flat 40..104 spans word 0 and word 1.
+    #[test]
+    fn test_put_bits_crosses_word_boundary() {
+        let mut bm = BitMatrix::new(200, 1);
+        let pattern = 0xABCD_1234_5678_9EF1u64;
+        bm.put_bits(40, 0, pattern, 64);
+        assert_eq!(bm.get_bits(40, 0, 64), pattern);
+        assert!(!bm.get(39, 0));
+        assert!(!bm.get(104, 0));
+    }
+
+    // Writing preserves the surrounding cells on both sides of the run.
+    #[test]
+    fn test_put_bits_preserves_neighbors() {
+        let mut bm = BitMatrix::new(200, 1);
+        bm.put(1, 0, true); // below the run
+        bm.put(70, 0, true); // above the run
+        bm.put_bits(2, 0, 0x0000_0000_FFFF_FFFF, 64); // covers flat 2..66
+        assert!(bm.get(1, 0), "cell below the run must be preserved");
+        assert!(bm.get(70, 0), "cell above the run must be preserved");
+        assert_eq!(bm.get_bits(2, 0, 64), 0x0000_0000_FFFF_FFFF);
+    }
+
+    // A zero payload clears the run (and only the run) rather than being a no-op.
+    #[test]
+    fn test_put_bits_zero_clears_run() {
+        let mut bm = BitMatrix::new(200, 1);
+        bm.put(3, 0, true); // guard bit below
+        bm.put_bits(4, 0, u64::MAX, 60); // set flat 4..64
+        bm.put_bits(4, 0, 0, 60); // clear the same run
+        assert_eq!(bm.get_bits(4, 0, 60), 0);
+        assert!(bm.get(3, 0), "cell outside the run must remain set");
+    }
+
+    // Overwriting a run replaces it wholesale — no stale set bits remain.
+    #[test]
+    fn test_put_bits_overwrite_replaces() {
+        let mut bm = BitMatrix::new(200, 1);
+        bm.put_bits(5, 0, u64::MAX, 40);
+        bm.put_bits(5, 0, 0x0000_00AA, 40);
+        assert_eq!(bm.get_bits(5, 0, 40), 0x0000_00AA);
+    }
+
+    // size == 1 must behave exactly like `put`.
+    #[test]
+    fn test_put_bits_size_one_matches_put() {
+        let mut a = BitMatrix::new(200, 3);
+        let mut b = BitMatrix::new(200, 3);
+        for &(x, y, bit) in &[(0u32, 0u32, 1u64), (63, 1, 1), (64, 2, 1), (199, 2, 0)] {
+            a.put_bits(x, y, bit, 1);
+            b.put(x, y, bit == 1);
+        }
+        assert_eq!(a.data(), b.data());
+    }
+
+    // A run that ends exactly on the word boundary must not spill into the next word.
+    #[test]
+    fn test_put_bits_ends_on_word_boundary() {
+        let mut bm = BitMatrix::new(200, 1);
+        bm.put(64, 0, true); // first cell of word 1
+        bm.put_bits(40, 0, u64::MAX, 24); // fills flat 40..64 exactly (word 0 only)
+        assert_eq!(bm.get_bits(40, 0, 24), 0x00FF_FFFF);
+        assert!(bm.get(64, 0), "the word-1 cell must be untouched");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_put_bits_size_zero_panics() {
+        let mut bm = BitMatrix::new(200, 1);
+        bm.put_bits(0, 0, 0, 0);
+    }
+
+    // ---- get_bits ----
+
+    // get_bits reads back exactly what put_bits wrote (both aligned and crossing).
+    #[test]
+    fn test_get_bits_reads_run() {
+        let mut bm = BitMatrix::new(200, 1);
+        bm.put_bits(0, 0, 0xDEAD_BEEF_CAFE_1234, 64); // aligned
+        bm.put_bits(70, 0, 0b1101_0110, 8); // within word 1
+        assert_eq!(bm.get_bits(0, 0, 64), 0xDEAD_BEEF_CAFE_1234);
+        assert_eq!(bm.get_bits(70, 0, 8), 0b1101_0110);
+    }
+
+    // The result is zero-extended above `size`: cells past the run don't leak in.
+    #[test]
+    fn test_get_bits_zero_extended_above_size() {
+        let mut bm = BitMatrix::new(200, 1);
+        bm.put(3, 0, true); // set a cell just past a 3-bit run at (0,0)
+        bm.put(0, 0, true);
+        assert_eq!(bm.get_bits(0, 0, 3), 0b001, "cell 3 must not appear in a 3-bit read");
+    }
+
+    // Reading across the word boundary reassembles low+high halves correctly.
+    #[test]
+    fn test_get_bits_crosses_word_boundary() {
+        let mut bm = BitMatrix::new(200, 1);
+        let pattern = 0x0123_4567_89AB_CDEFu64;
+        bm.put_bits(50, 0, pattern, 64); // flat 50..114 spans words 0 and 1
+        assert_eq!(bm.get_bits(50, 0, 64), pattern);
+    }
+
+    // get_bits of a single bit equals get.
+    #[test]
+    fn test_get_bits_size_one_matches_get() {
+        let mut bm = BitMatrix::new(200, 2);
+        bm.put(63, 0, true);
+        bm.put(64, 1, true);
+        assert_eq!(bm.get_bits(63, 0, 1), bm.get(63, 0) as u64);
+        assert_eq!(bm.get_bits(64, 1, 1), bm.get(64, 1) as u64);
+        assert_eq!(bm.get_bits(0, 0, 1), 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_get_bits_size_zero_panics() {
+        let bm = BitMatrix::new(200, 1);
+        bm.get_bits(0, 0, 0);
+    }
+
+    // ---- round trip ----
+
+    // put_bits then get_bits must be identity for every offset and size, including
+    // runs that straddle the word boundary. Neighbouring cells stay untouched.
+    #[test]
+    fn test_put_get_bits_round_trip_sweep() {
+        // Deterministic pseudo-random payloads via a small LCG.
+        let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = || {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed
+        };
+
+        // Wide matrix so any (start, size<=64) run fits within a single row.
+        let w = 300u32;
+        for start in 0..130u32 {
+            for size in 1..=64u32 {
+                let mut bm = BitMatrix::new(w, 1);
+                // Guard bits immediately on either side of the run.
+                if start > 0 {
+                    bm.put(start - 1, 0, true);
+                }
+                bm.put(start + size, 0, true);
+
+                let expected = if size == 64 { next() } else { next() & ((1u64 << size) - 1) };
+                bm.put_bits(start, 0, expected, size);
+
+                assert_eq!(
+                    bm.get_bits(start, 0, size),
+                    expected,
+                    "round trip failed at start={start}, size={size}"
+                );
+                if start > 0 {
+                    assert!(
+                        bm.get(start - 1, 0),
+                        "low guard clobbered: start={start}, size={size}"
+                    );
+                }
+                assert!(
+                    bm.get(start + size, 0),
+                    "high guard clobbered: start={start}, size={size}"
+                );
+            }
+        }
+    }
+}
+
 // Global constants
 //------------------------------------------------------------------------------
 
