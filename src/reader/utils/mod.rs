@@ -84,8 +84,7 @@ pub fn matches_finder_ratio(runs: &[u32]) -> bool {
     let space_mod = (runs[1] + runs[3]) as f64 / 2.0;
 
     // Reject if the bar and space module sizes diverge implausibly.
-    let (lo, hi) =
-        if bar_mod < space_mod { (bar_mod, space_mod) } else { (space_mod, bar_mod) };
+    let (lo, hi) = if bar_mod < space_mod { (bar_mod, space_mod) } else { (space_mod, bar_mod) };
     if hi > 4.0 * lo {
         return false;
     }
