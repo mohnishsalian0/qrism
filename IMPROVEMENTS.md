@@ -59,7 +59,44 @@ single highest-leverage accuracy change.
 
 `prepare` + `locate_finders` are essentially the whole budget (e.g. `close`: 25 + 48 of 74 ms).
 
-### S1. `Pixel` is 16 bytes → 22.9–45.5 MB image buffer — HIGH
+### Current sub-stage profile (this branch, 536 images, rayon-parallel, M4)
+Measured by temporarily instrumenting each pass with `Instant`-based atomics:
+
+| stage | ms/image | sub-stage | ms/image |
+| --- | --- | --- | --- |
+| `prepare` | **9.5** (was 18.7) | block-stat accumulate | 2.2 (was 9.9) |
+| | | threshold calc | 0.01 |
+| | | binarize | 6.8 (was 8.2) |
+| `locate_finders` | **20.4** | horizontal scan | 3.3 |
+| | | verify: vertical crosscheck | 1.9 |
+| | | verify: stone+ring flood fills | **13.9** |
+| `group_finders` | 1.2 | | |
+| `locate_symbols` | 4.2 | | |
+
+Two facts fell out of this: `prepare` was **not** `get_pixel`/abstraction-bound (swapping
+`img.get_pixel` for raw-slice indexing moved it <0.5 ms), and `locate_finders` is now **65% capped
+flood fills** — the crosscheck the earlier S2 work targeted is already cheap (1.9 ms).
+
+### S0. `prepare` was pixel-indexed, not block-tiled — DONE
+Both hot passes looped in global raster order and did a per-pixel indexed **read-modify-write into
+the heap `stats` array** (accumulate) / per-pixel `x >> block_pow` + `threshold[idx][i]` reindex
+(binarize). rxing's `HybridBinarizer` instead works **block-by-block**: `calculateBlackPoints`
+accumulates each 8×8 block's sum/min/max into locals and stores once; `thresholdBlock` loads one
+threshold per block and walks it with `offset += stride`. Restructuring qrism's two passes the same
+way — accumulate into a local `[Stat;4]` and store once per block; hoist the block threshold out of
+the inner loop — took **`prepare` 18.7 → 9.5 ms** (accumulate 9.9 → 2.2, a 4.5× drop), median
+**59.1 → 49.9 ms**, accuracy **789 → 789** (bit-identical binarization, all 148 lib tests pass).
+The `prepare` signature changed from `GenericImageView` to `&ImageBuffer<P, Vec<u8>>` so the block
+loop can index the raw byte slice (`img.as_raw()`); every caller already passes an `ImageBuffer`.
+Remaining `prepare` floor is ~6.3 ms just to *read* the source luminance twice under parallel L2
+contention (the `buffer.put` RMW is only ~0.5–1.4 ms of binarize; batching bit-writes per word is
+the only lever left and it's small). Independent of S1 — this is loop structure, not buffer size.
+
+### S1. `Pixel` is 16 bytes → 22.9–45.5 MB image buffer — DONE (BitMatrix landed)
+**Superseded:** the buffer is now a 1-bit (B&W) / 4-bit (color) `BitMatrix` plane plus a separate
+`Vec<u16>` label plane (`px_reg`), exactly the split recommended below. Original analysis kept for
+context.
+
 `Pixel::Visited(usize, Color)` is **16 bytes** (the `usize` region id forces 8-byte alignment;
 `Color` is 1 byte). Buffer = **22.9 MB at 1196², 45.5 MB at 1641×1734**. zxing's BitMatrix is 1
 bit/px → **0.18–0.36 MB, 128× smaller**. Theirs stays cache-resident; qrism streams from DRAM on
@@ -155,6 +192,36 @@ Fix direction: spatial binning + candidate cap + module-count gate + compare cos
 `acos`. Should take `lots`'s ~120 ms (group + locate) to near-nothing. Independent of S1, and does
 not need the binarizer work.
 
+### S4. Finder flood fills are now the `locate_finders` ceiling — HIGH
+With prepare halved (S0) and the crosscheck cheap (S2), `locate_finders` (20.4 ms) is **68% the two
+capped flood fills** in `verify_and_mark_finder` — the stone `get_region_capped((s,y))` and ring
+`get_region_capped((r,y))` together are **13.9 ms/image**. Every candidate that clears the horizontal
+ratio + vertical crosscheck pays two BFS fills over `px_reg`/`BitMatrix`, and most candidates are not
+finders, so the fills run far more often than the ~3 real finders/symbol. The capped-fill +
+`OVERSIZED_LABEL` memo (S2 follow-up) already stopped these from filling whole background blobs; what
+remains is the sheer *count* of fills on legitimate small dark blobs.
+
+**How rxing avoids it entirely:** rxing's `FinderPatternFinder` never flood-fills. It confirms a
+1:1:3:1:1 row run with cheap **pixel-walk crosschecks** (`crossCheckVertical`/`Horizontal`, and a
+diagonal check) that count runs along a line — O(module size), not O(area) — then **clusters centres
+by proximity** (`foundPatternCross` + `haveMultiplyConfirmedCenters`) instead of measuring
+stone/ring areas by connected component. qrism's area-ratio test (stone ≈ 37.5% of ring, and
+ring/stone-not-connected) is what buys its precision 1.00, and that test needs the fills.
+
+Fix directions, cheapest first:
+- **Cheaper per-pixel fill inner loop.** `fill_and_accumulate` calls `self.get(x,y)` (→ `BitMatrix::get`
+  + `Color` enum conversion with an `elem_bits==1` branch) *and* `self.raw_label(x,y)` (a second
+  `y*w+x` index) for every pixel of every run, recomputing the flat index each time. Comparing raw
+  bits instead of `Color`, and fusing the colour + label reads into one index, is a mechanical win on
+  the 1.6 M px/image the fills still touch. Structure-preserving; low risk.
+- **Gate fills behind a size sanity check** derived from the *crosscheck* extent before filling — a
+  candidate whose vertical run is wildly off the horizontal `s-l` stone width can't be a finder and
+  needn't be filled. (Earlier work found the crosscheck extent varies per row, which broke the
+  sentinel memo; a *fill gate* is fine because it only skips work, it doesn't cache a verdict.)
+- **Bigger:** adopt rxing's fill-free crosscheck + centre-clustering and keep the area-ratio test only
+  as a final confirmation on the ~handful of clustered centres. This removes fills from the hot path
+  entirely but is a real rearchitecture of `verify_and_mark_finder`.
+
 ---
 
 ## Already fixed (in tree)
@@ -186,11 +253,12 @@ miscalibration that becomes load-bearing once A4 lands.
 
 ## Suggested order of attack
 
-1. **S1** (Pixel 16 B → 1 bit / byte-plane split) — biggest single speed win, ~128× less memory
-   traffic; unblocks everything else.
-2. ~~**S2** (finder tolerance: tighten + decouple bar/space + row-skip) — speed *and* helps A1.~~ **DONE.**
-3. **S3** (group_finders: bin + cap + gate + drop `acos`) — kills the `lots`/dense-scene cost.
-4. **A1 + A2** (module-proportional block size + re-enable low-variance rule) — the binarizer.
-5. **A4** (multi-alignment-pattern piecewise sampling) — the real high-version accuracy fix.
+1. ~~**S1** (Pixel 16 B → 1 bit / byte-plane split).~~ **DONE** (BitMatrix + `px_reg` label plane).
+2. ~~**S2** (finder tolerance: tighten + decouple bar/space + row-skip).~~ **DONE.**
+3. ~~**S0** (block-tile `prepare`'s two passes, rxing-style).~~ **DONE** — `prepare` 18.7 → 9.5 ms.
+4. **S4** (kill/cheapen finder flood fills) — now the biggest remaining speed item, 13.9 ms/image.
+5. **S3** (group_finders: bin + cap + gate + drop `acos`) — kills the `lots`/dense-scene cost.
+6. **A1 + A2** (module-proportional block size + re-enable low-variance rule) — the binarizer.
+7. **A4** (multi-alignment-pattern piecewise sampling) — the real high-version accuracy fix.
 
-Priorities 1–3 are pure speed and mostly independent; 4–5 are the accuracy story.
+Priorities 3–5 are pure speed and mostly independent; 6–7 are the accuracy story.

@@ -75,13 +75,14 @@ impl BinaryImage {
     // 4. Sets pixel value as false if less than or equal to threshold, else true
     // Note: If the pixel value is equal to threshold, it is set as false for the edge case when
     // threshold is 0 in which case the pixel should be false/black
-    pub fn prepare<I>(img: &I) -> Self
+    pub fn prepare<P>(img: &image::ImageBuffer<P, Vec<u8>>) -> Self
     where
-        I: GenericImageView,
-        I::Pixel: ImgPixel<Subpixel = u8>,
+        P: ImgPixel<Subpixel = u8>,
     {
         let (w, h) = img.dimensions();
-        let chan_count = I::Pixel::CHANNEL_COUNT as usize;
+        let chan_count = P::CHANNEL_COUNT as usize;
+        let raw: &[u8] = img.as_raw();
+        let px = |x: u32, y: u32, c: usize| raw[((y * w + x) as usize) * chan_count + c];
         let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
         let block_size = 1 << block_pow;
         let mask = (1 << block_pow) - 1;
@@ -96,15 +97,25 @@ impl BinaryImage {
         // Skip last few pixels which form fractional blocks. The last block will be computed later
         // Round w and h to skips these pixels
         let (wr, hr) = (w & !mask, h & !mask);
-        for y in 0..hr {
-            let row_off = (y >> block_pow) * wsteps;
-            for x in 0..wr {
-                let idx = (row_off + (x >> block_pow)) as usize;
-
-                let px = img.get_pixel(x, y);
-                for (i, &val) in px.channels().iter().enumerate() {
-                    stats[idx][i].accumulate(val);
+        let bw = wr >> block_pow; // full block columns
+        let bh = hr >> block_pow; // full block rows
+        for by in 0..bh {
+            let y0 = by << block_pow;
+            for bx in 0..bw {
+                let x0 = bx << block_pow;
+                let idx = (by * wsteps + bx) as usize;
+                let mut local = [Stat::new(); 4];
+                for yy in 0..block_size {
+                    let y = y0 + yy;
+                    let base = ((y * w + x0) as usize) * chan_count;
+                    for xx in 0..block_size as usize {
+                        let poff = base + xx * chan_count;
+                        for i in 0..chan_count {
+                            local[i].accumulate(raw[poff + i]);
+                        }
+                    }
                 }
+                stats[idx] = local;
             }
         }
 
@@ -113,9 +124,8 @@ impl BinaryImage {
             for y in 0..hr {
                 let idx = (((y >> block_pow) + 1) * wsteps - 1) as usize;
                 for x in w - block_size..w {
-                    let px = img.get_pixel(x, y);
-                    for (i, &val) in px.channels().iter().enumerate() {
-                        stats[idx][i].accumulate(val);
+                    for i in 0..chan_count {
+                        stats[idx][i].accumulate(px(x, y, i));
                     }
                 }
             }
@@ -128,9 +138,8 @@ impl BinaryImage {
                 for x in 0..wr {
                     let idx = (last_row + (x >> block_pow)) as usize;
 
-                    let px = img.get_pixel(x, y);
-                    for (i, &val) in px.channels().iter().enumerate() {
-                        stats[idx][i].accumulate(val);
+                    for i in 0..chan_count {
+                        stats[idx][i].accumulate(px(x, y, i));
                     }
                 }
             }
@@ -140,9 +149,8 @@ impl BinaryImage {
         if w & mask != 0 && h & mask != 0 {
             for y in h - block_size..h {
                 for x in w - block_size..w {
-                    let px = img.get_pixel(x, y);
-                    for (i, &val) in px.channels().iter().enumerate() {
-                        stats[len - 1][i].accumulate(val);
+                    for i in 0..chan_count {
+                        stats[len - 1][i].accumulate(px(x, y, i));
                     }
                 }
             }
@@ -224,21 +232,25 @@ impl BinaryImage {
         // Colour plane packs `color_size` bits per pixel; the matrix strides columns by it.
         let color_size = chan_count.next_power_of_two() as u32;
         let mut buffer = BitMatrix::new(w, h, color_size);
-        for y in 0..h {
-            let thresh_row_off = (y as usize >> block_pow) * wsteps;
-            for x in 0..w {
-                let p = img.get_pixel(x, y);
+        for by in 0..hsteps {
+            let y0 = (by << block_pow) as u32;
+            let y_end = std::cmp::min(y0 + block_size, h);
+            for bx in 0..wsteps {
+                let x0 = (bx << block_pow) as u32;
+                let x_end = std::cmp::min(x0 + block_size, w);
+                let t = threshold[by * wsteps + bx];
 
-                let xsteps = x as usize >> block_pow;
-                let thresh_idx = thresh_row_off + xsteps;
+                for y in y0..y_end {
+                    for x in x0..x_end {
+                        let mut color_byte = 0u64;
+                        for i in 0..chan_count {
+                            color_byte = (color_byte << 1) | u64::from(px(x, y, i) > t[i]);
+                        }
 
-                let mut color_byte = 0u64;
-                for (i, &val) in p.channels().iter().enumerate() {
-                    color_byte = (color_byte << 1) | u64::from(val > threshold[thresh_idx][i]);
-                }
-
-                if color_byte != 0 {
-                    buffer.put(x, y, color_byte);
+                        if color_byte != 0 {
+                            buffer.put(x, y, color_byte);
+                        }
+                    }
                 }
             }
         }
