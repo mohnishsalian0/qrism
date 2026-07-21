@@ -659,7 +659,10 @@ impl BinaryImage {
         mut acc: A,
         max_area: u32,
     ) -> (A, bool) {
-        let clr = self.get(src.0, src.1).unwrap();
+        // Compare packed bits straight from the BitMatrix rather than converting each pixel to a
+        // `Color` enum: the fill only ever tests colour *equality*, and equal colour ⟺ equal bits,
+        // so this drops a branch + enum construction + `Option` on every scanned pixel.
+        let clr_bits = self.buffer.get(src.0, src.1);
 
         // Flood fill algorithm
         let w = self.w;
@@ -699,7 +702,7 @@ impl BinaryImage {
 
             // Travel left till boundary
             while left > 0
-                && self.get(left - 1, y).unwrap() == clr
+                && self.buffer.get(left - 1, y) == clr_bits
                 && self.raw_label(left - 1, y) >= free_min
             {
                 left -= 1;
@@ -708,7 +711,7 @@ impl BinaryImage {
 
             // Travel right till boundary
             while right < w - 1
-                && self.get(right + 1, y).unwrap() == clr
+                && self.buffer.get(right + 1, y) == clr_bits
                 && self.raw_label(right + 1, y) >= free_min
             {
                 right += 1;
@@ -726,10 +729,10 @@ impl BinaryImage {
             let abuts_oversized = capped
                 && ((left > 0
                     && self.raw_label(left - 1, y) == OVERSIZED_LABEL
-                    && self.get(left - 1, y).unwrap() == clr)
+                    && self.buffer.get(left - 1, y) == clr_bits)
                     || (right < w - 1
                         && self.raw_label(right + 1, y) == OVERSIZED_LABEL
-                        && self.get(right + 1, y).unwrap() == clr));
+                        && self.buffer.get(right + 1, y) == clr_bits));
 
             filled += right - left + 1;
             if filled > max_area || abuts_oversized {
@@ -741,8 +744,7 @@ impl BinaryImage {
                 if ny != y && ny < h {
                     let mut seg_len = 0;
                     for x in left..=right {
-                        let nclr = self.get(x, ny).unwrap();
-                        if nclr == clr {
+                        if self.buffer.get(x, ny) == clr_bits {
                             seg_len += 1;
                         } else if seg_len > 0 {
                             queue.push_back((x - 1, ny));
