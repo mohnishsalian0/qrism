@@ -2,7 +2,7 @@ use crate::metadata::Color;
 
 use super::{
     binarize::BinaryImage,
-    utils::{geometry::Point, verify_finder_pattern, FINDER_PATTERN_TOLERANCE},
+    utils::{geometry::Point, matches_finder_ratio, verify_finder_pattern},
 };
 
 #[cfg(test)]
@@ -79,20 +79,7 @@ impl LineScanner {
             return false;
         }
 
-        // Verify 1:1:3:1:1 ratio with 95% tolerance. The tolerance is very linient because
-        // the validations in the later stages of the pipeline are more stringent
-        let avg = self.buffer[..5].iter().sum::<u32>() as f64 / 7.0;
-        let tol = avg * FINDER_PATTERN_TOLERANCE;
-
-        let ratio: [f64; 5] = [1.0, 1.0, 3.0, 1.0, 1.0];
-        for (i, r) in ratio.iter().enumerate() {
-            let rl = self.buffer[i] as f64;
-            if rl < r * avg - tol || rl > r * avg + tol {
-                return false;
-            }
-        }
-
-        true
+        matches_finder_ratio(&self.buffer[..5])
     }
 }
 
@@ -107,7 +94,17 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Point> {
     let h = img.h;
     let mut scanner = LineScanner::new();
 
-    for y in 0..h {
+    // Scan only every `skip`-th row. A finder's centre band is ~3 modules (>= 3 px) tall and
+    // shows a full horizontal 1:1:3:1:1 profile across every row it spans, so a stride of 3 is
+    // guaranteed to land on at least one of those rows. rxing's larger `(3h)/(4*MAX_MODULES)`
+    // stride assumes the symbol spans >= 1/4 of the image height; capping at 3 keeps the tiny
+    // symbols in the `lots` dataset detectable while still skipping ~2/3 of rows on big images.
+    let skip = ((3 * h) / (4 * MAX_FINDER_MODULES)).clamp(1, 3);
+
+    let mut y = skip - 1;
+    while y < h {
+        scanner.reset(y);
+
         for x in 0..w {
             let color = img.get(x, y).unwrap();
             let datum = match scanner.advance(color) {
@@ -127,7 +124,7 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Point> {
             }
         }
 
-        scanner.reset(y + 1);
+        y += skip;
     }
 
     finders
@@ -347,6 +344,9 @@ mod group_finders_tests {
 
 // Global constants
 //------------------------------------------------------------------------------
+
+// Largest QR (version 40) is 177 modules across; used to bound the row-scan stride.
+pub const MAX_FINDER_MODULES: u32 = 177;
 
 pub const SYMMETRY_THRESHOLD: f64 = 0.75;
 

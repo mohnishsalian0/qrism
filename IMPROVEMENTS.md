@@ -83,7 +83,27 @@ Lowest-risk first step: `Color` byte plane + move the id to a `u32` side buffer 
 under L2, no bit-masking) captures ~90% of the win. Go to 1-bit later for the rest.
 Target ≤ ~2 MB per image for whole-buffer L2 residency under the parallel benchmark.
 
-### S2. Finder verification dominates due to candidate explosion — HIGH
+### S2. Finder verification dominates due to candidate explosion — DONE (partial)
+**Resolution (this branch):** landed (a) a shared `matches_finder_ratio` that decouples bar/space
+module sizes + tolerances (`bar: m*0.75+0.5`, `space: m/3+0.5`, plus an `M > 4m` divergence
+reject), used by *both* the horizontal `is_finder_line` and the vertical crosscheck; and (b)
+row-skipping in `locate_finders` (stride `clamp(1,3)`). Measured: `locate_finders` **58.3 → 43.5
+ms/image**, overall median **99.2 → 79.4 ms**, accuracy **790 → 789** (−1; glare 14→13, lots
+408→407 vs baseline).
+
+Findings worth keeping: the speed win was **entirely row-skipping**; the decoupled tolerance was
+speed-neutral *and* accuracy-neutral at `bar=0.75` (kept anyway — it's structurally correct for
+ink-bleed and sets up A1). Pushing `bar` to 0.5 saved only ~4 ms but cost 3 finders, so not done.
+The stride is capped at **3**, not rxing's full `(3h)/(4·MAX_MODULES)≈5`: a 3-module (≥3 px) stone
+band is always crossed by a stride-3 scan, whereas stride 5 assumes ≥1.7 px modules and cost
+**66 finders on `lots`** (many small symbols). Stride 3 costs only 2 finders vs stride 2 (glare −1,
+lots −1) for ~9% more overall speed. Row-skipping is also what mitigates the
+"re-verify a failed blob on every row" issue below, since a false blob is now hit half as often.
+Not done: `min_module_size` / quiet-zone gates (deliberately skipped) and a proximity dedup gate
+(qrism already skips *confirmed* finders via `is_finder`; the gate would only help near confirmed
+finders, which is marginal).
+
+Original analysis:
 `locate_finders`: on `close` only ~15 of 48 ms is the raw scan; **~69–78% is verifying candidates**.
 Cause: `FINDER_PATTERN_TOLERANCE = 0.95` with a single shared `avg` for all five runs is loose →
 **~13,000–19,000 candidates/image**, each paying a vertical Bresenham crosscheck plus flood fills
@@ -150,7 +170,7 @@ miscalibration that becomes load-bearing once A4 lands.
 
 1. **S1** (Pixel 16 B → 1 bit / byte-plane split) — biggest single speed win, ~128× less memory
    traffic; unblocks everything else.
-2. **S2** (finder tolerance: tighten + decouple bar/space + row-skip) — speed *and* helps A1.
+2. ~~**S2** (finder tolerance: tighten + decouple bar/space + row-skip) — speed *and* helps A1.~~ **DONE.**
 3. **S3** (group_finders: bin + cap + gate + drop `acos`) — kills the `lots`/dense-scene cost.
 4. **A1 + A2** (module-proportional block size + re-enable low-variance rule) — the binarizer.
 5. **A4** (multi-alignment-pattern piecewise sampling) — the real high-version accuracy fix.
