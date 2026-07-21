@@ -223,7 +223,8 @@ impl BinaryImage {
 
         // Initially mark all pixels as unvisited; will be used for flood fill later.
         let color_size = chan_count.next_power_of_two() as u32;
-        let mut buffer = BitMatrix::new(w, h);
+        // Colour plane packs `color_size` bits per pixel, so columns stride by it.
+        let mut buffer = BitMatrix::new(w * color_size, h);
         for y in 0..h {
             let thresh_row_off = (y as usize >> block_pow) * wsteps;
             for x in 0..w {
@@ -238,7 +239,7 @@ impl BinaryImage {
                 }
 
                 if color_byte != 0 {
-                    buffer.put_bits(x, y, color_byte, color_size);
+                    buffer.put_bits(x * color_size, y, color_byte, color_size);
                 }
             }
         }
@@ -251,16 +252,17 @@ impl BinaryImage {
     /// Performs absolute/naive binarization
     pub fn global_thresholding(img: RgbImage) -> Self {
         let (w, h) = img.dimensions();
-        let mut buffer = BitMatrix::new(w, h);
-        let px_reg = vec![u16::MAX; (w * h) as usize];
         let color_size = 4;
+        // Colour plane packs `color_size` bits per pixel, so columns stride by it.
+        let mut buffer = BitMatrix::new(w * color_size, h);
+        let px_reg = vec![u16::MAX; (w * h) as usize];
 
         for (x, y, p) in img.enumerate_pixels() {
             let r = (p[0] > 127) as u8;
             let g = (p[1] > 127) as u8;
             let b = (p[2] > 127) as u8;
             let color_byte = (r << 2 | g << 1 | b) as u64;
-            buffer.put_bits(x, y, color_byte, color_size);
+            buffer.put_bits(x * color_size, y, color_byte, color_size);
         }
         Self { buffer, px_reg, regions: Vec::with_capacity(100), w, h, color_size }
     }
@@ -464,7 +466,8 @@ impl BinaryImage {
 
         // Initially mark all pixels as unvisited; will be used for flood fill later.
         let color_size = chan_count.next_power_of_two() as u32;
-        let mut buffer = BitMatrix::new(w, h);
+        // Colour plane packs `color_size` bits per pixel, so columns stride by it.
+        let mut buffer = BitMatrix::new(w * color_size, h);
         for y in 0..h {
             let thresh_row_off = (y as usize >> block_pow) * wsteps;
             for x in 0..w {
@@ -479,7 +482,7 @@ impl BinaryImage {
                 }
 
                 if color_byte != 0 {
-                    buffer.put_bits(x, y, color_byte, color_size);
+                    buffer.put_bits(x * color_size, y, color_byte, color_size);
                 }
             }
         }
@@ -496,7 +499,7 @@ impl BinaryImage {
         if x >= self.w || y >= self.h {
             return None;
         }
-        let bits = self.buffer.get_bits(x, y, self.color_size);
+        let bits = self.buffer.get_bits(x * self.color_size, y, self.color_size);
         Some(if self.color_size == 1 { Color::from(bits != 0) } else { bits.try_into().ok()? })
     }
 
@@ -516,7 +519,7 @@ impl BinaryImage {
 
     pub fn get_at_point(&self, pt: &Point) -> Option<Color> {
         let (x, y) = self.wrap_coords(pt.x, pt.y)?;
-        let bits = self.buffer.get_bits(x, y, self.color_size);
+        let bits = self.buffer.get_bits(x * self.color_size, y, self.color_size);
         Some(if self.color_size == 1 { Color::from(bits != 0) } else { bits.try_into().ok()? })
     }
 
@@ -541,7 +544,7 @@ impl BinaryImage {
         let mut img = RgbImage::new(self.w, self.h);
         for y in 0..self.h {
             for x in 0..self.w {
-                let bits = self.buffer.get_bits(x, y, self.color_size);
+                let bits = self.buffer.get_bits(x * self.color_size, y, self.color_size);
                 let rgb = if self.color_size == 1 {
                     // B&W: 1 = light/white, 0 = dark/black
                     if bits == 0 {
