@@ -103,6 +103,24 @@ Not done: `min_module_size` / quiet-zone gates (deliberately skipped) and a prox
 (qrism already skips *confirmed* finders via `is_finder`; the gate would only help near confirmed
 finders, which is marginal).
 
+**Follow-up (capped flood fills):** profiling `verify_and_mark_finder` after the above split
+`locate_finders` (43.5 ms) into horizontal scan **7.5 ms (17%)**, vertical crosschecks **11.4 ms
+(27%)**, and the post-crosscheck **flood-fill + region checks 24 ms (56%)**. So the crosscheck is
+*not* the bottleneck — the fills are: ~1030 candidates/image pass the crosscheck but aren't finders,
+and the stone/ring `get_region` fills **3.7 M px/image** (2.6× the image), dominated by spurious
+"stones" that bleed into big background blobs. Fix: `get_region_capped` bounds each fill and, on
+overflow, relabels the visited pixels with a reserved `OVERSIZED_LABEL` sentinel — cached so later
+capped fills skip the blob, but invisible to `get_region_id`, so it never masquerades as a region
+(uncapped fills in symbol location reclaim it, so it can't leak). Caps: stone `max_run²`, ring
+`10·stone_area` — both **row-stable**, which the sentinel memo requires (an earlier `extent²` stone
+cap used the *vertical* crosscheck extent, which varies per row, so a under-measured row cached a
+wrong "oversized" verdict and lost finders). Measured: `locate_finders` **43.5 → 25.4 ms**, overall
+median **79.4 → 62.7 ms**, fill px **3.7 M → 1.6 M**, accuracy **789 → 789** (lossless). Dead ends
+worth remembering: (i) memoising the *crosscheck* per column saved only ~0.6 ms — crosschecks are
+cheap fast-fails; (ii) rolling back labels on overflow instead of the sentinel is correct but
+re-fills the blob per candidate, erasing the win; (iii) keeping the partial fill labelled with a
+real region id (no sentinel) corrupts nearby finders' region lookups (lost 10).
+
 Original analysis:
 `locate_finders`: on `close` only ~15 of 48 ms is the raw scan; **~69–78% is verifying candidates**.
 Cause: `FINDER_PATTERN_TOLERANCE = 0.95` with a single shared `avg` for all five runs is loose →

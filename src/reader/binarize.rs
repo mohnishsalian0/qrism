@@ -523,14 +523,20 @@ impl BinaryImage {
         Some(if self.color_size == 1 { Color::from(bits != 0) } else { bits.try_into().ok()? })
     }
 
-    /// Flood-fill region label at (x, y), or None if unlabeled or out of bounds.
+    /// Flood-fill region label at (x, y), or None if unlabeled/oversized or out of bounds.
     pub fn get_region_id(&self, x: u32, y: u32) -> Option<u16> {
         if x >= self.w || y >= self.h {
             return None;
         }
 
         let id = self.px_reg[(y * self.w + x) as usize];
-        (id != u16::MAX).then_some(id)
+        (id < OVERSIZED_LABEL).then_some(id)
+    }
+
+    /// Raw label byte at (x, y): a real region id, `OVERSIZED_LABEL`, or `UNLABELED`.
+    fn raw_label(&self, x: u32, y: u32) -> u16 {
+        debug_assert!(x < self.w && y < self.h, "X or Y is out of bounds");
+        self.px_reg[(y * self.w + x) as usize]
     }
 
     pub fn set_region_id(&mut self, x: u32, y: u32, reg_id: u16) {
@@ -566,17 +572,44 @@ impl BinaryImage {
 
 // Flood fill related functions
 impl BinaryImage {
+    // Region at `src`, filling it if unlabelled. Uncapped — the fill always completes, so this
+    // never returns `None`; a thin wrapper over `get_region_capped`.
     pub(crate) fn get_region(&mut self, src: (u32, u32)) -> &mut Region {
-        let color = self.get(src.0, src.1).unwrap();
-        let reg = self.get_region_id(src.0, src.1);
+        self.get_region_capped(src, u32::MAX).expect("uncapped fill never bails")
+    }
 
-        match reg {
+    // Region at `src`, but bounds the flood fill: if the region would grow past `max_area` (or joins
+    // an already-oversized region), the fill bails and this returns `None` — letting a finder check
+    // reject an implausibly large stone/ring without filling an entire background blob. The bailed
+    // pixels are relabelled `OVERSIZED_LABEL` so later capped fills skip them, yet they never
+    // surface as a region. Pass `u32::MAX` for an uncapped fill (see `get_region`); uncapped fills
+    // reclaim oversized pixels, so the seed short-circuit below is gated to capped fills only.
+    pub(crate) fn get_region_capped(
+        &mut self,
+        src: (u32, u32),
+        max_area: u32,
+    ) -> Option<&mut Region> {
+        let capped = max_area != u32::MAX;
+
+        // Seed already known to be in an oversized region — reject without re-filling.
+        if capped && self.raw_label(src.0, src.1) == OVERSIZED_LABEL {
+            return None;
+        }
+
+        let color = self.get(src.0, src.1).unwrap();
+
+        match self.get_region_id(src.0, src.1) {
             None => {
                 let reg_id = self.regions.len();
-                debug_assert!(reg_id < u16::MAX as usize, "Number of regions exceed 65,535 (u16)");
+                debug_assert!(reg_id < OVERSIZED_LABEL as usize, "Number of regions exceed 65,534");
 
                 let acl = AreaAndCentreLocator::new();
-                let acl = self.fill_and_accumulate(src, reg_id as u16, acl);
+                let (acl, oversized) = self.fill_and_accumulate(src, reg_id as u16, acl, max_area);
+                if oversized {
+                    // Pixels were relabelled oversized inside the fill; don't persist a region.
+                    return None;
+                }
+
                 let new_reg = Region {
                     id: reg_id,
                     src,
@@ -588,21 +621,26 @@ impl BinaryImage {
 
                 self.regions.push(new_reg);
 
-                self.regions.get_mut(reg_id).expect("Region not found after saving")
+                Some(self.regions.get_mut(reg_id).expect("Region not found after saving"))
             }
             Some(id) => {
-                self.regions.get_mut(id as usize).expect("No region found for visited pixel")
+                Some(self.regions.get_mut(id as usize).expect("No region found for visited pixel"))
             }
         }
     }
 
-    /// Fills region with provided color and accumulates info
+    /// Fills region with provided color and accumulates info. Bails once the filled area exceeds
+    /// `max_area` (pass `u32::MAX` for an uncapped fill); the bool return is `true` when it bailed.
+    /// On a bail the filled pixels are relabelled `OVERSIZED_LABEL` so the region is not re-filled
+    /// by later capped fills, yet is never surfaced as a real region. Uncapped fills cross and
+    /// reclaim such pixels, so the sentinel never leaks past finder location.
     pub fn fill_and_accumulate<A: Accumulator>(
         &mut self,
         src: (u32, u32),
         target: u16,
         mut acc: A,
-    ) -> A {
+        max_area: u32,
+    ) -> (A, bool) {
         let clr = self.get(src.0, src.1).unwrap();
 
         // Flood fill algorithm
@@ -611,31 +649,75 @@ impl BinaryImage {
         let mut queue = VecDeque::new();
         queue.push_back(src);
 
+        let mut filled: u32 = 0;
+        let mut oversized = false;
+        let capped = max_area != u32::MAX;
+        // A pixel is free to fill only if its label is >= this: capped fills stop at any label
+        // (real or oversized); uncapped fills additionally reclaim oversized pixels.
+        let free_min = if capped { UNLABELED } else { OVERSIZED_LABEL };
+        // When capped, remember the labelled runs so they can be relabelled oversized on a bail.
+        let mut runs: Vec<(u32, u32, u32)> = Vec::new();
+
         while let Some(pt) = queue.pop_front() {
             let (x, y) = pt;
-            let mut left = x;
-            let mut right = x;
 
-            // Already claimed by this fill (via another seed) — skip; the run is done.
-            if self.get_region_id(x, y).is_some() {
+            let lbl = self.raw_label(x, y);
+            if lbl < free_min {
+                // A popped pixel is always the same colour (it was enqueued as a colour match), so
+                // touching an oversized one means this component is joined to an already-rejected
+                // blob and is itself oversized — bail. (Capped fills only: for uncapped fills
+                // OVERSIZED is >= free_min, so it's reclaimed rather than reaching here.)
+                if lbl == OVERSIZED_LABEL {
+                    oversized = true;
+                    break;
+                }
+                // Otherwise a real-region boundary (incl. pixels this fill already claimed) — skip.
                 continue;
             }
 
+            let mut left = x;
+            let mut right = x;
             self.set_region_id(x, y, target);
 
             // Travel left till boundary
-            while left > 0 && self.get(left - 1, y).unwrap() == clr {
+            while left > 0
+                && self.get(left - 1, y).unwrap() == clr
+                && self.raw_label(left - 1, y) >= free_min
+            {
                 left -= 1;
                 self.set_region_id(left, y, target);
             }
 
             // Travel right till boundary
-            while right < w - 1 && self.get(right + 1, y).unwrap() == clr {
+            while right < w - 1
+                && self.get(right + 1, y).unwrap() == clr
+                && self.raw_label(right + 1, y) >= free_min
+            {
                 right += 1;
                 self.set_region_id(right, y, target);
             }
 
             acc.accumulate(Row { left, right, y });
+            if capped {
+                runs.push((left, right, y));
+            }
+
+            // Same oversized-contact signal as above, but for a horizontal abutment the sentinel
+            // pixel is never enqueued, so check the run's two ends here (raw_label first — the
+            // colour read only happens on the rare sentinel hit).
+            let abuts_oversized = capped
+                && ((left > 0
+                    && self.raw_label(left - 1, y) == OVERSIZED_LABEL
+                    && self.get(left - 1, y).unwrap() == clr)
+                    || (right < w - 1
+                        && self.raw_label(right + 1, y) == OVERSIZED_LABEL
+                        && self.get(right + 1, y).unwrap() == clr));
+
+            filled += right - left + 1;
+            if filled > max_area || abuts_oversized {
+                oversized = true;
+                break;
+            }
 
             for ny in [y.saturating_sub(1), y + 1] {
                 if ny != y && ny < h {
@@ -655,7 +737,18 @@ impl BinaryImage {
                 }
             }
         }
-        acc
+
+        if oversized {
+            // Relabel everything this fill claimed as oversized: cached so later capped fills skip
+            // it, but invisible to `get_region_id`, so it can't masquerade as a region.
+            for (rl, rr, ry) in &runs {
+                for rx in *rl..=*rr {
+                    self.set_region_id(rx, *ry, OVERSIZED_LABEL);
+                }
+            }
+        }
+
+        (acc, oversized)
     }
 }
 
@@ -664,6 +757,12 @@ impl BinaryImage {
 
 // Number of blocks the shorter dimension of image should be divided into
 const BLOCK_COUNT: f64 = 20.0;
+
+// `px_reg` sentinels. Real region ids run 0..OVERSIZED_LABEL. UNLABELED marks an unfilled pixel;
+// OVERSIZED_LABEL marks a pixel in a region that a capped fill abandoned as too large to be a
+// finder part — cached so it isn't re-filled, but never surfaced as a real region.
+const UNLABELED: u16 = u16::MAX;
+const OVERSIZED_LABEL: u16 = u16::MAX - 1;
 
 // Number of blocks along row/col in a grid
 const BLOCK_GRID_SIZE: usize = 5;

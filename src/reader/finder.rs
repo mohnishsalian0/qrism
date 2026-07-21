@@ -158,8 +158,19 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Po
     // Verify 1:1:3:1:1 pattern along Y axis. Returns the top and bottom pts if valid
     let (t, b) = verify_finder_pattern(img, &seed, &pattern, max_run)?;
 
-    let stone = img.get_region((s, y)).clone();
-    let ring = img.get_region((r, y)).clone();
+    // Cap both fills so a spurious candidate whose stone/ring bleeds into a large background blob
+    // is rejected without filling the whole blob. Both caps derive from row-stable quantities — the
+    // finder-width bound `max_run` (~2x the 7-module span, so `max_run²` comfortably exceeds a real
+    // stone even when it bleeds into a few data modules) and the stone area — so the "oversized"
+    // verdict is identical on every scan row crossing this finder, which the memoised sentinel needs.
+    let stone_cap = max_run.saturating_mul(max_run);
+    // let stone_cap = max_run * 2;
+    let stone = img.get_region_capped((s, y), stone_cap)?.clone();
+
+    // A valid ring is at most ~10x the stone area, else the area-ratio check below rejects it.
+    let ring_cap = stone.area.saturating_mul(10);
+    // let ring_cap = max_run * 4;
+    let ring = img.get_region_capped((r, y), ring_cap)?.clone();
 
     // Check if left, top and bottom points lie within the ring
     let lid = img.get_region_id(l, y)? as usize;
