@@ -2,7 +2,7 @@ use crate::metadata::Color;
 
 use super::{
     binarize::BinaryImage,
-    utils::{geometry::Point, matches_finder_ratio, verify_finder_pattern},
+    utils::{geometry::Point, matches_finder_ratio, verify_finder_diagonal, verify_finder_pattern},
 };
 
 #[cfg(test)]
@@ -157,6 +157,16 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Po
 
     // Verify 1:1:3:1:1 pattern along Y axis. Returns the top and bottom pts if valid
     let (t, b) = verify_finder_pattern(img, &seed, &pattern, max_run)?;
+
+    // Cheap reject before the expensive stone flood fill, run on the ~1 in 6 candidates that clear
+    // the vertical crosscheck but are mostly not finders. Confirms the 1:1:3:1:1 ratio along the main
+    // diagonal through the centre — a third independent axis a spurious candidate almost never
+    // satisfies. This cuts the number of stone fills (the single biggest cost in `locate_finders`)
+    // without touching the area-ratio confirmation that follows.
+    let centre = Point { x: sx as i32, y: ((t + b) / 2) as i32 };
+    if !verify_finder_diagonal(img, &centre, max_run) {
+        return None;
+    }
 
     // Cap both fills so a spurious candidate whose stone/ring bleeds into a large background blob
     // is rejected without filling the whole blob. Both caps derive from row-stable quantities — the
