@@ -86,9 +86,18 @@ impl LineScanner {
 // Locate finders
 //------------------------------------------------------------------------------
 
+// A verified finder candidate: its stone centre plus an estimated module size (px).
+// The module size lets `group_finders` reject cross-symbol triples by scale, without
+// which grouping degenerates into an O(n^3) explosion on dense scenes.
+#[derive(Debug, Clone, Copy)]
+pub struct Finder {
+    pub c: Point,      // stone centre
+    pub mod_size: f32, // estimated module size in px
+}
+
 // ENTRY POINT FOR LOCATING FINDER
-// Returns a list of centres of potential finder
-pub fn locate_finders(img: &mut BinaryImage) -> Vec<Point> {
+// Returns a list of potential finders (stone centre + module size estimate)
+pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
     let mut finders = Vec::with_capacity(100);
     let w = img.w;
     let h = img.h;
@@ -137,7 +146,7 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Point> {
 // 4. Area of stone region is roughly 37.5% of ring region
 // 5. Crosscheck 1:1:3:1:1 pattern along Y axis
 // Finally it marks the regions are candidate and returns the centre
-fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Point> {
+fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Finder> {
     let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
 
     // If pixel has been visited, check if regions is already marked as finder
@@ -199,7 +208,11 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Po
     img.get_region((r, y)).is_finder = true;
     img.get_region((s, y)).is_finder = true;
 
-    Some(stone.centre)
+    // The stone is the central 3x3-module block, so its area is ~9 modules^2. This estimate only
+    // feeds the loose scale gates in `group_finders`, so it needn't be exact.
+    let mod_size = (stone.area as f32 / 9.0).sqrt();
+
+    Some(Finder { c: stone.centre, mod_size })
 }
 
 #[cfg(test)]
@@ -235,7 +248,7 @@ mod finder_tests {
 
         for (i, f) in finders.iter().enumerate() {
             let cent_pt = Point { x: centres[i][0], y: centres[i][1] };
-            assert_eq!(*f, cent_pt, "Finder centre doesn't match");
+            assert_eq!(f.c, cent_pt, "Finder centre doesn't match");
         }
     }
 }
@@ -246,7 +259,7 @@ mod finder_tests {
 #[derive(Debug, Clone)]
 pub struct FinderGroup {
     pub finders: [Point; 3], // [BL, TL, TR]
-    pub score: f64,          // Timing pattern score + Estimate mod count score
+    pub score: f64,          // symmetry_score + angle_score (lower = closer to ideal L)
 }
 
 impl FinderGroup {
@@ -261,33 +274,69 @@ impl FinderGroup {
     }
 }
 
-pub fn group_finders(finders: &[Point]) -> Vec<FinderGroup> {
+pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
     // Store all possible combinations of finders
     let mut groups: Vec<FinderGroup> = Vec::new();
     let right_angle = 90f64.to_radians();
 
+    // Reused per vertex: the arms that clear the cheap scale gates below.
+    let mut arms: Vec<(&Finder, u32)> = Vec::new();
+
+    // f1 is the candidate corner (TL); f2 and f3 are its two arms (BL/TR).
     for (i1, f1) in finders.iter().enumerate() {
+        // Build the arm list for this vertex, keeping only candidates whose scale and separation
+        // are consistent with belonging to the same symbol. These integer/f32 gates carry no
+        // transcendentals and cut the O(n^3) triple explosion down to a handful of pairs per vertex.
+        arms.clear();
+        let m = f1.mod_size;
+        // Finder centre-to-centre distance is (symbol_side - 7) modules, symbol_side in [21, 177],
+        // so a valid span is ~[14, 170] modules; the loose bounds below never clip a real symbol.
+        let min_d = (MIN_CENTRE_SPAN_MODULES * m) as f64;
+        let max_d = (MAX_CENTRE_SPAN_MODULES * m) as f64;
+        let (min_d_sq, max_d_sq) = ((min_d * min_d) as u32, (max_d * max_d) as u32);
         for (i2, f2) in finders.iter().enumerate() {
             if i2 == i1 {
                 continue;
             }
 
-            for (i3, f3) in finders.iter().enumerate() {
-                if i3 <= i2 || i3 == i1 {
-                    continue;
-                }
+            // Size-ratio gate: same-symbol finders share a scale; drop mismatched candidates.
+            let ratio = f2.mod_size / m;
+            if ratio < 1.0 / MOD_SIZE_RATIO || ratio > MOD_SIZE_RATIO {
+                continue;
+            }
 
-                let d12 = f1.dist_sq(f2);
-                let d13 = f1.dist_sq(f3);
+            // Module-count / max_dist gate.
+            let d = f1.c.dist_sq(&f2.c);
+            if d < min_d_sq || d > max_d_sq {
+                continue;
+            }
 
+            arms.push((f2, d));
+        }
+
+        // Pair the (few) surviving arms. `j3 > j2` dedups the unordered {arm, arm} pair.
+        for (j2, &(f2, d12)) in arms.iter().enumerate() {
+            for &(f3, d13) in arms.iter().skip(j2 + 1) {
                 // Closeness of the dist of bl and tr finders from tl finder
                 let symmetry_score = ((d12 as f64 / d13 as f64).sqrt() - 1.0).abs();
                 if symmetry_score > SYMMETRY_THRESHOLD {
                     continue;
                 }
 
-                // Angle of c2-c1-c3
-                let angle = angle(f2, f1, f3);
+                // Angle of c2-c1-c3. Gate on the cosine (no acos in the reject path): the accepted
+                // window [45, 135] degrees is exactly |cos| <= cos(45).
+                let ab = ((f2.c.x - f1.c.x) as f64, (f2.c.y - f1.c.y) as f64);
+                let cb = ((f3.c.x - f1.c.x) as f64, (f3.c.y - f1.c.y) as f64);
+                let dot = ab.0 * cb.0 + ab.1 * cb.1;
+                let mag_sq = (d12 as f64) * (d13 as f64);
+                if dot * dot > COS_45_SQ * mag_sq {
+                    continue;
+                }
+
+                // Survivor: compute the exact angle_score so the ranking (and thus the greedy
+                // selection in `locate_symbols`) is identical to the pre-refactor code. acos now
+                // runs only on survivors, not on every triple.
+                let angle = angle(&f2.c, &f1.c, &f3.c);
                 let angle_score = ((angle / right_angle) - 1.0).abs();
                 if angle_score > ANGLE_THRESHOLD {
                     continue;
@@ -296,8 +345,7 @@ pub fn group_finders(finders: &[Point]) -> Vec<FinderGroup> {
                 let score = symmetry_score + angle_score;
 
                 // Create and push group into groups
-                let finders = [*f3, *f1, *f2];
-                let group = FinderGroup { finders, score };
+                let group = FinderGroup { finders: [f3.c, f1.c, f2.c], score };
                 groups.push(group);
             }
         }
@@ -372,3 +420,16 @@ pub const MAX_FINDER_MODULES: u32 = 177;
 pub const SYMMETRY_THRESHOLD: f64 = 0.75;
 
 pub const ANGLE_THRESHOLD: f64 = 0.5;
+
+// cos(45 degrees)^2 = 0.5. The vertex-angle window [45, 135] degrees is exactly |cos| <= cos(45),
+// so a triple passes the angle gate iff dot^2 <= COS_45_SQ * |ab|^2 * |cb|^2.
+pub const COS_45_SQ: f64 = 0.5;
+
+// Two finders of the same symbol share a module size; reject an arm whose module size differs from
+// the vertex's by more than this ratio. Loose enough to never clip a real symbol.
+pub const MOD_SIZE_RATIO: f32 = 2.0;
+
+// Finder centre-to-centre distance spans (symbol_side - 7) modules; symbol_side in [21, 177] gives
+// ~[14, 170]. These loosened bounds keep every real symbol while rejecting cross-symbol arm pairs.
+pub const MIN_CENTRE_SPAN_MODULES: f32 = 10.0;
+pub const MAX_CENTRE_SPAN_MODULES: f32 = 185.0;

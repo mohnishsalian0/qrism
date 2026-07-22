@@ -177,7 +177,7 @@ Quick measured win: tightening the tolerance to 0.4 took `close`'s `locate_finde
 with **no accuracy change** (23/40 throughout). A proper fix also decouples bar/space tolerance
 (helps A1's fused finders too) and adds row-skipping.
 
-### S3. `group_finders` is O(n³) with no pruning — HIGH (on dense scenes)
+### S3. `group_finders` is O(n³) with no pruning — DONE (scale gates)
 Triple-nested loop over all finder candidates, with `acos` + two `sqrt` in the innermost loop,
 returning every passing triple and sorting them all. Measured on `lots`: **180 finders → 2.9 M
 triples → 828,797 groups** (28% of all triples survive as allocated `FinderGroup`s), costing ~50 ms
@@ -188,11 +188,37 @@ spiral only over nearby bins within `max_dist`, and **cap candidates at 15** wit
 accepts a tighter 60°–120° angle window and compares **cosines directly against precomputed
 `cos(60°)`/`cos(120°)`** — no `acos` at all — plus size-ratio and module-count gates.
 
-Fix direction: spatial binning + candidate cap + module-count gate + compare cosines instead of
-`acos`. Should take `lots`'s ~120 ms (group + locate) to near-nothing. Independent of S1, and does
-not need the binarizer work.
+**Resolution (this branch):** the missing ingredient was *scale* — a candidate was a bare `Point`,
+so `group_finders` couldn't reject a pair whose separation is an impossible module count or whose two
+finders are different sizes, and the only gates (symmetry + angle) are scale-free, letting 28% of all
+cross-symbol triples through. Landed: (a) `locate_finders` now returns `Finder { c, mod_size }`, with
+`mod_size = sqrt(stone.area / 9)` (the stone is the central 3×3-module block — free, already
+computed); (b) `group_finders` builds a per-vertex **arm list** filtered by a **size-ratio gate**
+(`MOD_SIZE_RATIO = 2.0`) and a **module-count / max_dist gate** (centre-to-centre span
+∈ [10, 185]·`mod_size`, loosened from the true [14, 170] so no real symbol is clipped), then pairs
+only those arms; (c) the angle is gated on the **cosine** (`dot² ≤ COS_45_SQ·|ab|²·|cb|²`, no `acos`
+in the reject path), and the exact `acos` score is computed **only on survivors**, so the sort order
+— and thus `locate_symbols`' greedy selection — is bit-identical. `FinderGroup.finders` stays
+`[Point; 3]`, so nothing downstream changed. No spatial grid was needed: with n in the low hundreds,
+the O(n²) arm scans (~32 K pairs on `lots`) are already negligible once the gates shrink the emitted
+groups. Measured (536 images, rayon, M4): `group_finders` **1.22 → 0.37 ms/image** (−70%),
+`locate_symbols` **3.95 → 3.54 ms/image** (fewer junk groups to `locate`), **`lots` median 312 → 215
+ms** (−31%), overall median **46.1 → 38.5 ms**, accuracy **789 → 789** (lossless), all 148 lib tests
+pass. Not done (unnecessary at this n): the spatial grid, sort-by-size, and the hard candidate cap —
+noted as future steps only if candidate counts reach the thousands.
 
-### S4. Finder flood fills are now the `locate_finders` ceiling — HIGH
+### S4. Finder flood fills are now the `locate_finders` ceiling — IN PROGRESS (low-risk step DONE)
+
+**Update — cheaper fill inner loop landed.** `fill_and_accumulate` compared colours by converting
+every scanned pixel to a `Color` enum (`self.get` → `BitMatrix::get` + `elem_bits` branch + enum
+construction + `Option`); it now compares packed bits straight from the `BitMatrix`
+(`self.buffer.get(x,y) == clr_bits`), since the fill only ever tests colour equality and equal
+colour ⟺ equal bits. Structure-preserving — same pixels filled, caps/sentinel untouched. Measured:
+`locate_finders` **20.4 → 17.9 ms**, and `locate_symbols` (which shares the uncapped fill path)
+**4.2 → 3.7 ms**, median total **49.9 → 43.7 ms**, accuracy **789 → 789** (lossless, all 148 lib
+tests pass). The remaining fill cost is now the raw pixel-visit count; further wins need the gate or
+the rearchitecture below. Original analysis:
+
 With prepare halved (S0) and the crosscheck cheap (S2), `locate_finders` (20.4 ms) is **68% the two
 capped flood fills** in `verify_and_mark_finder` — the stone `get_region_capped((s,y))` and ring
 `get_region_capped((r,y))` together are **13.9 ms/image**. Every candidate that clears the horizontal
@@ -209,18 +235,37 @@ stone/ring areas by connected component. qrism's area-ratio test (stone ≈ 37.5
 ring/stone-not-connected) is what buys its precision 1.00, and that test needs the fills.
 
 Fix directions, cheapest first:
-- **Cheaper per-pixel fill inner loop.** `fill_and_accumulate` calls `self.get(x,y)` (→ `BitMatrix::get`
-  + `Color` enum conversion with an `elem_bits==1` branch) *and* `self.raw_label(x,y)` (a second
-  `y*w+x` index) for every pixel of every run, recomputing the flat index each time. Comparing raw
-  bits instead of `Color`, and fusing the colour + label reads into one index, is a mechanical win on
-  the 1.6 M px/image the fills still touch. Structure-preserving; low risk.
-- **Gate fills behind a size sanity check** derived from the *crosscheck* extent before filling — a
-  candidate whose vertical run is wildly off the horizontal `s-l` stone width can't be a finder and
-  needn't be filled. (Earlier work found the crosscheck extent varies per row, which broke the
-  sentinel memo; a *fill gate* is fine because it only skips work, it doesn't cache a verdict.)
+- ~~**Cheaper per-pixel fill inner loop.**~~ **DONE** (see update above).
+- **Gate fills behind a diagonal crosscheck** — **DONE.** See the funnel + gate results below.
+- ~~**Gate fills behind a size sanity check**~~ (h vs v module size) — **TRIED, REJECTED.** See below.
 - **Bigger:** adopt rxing's fill-free crosscheck + centre-clustering and keep the area-ratio test only
   as a final confirmation on the ~handful of clustered centres. This removes fills from the hot path
   entirely but is a real rearchitecture of `verify_and_mark_finder`.
+
+**Follow-up — profiled the fill funnel, added a diagonal gate, rejected the size gate.**
+Instrumenting `verify_and_mark_finder` (avg per image): **6171 datums** (1:1:3:1:1 rows) → 6109 past
+the `is_finder` early-exit → **1095 past the vertical crosscheck** → 374 past the stone fill → 333
+past the ring fill → **6.2 confirmed**. Phase timing: **stone fill 10.1 ms (52% of the stage)**,
+scan 3.3, vertical crosscheck 1.9, ring fill 1.3, everything else ~0. So the cost is the *stone*
+fill running on ~1095 mostly-spurious candidates; the ring fill and the area arithmetic are cheap.
+
+Two pre-fill gates were tried on those 1095 candidates:
+- **Diagonal crosscheck (kept).** `verify_finder_diagonal` confirms the 1:1:3:1:1 ratio along the
+  main diagonal through the estimated centre — a third independent axis, O(module size). Diagonal
+  run lengths are noisier than axis-aligned ones, so it uses `matches_finder_ratio_scaled` with
+  `DIAGONAL_TOLERANCE_SCALE = 2.0` (mirrors rxing's looser `foundPatternDiagonal`). Back-to-back A/B:
+  `locate_finders` **≈19.7 → ≈17.1 ms (−2.5, ~13%)**, accuracy **789 → 789** (lossless). Tightening
+  the scale filters more but starts dropping real finders (scale 1.5 → 788, scale 1.0 → 785); the
+  speedup and the finder loss rise together, so 2.0 is the lossless knee.
+- **Size gate (rejected).** Comparing horizontal (`(r-l)/6`) vs vertical (`(b-t+1)/7`) module size and
+  rejecting non-square candidates: measured **~0 ms speedup and −4 finders**. The spurious candidates
+  that reach the stone fill are roughly *square* dark blobs, so squareness doesn't discriminate them —
+  it only clips real finders skewed by perspective/rotation. Not worth it.
+
+Net: the diagonal gate is a modest lossless win, but confirms the ceiling — the ~1095 blobs that
+clear the vertical crosscheck are genuinely finder-*shaped*, so cheap axis gates can't cull many
+without the multi-row **voting/clustering** rxing uses (a candidate hit on only one row never reaches
+quorum). Halving the fills needs that rearchitecture, not another gate.
 
 ---
 
@@ -256,8 +301,11 @@ miscalibration that becomes load-bearing once A4 lands.
 1. ~~**S1** (Pixel 16 B → 1 bit / byte-plane split).~~ **DONE** (BitMatrix + `px_reg` label plane).
 2. ~~**S2** (finder tolerance: tighten + decouple bar/space + row-skip).~~ **DONE.**
 3. ~~**S0** (block-tile `prepare`'s two passes, rxing-style).~~ **DONE** — `prepare` 18.7 → 9.5 ms.
-4. **S4** (kill/cheapen finder flood fills) — now the biggest remaining speed item, 13.9 ms/image.
-5. **S3** (group_finders: bin + cap + gate + drop `acos`) — kills the `lots`/dense-scene cost.
+4. **S4** (kill/cheapen finder flood fills) — cheaper fill loop DONE (−2.5 ms) + diagonal gate DONE
+   (−2.5 ms); size gate rejected. Halving the fills now needs the fill-free voting/clustering
+   rearchitecture — the biggest speed item left.
+5. ~~**S3** (group_finders: bin + cap + gate + drop `acos`)~~ **DONE** — scale gates (size-ratio +
+   module-count) + cosine reject; `group_finders` 1.22 → 0.37 ms, `lots` median 312 → 215 ms.
 6. **A1 + A2** (module-proportional block size + re-enable low-variance rule) — the binarizer.
 7. **A4** (multi-alignment-pattern piecewise sampling) — the real high-version accuracy fix.
 
