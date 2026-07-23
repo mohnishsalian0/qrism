@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::{
-    binarize::{BinaryImage, Pixel},
+    binarize::BinaryImage,
     finder::FinderGroup,
     utils::{
         geometry::{Axis, BresenhamLine, Point, Slope},
@@ -204,13 +204,11 @@ where
 {
     let mut flips = 0;
     let mut buffer = Vec::with_capacity(100);
-    let px = img.get_at_point(from).unwrap();
-    let mut last = px.get_color();
+    let mut last = img.get_at_point(from).unwrap();
     let line = BresenhamLine::<A>::new(from, to);
 
     for p in line {
-        let px = img.get_at_point(&p).unwrap();
-        let color = px.get_color();
+        let color = img.get_at_point(&p).unwrap();
 
         if color != last {
             flips += 1;
@@ -244,13 +242,11 @@ where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
     let mut transitions = [0; 3];
-    let px = img.get_at_point(from).unwrap();
-    let mut last = px.get_color() as u8;
+    let mut last = img.get_at_point(from).unwrap() as u8;
     let line = BresenhamLine::<A>::new(from, to);
 
     for p in line {
-        let px = img.get_at_point(&p).unwrap();
-        let color = px.get_color() as u8;
+        let color = img.get_at_point(&p).unwrap() as u8;
         for (i, t) in transitions.iter_mut().enumerate() {
             if color >> i != last >> i {
                 *t += 1;
@@ -319,7 +315,7 @@ impl Symbol {
         Ok((meta, msg))
     }
 
-    pub fn get(&self, x: i32, y: i32) -> Option<&Pixel> {
+    pub fn get(&self, x: i32, y: i32) -> Option<Color> {
         let (xp, yp) = self.wrap_coord(x, y);
         let pt = self.map(xp as f64 + 0.5, yp as f64 + 0.5).ok()?;
         self.img.get_at_point(&pt)
@@ -434,9 +430,7 @@ fn locate_alignment_pattern(
             let x = seed.x as u32;
             let y = seed.y as u32;
 
-            if let Some(px) = img.get_at_point(&seed) {
-                let color = px.get_color();
-
+            if let Some(color) = img.get_at_point(&seed) {
                 if x < w && y < h && color == Color::Black {
                     let reg = img.get_region((x, y));
                     let (reg_centre, reg_area) = (reg.centre, reg.area);
@@ -627,8 +621,7 @@ fn cell_fitness(img: &BinaryImage, hm: &Homography, x: i32, y: i32) -> i32 {
                 Ok(v) => v,
                 Err(_) => return 0,
             };
-            if let Some(px) = img.get_at_point(&pt) {
-                let color = px.get_color();
+            if let Some(color) = img.get_at_point(&pt) {
                 if color == white {
                     score -= 1;
                 } else {
@@ -802,9 +795,7 @@ impl Symbol {
     }
 
     pub fn read_capacity_info(&self) -> QRResult<bool> {
-        if let Some(px) = self.get(8, -8) {
-            let color = px.get_color();
-
+        if let Some(color) = self.get(8, -8) {
             if color == Color::Black {
                 return Ok(false); // Standard capacity
             } else {
@@ -818,7 +809,7 @@ impl Symbol {
     pub fn get_number(&self, coords: &[(i32, i32)]) -> Option<u32> {
         let mut num = 0;
         for &(x, y) in coords {
-            let color = self.get(x, y)?.get_color();
+            let color = self.get(x, y)?;
             let bit = (color != Color::White) as u32;
             num = (num << 1) | bit;
         }
@@ -1005,8 +996,7 @@ impl Symbol {
         let mut rgn_iter = EncRegionIter::new(ver);
 
         for (i, (x, y)) in rgn_iter.by_ref().take(chan_bits).enumerate() {
-            let px = self.get(x, y).ok_or(QRError::PixelOutOfBounds)?;
-            let color = px.get_color();
+            let color = self.get(x, y).ok_or(QRError::PixelOutOfBounds)?;
             let rgb = color as u8;
             for (j, off) in offsets.iter().enumerate() {
                 let mut bit = ((rgb >> j) & 1) == 1;

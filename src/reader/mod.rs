@@ -28,14 +28,64 @@ impl DecodeResult {
 // MAIN FUNCTION
 //------------------------------------------------------------------------------
 
+#[cfg(feature = "benchmark")]
+pub mod profile {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    pub static PREPARE_NS: AtomicU64 = AtomicU64::new(0);
+    pub static FINDERS_NS: AtomicU64 = AtomicU64::new(0);
+    pub static GROUP_NS: AtomicU64 = AtomicU64::new(0);
+    pub static LOCATE_NS: AtomicU64 = AtomicU64::new(0);
+    pub static IMAGES: AtomicU64 = AtomicU64::new(0);
+
+    pub fn add(counter: &AtomicU64, ns: u64) {
+        counter.fetch_add(ns, Ordering::Relaxed);
+    }
+
+    pub fn print_stage_profile() {
+        let n = IMAGES.load(Ordering::Relaxed).max(1);
+        let ms = |c: &AtomicU64| c.load(Ordering::Relaxed) as f64 / 1e6;
+        let avg = |c: &AtomicU64| ms(c) / n as f64;
+        println!("\nPer-stage totals over {n} images (total ms | avg ms/image):");
+        println!("  prepare        {:>10.1} | {:>7.3}", ms(&PREPARE_NS), avg(&PREPARE_NS));
+        println!("  locate_finders {:>10.1} | {:>7.3}", ms(&FINDERS_NS), avg(&FINDERS_NS));
+        println!("  group_finders  {:>10.1} | {:>7.3}", ms(&GROUP_NS), avg(&GROUP_NS));
+        println!("  locate_symbols {:>10.1} | {:>7.3}", ms(&LOCATE_NS), avg(&LOCATE_NS));
+    }
+}
+
 pub fn detect_qr(img: &DynamicImage) -> DecodeResult {
+    #[cfg(feature = "benchmark")]
+    use std::time::Instant;
+
     let img = img.to_luma8();
+
+    #[cfg(feature = "benchmark")]
+    let t = Instant::now();
     let mut img = BinaryImage::prepare(&img);
+    #[cfg(feature = "benchmark")]
+    profile::add(&profile::PREPARE_NS, t.elapsed().as_nanos() as u64);
 
+    #[cfg(feature = "benchmark")]
+    let t = Instant::now();
     let finders = locate_finders(&mut img);
-    let groups = group_finders(&finders);
+    #[cfg(feature = "benchmark")]
+    profile::add(&profile::FINDERS_NS, t.elapsed().as_nanos() as u64);
 
+    #[cfg(feature = "benchmark")]
+    let t = Instant::now();
+    let groups = group_finders(&finders);
+    #[cfg(feature = "benchmark")]
+    profile::add(&profile::GROUP_NS, t.elapsed().as_nanos() as u64);
+
+    #[cfg(feature = "benchmark")]
+    let t = Instant::now();
     let sym_locs = locate_symbols(&mut img, groups);
+    #[cfg(feature = "benchmark")]
+    {
+        profile::add(&profile::LOCATE_NS, t.elapsed().as_nanos() as u64);
+        profile::IMAGES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
 
     let img = Arc::new(img);
     let symbols = sym_locs.into_iter().map(|sl| Symbol::new(img.clone(), sl)).collect::<_>();
@@ -161,7 +211,7 @@ mod reader_tests {
 
         let finders = locate_finders(&mut bin_img);
         dbg!(finders.len());
-        finders.iter().for_each(|f| f.highlight(&mut img, image::Rgb([255, 0, 0])));
+        finders.iter().for_each(|f| f.c.highlight(&mut img, image::Rgb([255, 0, 0])));
 
         let groups = group_finders(&finders);
         dbg!(groups.len());

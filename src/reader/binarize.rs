@@ -1,8 +1,9 @@
 use std::collections::VecDeque;
 
-use image::{GenericImageView, Luma, Pixel as ImgPixel, Rgb, RgbImage};
+use image::{GenericImageView, Pixel as ImgPixel, RgbImage};
 
 use crate::metadata::Color;
+use crate::utils::BitMatrix;
 
 use super::utils::accumulate::AreaAndCentreLocator;
 use super::utils::{
@@ -15,39 +16,6 @@ use std::path::Path;
 
 #[cfg(test)]
 use image::ImageResult;
-
-// Pixel
-//------------------------------------------------------------------------------
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Pixel {
-    Visited(usize, Color), // Contains id of associated region
-    Unvisited(Color),      // Default tag
-}
-
-impl From<Pixel> for Rgb<u8> {
-    fn from(p: Pixel) -> Self {
-        match p {
-            Pixel::Visited(_, c) | Pixel::Unvisited(c) => c.into(),
-        }
-    }
-}
-
-impl Pixel {
-    pub fn get_id(&self) -> Option<usize> {
-        match self {
-            Pixel::Visited(id, _) => Some(*id),
-            _ => None,
-        }
-    }
-
-    pub fn get_color(&self) -> Color {
-        match self {
-            Pixel::Visited(_, c) => *c,
-            Pixel::Unvisited(c) => *c,
-        }
-    }
-}
 
 // Region
 //------------------------------------------------------------------------------
@@ -84,32 +52,13 @@ impl Stat {
     }
 }
 
-// Binarize trait for pixel types in image crate
-//------------------------------------------------------------------------------
-
-pub trait Binarize {
-    fn binarize(value: u8) -> Color;
-}
-
-impl Binarize for Rgb<u8> {
-    fn binarize(value: u8) -> Color {
-        Color::try_from(value).unwrap()
-    }
-}
-
-impl Binarize for Luma<u8> {
-    fn binarize(value: u8) -> Color {
-        let value = value != 0;
-        Color::from(value)
-    }
-}
-
 // Image type for reader
 //------------------------------------------------------------------------------
 
 #[derive(Debug)]
 pub struct BinaryImage {
-    pub buffer: Vec<Pixel>,
+    pub buffer: BitMatrix,
+    px_reg: Vec<u16>,     // Region each pixel belongs to
     regions: Vec<Region>, // Areas of visited regions. Index is id
     pub w: u32,
     pub h: u32,
@@ -126,13 +75,14 @@ impl BinaryImage {
     // 4. Sets pixel value as false if less than or equal to threshold, else true
     // Note: If the pixel value is equal to threshold, it is set as false for the edge case when
     // threshold is 0 in which case the pixel should be false/black
-    pub fn prepare<I>(img: &I) -> Self
+    pub fn prepare<P>(img: &image::ImageBuffer<P, Vec<u8>>) -> Self
     where
-        I: GenericImageView,
-        I::Pixel: ImgPixel<Subpixel = u8> + Binarize,
+        P: ImgPixel<Subpixel = u8>,
     {
         let (w, h) = img.dimensions();
-        let chan_count = I::Pixel::CHANNEL_COUNT as usize;
+        let chan_count = P::CHANNEL_COUNT as usize;
+        let raw: &[u8] = img.as_raw();
+        let px = |x: u32, y: u32, c: usize| raw[((y * w + x) as usize) * chan_count + c];
         let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
         let block_size = 1 << block_pow;
         let mask = (1 << block_pow) - 1;
@@ -147,15 +97,25 @@ impl BinaryImage {
         // Skip last few pixels which form fractional blocks. The last block will be computed later
         // Round w and h to skips these pixels
         let (wr, hr) = (w & !mask, h & !mask);
-        for y in 0..hr {
-            let row_off = (y >> block_pow) * wsteps;
-            for x in 0..wr {
-                let idx = (row_off + (x >> block_pow)) as usize;
-
-                let px = img.get_pixel(x, y);
-                for (i, &val) in px.channels().iter().enumerate() {
-                    stats[idx][i].accumulate(val);
+        let bw = wr >> block_pow; // full block columns
+        let bh = hr >> block_pow; // full block rows
+        for by in 0..bh {
+            let y0 = by << block_pow;
+            for bx in 0..bw {
+                let x0 = bx << block_pow;
+                let idx = (by * wsteps + bx) as usize;
+                let mut local = [Stat::new(); 4];
+                for yy in 0..block_size {
+                    let y = y0 + yy;
+                    let base = ((y * w + x0) as usize) * chan_count;
+                    for xx in 0..block_size as usize {
+                        let poff = base + xx * chan_count;
+                        for i in 0..chan_count {
+                            local[i].accumulate(raw[poff + i]);
+                        }
+                    }
                 }
+                stats[idx] = local;
             }
         }
 
@@ -164,9 +124,8 @@ impl BinaryImage {
             for y in 0..hr {
                 let idx = (((y >> block_pow) + 1) * wsteps - 1) as usize;
                 for x in w - block_size..w {
-                    let px = img.get_pixel(x, y);
-                    for (i, &val) in px.channels().iter().enumerate() {
-                        stats[idx][i].accumulate(val);
+                    for i in 0..chan_count {
+                        stats[idx][i].accumulate(px(x, y, i));
                     }
                 }
             }
@@ -179,9 +138,8 @@ impl BinaryImage {
                 for x in 0..wr {
                     let idx = (last_row + (x >> block_pow)) as usize;
 
-                    let px = img.get_pixel(x, y);
-                    for (i, &val) in px.channels().iter().enumerate() {
-                        stats[idx][i].accumulate(val);
+                    for i in 0..chan_count {
+                        stats[idx][i].accumulate(px(x, y, i));
                     }
                 }
             }
@@ -191,9 +149,8 @@ impl BinaryImage {
         if w & mask != 0 && h & mask != 0 {
             for y in h - block_size..h {
                 for x in w - block_size..w {
-                    let px = img.get_pixel(x, y);
-                    for (i, &val) in px.channels().iter().enumerate() {
-                        stats[len - 1][i].accumulate(val);
+                    for i in 0..chan_count {
+                        stats[len - 1][i].accumulate(px(x, y, i));
                     }
                 }
             }
@@ -272,48 +229,52 @@ impl BinaryImage {
         }
 
         // Initially mark all pixels as unvisited; will be used for flood fill later.
-        let mut buffer = vec![Pixel::Unvisited(Color::White); (w * h) as usize];
-        for y in 0..h {
-            let row_off = y * w;
-            let thresh_row_off = (y as usize >> block_pow) * wsteps;
-            for x in 0..w {
-                let p = img.get_pixel(x, y);
+        // Colour plane packs `color_size` bits per pixel; the matrix strides columns by it.
+        let color_size = chan_count.next_power_of_two() as u32;
+        let mut buffer = BitMatrix::new(w, h, color_size);
+        for by in 0..hsteps {
+            let y0 = (by << block_pow) as u32;
+            let y_end = std::cmp::min(y0 + block_size, h);
+            for bx in 0..wsteps {
+                let x0 = (bx << block_pow) as u32;
+                let x_end = std::cmp::min(x0 + block_size, w);
+                let t = threshold[by * wsteps + bx];
 
-                let idx = (row_off + x) as usize;
-                let xsteps = x as usize >> block_pow;
-                let thresh_idx = thresh_row_off + xsteps;
+                for y in y0..y_end {
+                    for x in x0..x_end {
+                        let mut color_byte = 0u64;
+                        for i in 0..chan_count {
+                            color_byte = (color_byte << 1) | u64::from(px(x, y, i) > t[i]);
+                        }
 
-                let mut color_byte = 0;
-                for (i, &val) in p.channels().iter().rev().enumerate() {
-                    if val > threshold[thresh_idx][i] {
-                        color_byte |= 1 << i;
+                        if color_byte != 0 {
+                            buffer.put(x, y, color_byte);
+                        }
                     }
-                }
-
-                let color = <I::Pixel>::binarize(color_byte);
-                if color != Color::White {
-                    buffer[idx] = Pixel::Unvisited(color);
                 }
             }
         }
 
+        let px_reg = vec![u16::MAX; (w * h) as usize];
         let regions = Vec::with_capacity(100);
-        Self { buffer, regions, w, h }
+        Self { buffer, px_reg, regions, w, h }
     }
 
     /// Performs absolute/naive binarization
     pub fn global_thresholding(img: RgbImage) -> Self {
         let (w, h) = img.dimensions();
-        let mut buffer = Vec::with_capacity((w * h) as usize);
+        // Colour plane packs 4 bits per pixel; the matrix strides columns by it.
+        let mut buffer = BitMatrix::new(w, h, 4);
+        let px_reg = vec![u16::MAX; (w * h) as usize];
 
-        for p in img.pixels() {
+        for (x, y, p) in img.enumerate_pixels() {
             let r = (p[0] > 127) as u8;
             let g = (p[1] > 127) as u8;
             let b = (p[2] > 127) as u8;
-            let np = Color::try_from(r << 2 | g << 1 | b).unwrap();
-            buffer.push(Pixel::Unvisited(np));
+            let color_byte = (r << 2 | g << 1 | b) as u64;
+            buffer.put(x, y, color_byte);
         }
-        Self { buffer, regions: Vec::with_capacity(100), w, h }
+        Self { buffer, px_reg, regions: Vec::with_capacity(100), w, h }
     }
 }
 
@@ -399,13 +360,12 @@ impl BinaryImage {
     pub fn otsu<I>(img: &I) -> Self
     where
         I: GenericImageView,
-        I::Pixel: ImgPixel<Subpixel = u8> + Binarize,
+        I::Pixel: ImgPixel<Subpixel = u8>,
     {
         let (w, h) = img.dimensions();
         let chan_count = I::Pixel::CHANNEL_COUNT as usize;
         let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
         let block_size = 1 << block_pow;
-        let block_area = block_size * block_size;
         let mask = (1 << block_pow) - 1;
 
         let wsteps = (w + mask) >> block_pow;
@@ -474,7 +434,6 @@ impl BinaryImage {
         let wsteps = wsteps as usize;
         let hsteps = hsteps as usize;
         let half_grid = BLOCK_GRID_SIZE / 2;
-        let grid_area = (BLOCK_GRID_SIZE * BLOCK_GRID_SIZE) as u32;
         let (maxx, maxy) = (wsteps - half_grid, hsteps - half_grid);
         let mut threshold = vec![[0u8; 4]; wsteps * hsteps];
 
@@ -516,51 +475,49 @@ impl BinaryImage {
         }
 
         // Initially mark all pixels as unvisited; will be used for flood fill later.
-        let mut buffer = vec![Pixel::Unvisited(Color::White); (w * h) as usize];
+        // Colour plane packs `color_size` bits per pixel; the matrix strides columns by it.
+        let color_size = chan_count.next_power_of_two() as u32;
+        let mut buffer = BitMatrix::new(w, h, color_size);
         for y in 0..h {
-            let row_off = y * w;
             let thresh_row_off = (y as usize >> block_pow) * wsteps;
             for x in 0..w {
                 let p = img.get_pixel(x, y);
 
-                let idx = (row_off + x) as usize;
                 let xsteps = x as usize >> block_pow;
                 let thresh_idx = thresh_row_off + xsteps;
 
-                let mut color_byte = 0;
-                for (i, &val) in p.channels().iter().rev().enumerate() {
-                    if val > threshold[thresh_idx][i] {
-                        color_byte |= 1 << i;
-                    }
+                let mut color_byte = 0u64;
+                for (i, &val) in p.channels().iter().enumerate() {
+                    color_byte = (color_byte << 1) | u64::from(val > threshold[thresh_idx][i]);
                 }
 
-                let color = <I::Pixel>::binarize(color_byte);
-                if color != Color::White {
-                    buffer[idx] = Pixel::Unvisited(color);
+                if color_byte != 0 {
+                    buffer.put(x, y, color_byte);
                 }
             }
         }
 
+        let px_reg = vec![u16::MAX; (w * h) as usize];
         let regions = Vec::with_capacity(100);
-        Self { buffer, regions, w, h }
+        Self { buffer, px_reg, regions, w, h }
     }
 }
 
 // Util functions
 impl BinaryImage {
-    pub fn get(&self, x: u32, y: u32) -> Option<Pixel> {
-        let w = self.w;
-        let h = self.h;
-
-        if x >= w || y >= h {
+    pub fn get(&self, x: u32, y: u32) -> Option<Color> {
+        if x >= self.w || y >= self.h {
             return None;
         }
-
-        let idx = (y * w + x) as usize;
-        Some(self.buffer[idx])
+        let bits = self.buffer.get(x, y);
+        Some(if self.buffer.elem_bits() == 1 {
+            Color::from(bits != 0)
+        } else {
+            bits.try_into().ok()?
+        })
     }
 
-    fn coord_to_index(&self, x: i32, y: i32) -> Option<usize> {
+    fn wrap_coords(&self, x: i32, y: i32) -> Option<(u32, u32)> {
         let w = self.w as i32;
         let h = self.h as i32;
 
@@ -571,69 +528,106 @@ impl BinaryImage {
         let x = if x < 0 { x + w } else { x };
         let y = if y < 0 { y + h } else { y };
 
-        Some((y * w + x) as _)
+        Some((x as u32, y as u32))
     }
 
-    pub fn get_at_point(&self, pt: &Point) -> Option<&Pixel> {
-        let idx = self.coord_to_index(pt.x, pt.y)?;
-        Some(&self.buffer[idx])
+    pub fn get_at_point(&self, pt: &Point) -> Option<Color> {
+        let (x, y) = self.wrap_coords(pt.x, pt.y)?;
+        let bits = self.buffer.get(x, y);
+        Some(if self.buffer.elem_bits() == 1 {
+            Color::from(bits != 0)
+        } else {
+            bits.try_into().ok()?
+        })
     }
 
-    pub fn get_mut(&mut self, x: u32, y: u32) -> Option<&mut Pixel> {
-        let w = self.w;
-        let h = self.h;
-
-        if x >= w || y >= h {
+    /// Flood-fill region label at (x, y), or None if unlabeled/oversized or out of bounds.
+    pub fn get_region_id(&self, x: u32, y: u32) -> Option<u16> {
+        if x >= self.w || y >= self.h {
             return None;
         }
 
-        let idx = (y * w + x) as usize;
-        Some(&mut self.buffer[idx])
+        let id = self.px_reg[(y * self.w + x) as usize];
+        (id < OVERSIZED_LABEL).then_some(id)
     }
 
-    pub fn get_mut_at_point(&mut self, pt: &Point) -> Option<&mut Pixel> {
-        let idx = self.coord_to_index(pt.x, pt.y)?;
-        Some(&mut self.buffer[idx])
+    /// Raw label byte at (x, y): a real region id, `OVERSIZED_LABEL`, or `UNLABELED`.
+    fn raw_label(&self, x: u32, y: u32) -> u16 {
+        debug_assert!(x < self.w && y < self.h, "X or Y is out of bounds");
+        self.px_reg[(y * self.w + x) as usize]
     }
 
-    pub fn set(&mut self, x: u32, y: u32, px: Pixel) {
-        if let Some(pt) = self.get_mut(x, y) {
-            *pt = px;
-        }
-    }
-
-    pub fn set_at_point(&mut self, pt: &Point, px: Pixel) {
-        if let Some(pt) = self.get_mut_at_point(pt) {
-            *pt = px;
+    pub fn set_region_id(&mut self, x: u32, y: u32, reg_id: u16) {
+        if x < self.w && y < self.h {
+            self.px_reg[(y * self.w + x) as usize] = reg_id;
         }
     }
 
     #[cfg(test)]
     pub fn save(&self, path: &Path) -> ImageResult<()> {
-        let w = self.w;
-        let mut img = RgbImage::new(w, self.h);
-        for (i, p) in self.buffer.iter().enumerate() {
-            let i = i as u32;
-            let (x, y) = (i % w, i / w);
-            img.put_pixel(x, y, (*p).into());
+        let mut img = RgbImage::new(self.w, self.h);
+        for y in 0..self.h {
+            for x in 0..self.w {
+                let bits = self.buffer.get(x, y);
+                let rgb = if self.buffer.elem_bits() == 1 {
+                    // B&W: 1 = light/white, 0 = dark/black
+                    if bits == 0 {
+                        image::Rgb([0, 0, 0])
+                    } else {
+                        image::Rgb([255, 255, 255])
+                    }
+                } else {
+                    // Multicolor: low 3 bits are R<<2 | G<<1 | B, i.e. a Color
+                    Color::try_from(bits as u8).unwrap_or(Color::White).into()
+                };
+                img.put_pixel(x, y, rgb);
+            }
         }
-        img.save(path).unwrap();
+        img.save(path)?;
         Ok(())
     }
 }
 
 // Flood fill related functions
 impl BinaryImage {
+    // Region at `src`, filling it if unlabelled. Uncapped — the fill always completes, so this
+    // never returns `None`; a thin wrapper over `get_region_capped`.
     pub(crate) fn get_region(&mut self, src: (u32, u32)) -> &mut Region {
-        let px = self.get(src.0, src.1).unwrap();
+        self.get_region_capped(src, u32::MAX).expect("uncapped fill never bails")
+    }
 
-        match px {
-            Pixel::Unvisited(color) => {
+    // Region at `src`, but bounds the flood fill: if the region would grow past `max_area` (or joins
+    // an already-oversized region), the fill bails and this returns `None` — letting a finder check
+    // reject an implausibly large stone/ring without filling an entire background blob. The bailed
+    // pixels are relabelled `OVERSIZED_LABEL` so later capped fills skip them, yet they never
+    // surface as a region. Pass `u32::MAX` for an uncapped fill (see `get_region`); uncapped fills
+    // reclaim oversized pixels, so the seed short-circuit below is gated to capped fills only.
+    pub(crate) fn get_region_capped(
+        &mut self,
+        src: (u32, u32),
+        max_area: u32,
+    ) -> Option<&mut Region> {
+        let capped = max_area != u32::MAX;
+
+        // Seed already known to be in an oversized region — reject without re-filling.
+        if capped && self.raw_label(src.0, src.1) == OVERSIZED_LABEL {
+            return None;
+        }
+
+        let color = self.get(src.0, src.1).unwrap();
+
+        match self.get_region_id(src.0, src.1) {
+            None => {
                 let reg_id = self.regions.len();
+                debug_assert!(reg_id < OVERSIZED_LABEL as usize, "Number of regions exceed 65,534");
 
                 let acl = AreaAndCentreLocator::new();
-                let to = Pixel::Visited(reg_id, color);
-                let acl = self.fill_and_accumulate(src, to, acl);
+                let (acl, oversized) = self.fill_and_accumulate(src, reg_id as u16, acl, max_area);
+                if oversized {
+                    // Pixels were relabelled oversized inside the fill; don't persist a region.
+                    return None;
+                }
+
                 let new_reg = Region {
                     id: reg_id,
                     src,
@@ -645,24 +639,30 @@ impl BinaryImage {
 
                 self.regions.push(new_reg);
 
-                self.regions.get_mut(reg_id).expect("Region not found after saving")
+                Some(self.regions.get_mut(reg_id).expect("Region not found after saving"))
             }
-            Pixel::Visited(id, _) => {
-                self.regions.get_mut(id).expect("No region found for visited pixel")
+            Some(id) => {
+                Some(self.regions.get_mut(id as usize).expect("No region found for visited pixel"))
             }
         }
     }
 
-    /// Fills region with provided color and accumulates info
+    /// Fills region with provided color and accumulates info. Bails once the filled area exceeds
+    /// `max_area` (pass `u32::MAX` for an uncapped fill); the bool return is `true` when it bailed.
+    /// On a bail the filled pixels are relabelled `OVERSIZED_LABEL` so the region is not re-filled
+    /// by later capped fills, yet is never surfaced as a real region. Uncapped fills cross and
+    /// reclaim such pixels, so the sentinel never leaks past finder location.
     pub fn fill_and_accumulate<A: Accumulator>(
         &mut self,
         src: (u32, u32),
-        target: Pixel,
+        target: u16,
         mut acc: A,
-    ) -> A {
-        let from = self.get(src.0, src.1).unwrap();
-
-        debug_assert!(from != target, "Cannot fill same color: From {from:?}, To {target:?}");
+        max_area: u32,
+    ) -> (A, bool) {
+        // Compare packed bits straight from the BitMatrix rather than converting each pixel to a
+        // `Color` enum: the fill only ever tests colour *equality*, and equal colour ⟺ equal bits,
+        // so this drops a branch + enum construction + `Option` on every scanned pixel.
+        let clr_bits = self.buffer.get(src.0, src.1);
 
         // Flood fill algorithm
         let w = self.w;
@@ -670,32 +670,81 @@ impl BinaryImage {
         let mut queue = VecDeque::new();
         queue.push_back(src);
 
+        let mut filled: u32 = 0;
+        let mut oversized = false;
+        let capped = max_area != u32::MAX;
+        // A pixel is free to fill only if its label is >= this: capped fills stop at any label
+        // (real or oversized); uncapped fills additionally reclaim oversized pixels.
+        let free_min = if capped { UNLABELED } else { OVERSIZED_LABEL };
+        // When capped, remember the labelled runs so they can be relabelled oversized on a bail.
+        let mut runs: Vec<(u32, u32, u32)> = Vec::new();
+
         while let Some(pt) = queue.pop_front() {
             let (x, y) = pt;
+
+            let lbl = self.raw_label(x, y);
+            if lbl < free_min {
+                // A popped pixel is always the same colour (it was enqueued as a colour match), so
+                // touching an oversized one means this component is joined to an already-rejected
+                // blob and is itself oversized — bail. (Capped fills only: for uncapped fills
+                // OVERSIZED is >= free_min, so it's reclaimed rather than reaching here.)
+                if lbl == OVERSIZED_LABEL {
+                    oversized = true;
+                    break;
+                }
+                // Otherwise a real-region boundary (incl. pixels this fill already claimed) — skip.
+                continue;
+            }
+
             let mut left = x;
             let mut right = x;
-            self.set(x, y, target);
+            self.set_region_id(x, y, target);
 
             // Travel left till boundary
-            while left > 0 && self.get(left - 1, y).unwrap() == from {
+            while left > 0
+                && self.buffer.get(left - 1, y) == clr_bits
+                && self.raw_label(left - 1, y) >= free_min
+            {
                 left -= 1;
-                self.set(left, y, target);
+                self.set_region_id(left, y, target);
             }
 
             // Travel right till boundary
-            while right < w - 1 && self.get(right + 1, y).unwrap() == from {
+            while right < w - 1
+                && self.buffer.get(right + 1, y) == clr_bits
+                && self.raw_label(right + 1, y) >= free_min
+            {
                 right += 1;
-                self.set(right, y, target);
+                self.set_region_id(right, y, target);
             }
 
             acc.accumulate(Row { left, right, y });
+            if capped {
+                runs.push((left, right, y));
+            }
+
+            // Same oversized-contact signal as above, but for a horizontal abutment the sentinel
+            // pixel is never enqueued, so check the run's two ends here (raw_label first — the
+            // colour read only happens on the rare sentinel hit).
+            let abuts_oversized = capped
+                && ((left > 0
+                    && self.raw_label(left - 1, y) == OVERSIZED_LABEL
+                    && self.buffer.get(left - 1, y) == clr_bits)
+                    || (right < w - 1
+                        && self.raw_label(right + 1, y) == OVERSIZED_LABEL
+                        && self.buffer.get(right + 1, y) == clr_bits));
+
+            filled += right - left + 1;
+            if filled > max_area || abuts_oversized {
+                oversized = true;
+                break;
+            }
 
             for ny in [y.saturating_sub(1), y + 1] {
                 if ny != y && ny < h {
                     let mut seg_len = 0;
                     for x in left..=right {
-                        let px = self.get(x, ny).unwrap();
-                        if px == from {
+                        if self.buffer.get(x, ny) == clr_bits {
                             seg_len += 1;
                         } else if seg_len > 0 {
                             queue.push_back((x - 1, ny));
@@ -708,7 +757,18 @@ impl BinaryImage {
                 }
             }
         }
-        acc
+
+        if oversized {
+            // Relabel everything this fill claimed as oversized: cached so later capped fills skip
+            // it, but invisible to `get_region_id`, so it can't masquerade as a region.
+            for (rl, rr, ry) in &runs {
+                for rx in *rl..=*rr {
+                    self.set_region_id(rx, *ry, OVERSIZED_LABEL);
+                }
+            }
+        }
+
+        (acc, oversized)
     }
 }
 
@@ -717,6 +777,12 @@ impl BinaryImage {
 
 // Number of blocks the shorter dimension of image should be divided into
 const BLOCK_COUNT: f64 = 20.0;
+
+// `px_reg` sentinels. Real region ids run 0..OVERSIZED_LABEL. UNLABELED marks an unfilled pixel;
+// OVERSIZED_LABEL marks a pixel in a region that a capped fill abandoned as too large to be a
+// finder part — cached so it isn't re-filled, but never surfaced as a real region.
+const UNLABELED: u16 = u16::MAX;
+const OVERSIZED_LABEL: u16 = u16::MAX - 1;
 
 // Number of blocks along row/col in a grid
 const BLOCK_GRID_SIZE: usize = 5;

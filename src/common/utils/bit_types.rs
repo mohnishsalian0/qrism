@@ -374,6 +374,302 @@ impl BitArray {
     }
 }
 
+// Bit matrix
+//------------------------------------------------------------------------------
+
+/// A packed grid of `w`×`h` elements, each `elem_bits` wide. `get`/`put` address an element by its
+/// column/row and stride by `elem_bits` internally, so callers never multiply the column by hand.
+/// `elem_bits` is required to be a factor of 64, so every element sits wholly within one 64-bit
+/// word — no element ever straddles a word boundary.
+#[derive(Debug, Clone)]
+pub struct BitMatrix {
+    data: Vec<u64>,
+    w: u32,
+    h: u32,
+    elem_bits: u32,
+}
+
+impl BitMatrix {
+    pub fn new(w: u32, h: u32, elem_bits: u32) -> Self {
+        debug_assert!((1..=64).contains(&elem_bits), "elem_bits must be 1..=64: {elem_bits}");
+        debug_assert!(64 % elem_bits == 0, "elem_bits must be a factor of 64: {elem_bits}");
+        let cap = ((w * h * elem_bits + 63) >> 6) as usize;
+        Self { data: vec![0u64; cap], w, h, elem_bits }
+    }
+
+    pub fn width(&self) -> u32 {
+        self.w
+    }
+
+    pub fn height(&self) -> u32 {
+        self.h
+    }
+
+    pub fn elem_bits(&self) -> u32 {
+        self.elem_bits
+    }
+
+    pub fn data(&self) -> &[u64] {
+        &self.data
+    }
+}
+
+// Get/put elements for bit matrix
+//------------------------------------------------------------------------------
+
+impl BitMatrix {
+    pub fn get(&self, x: u32, y: u32) -> u64 {
+        debug_assert!(x < self.w, "X coordinate is out of bounds: Width {}, X {}", self.w, x);
+        debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
+
+        let flat_pos = (y * self.w + x) * self.elem_bits;
+        let idx = (flat_pos >> 6) as usize;
+        let off = flat_pos & 63;
+
+        debug_assert!(
+            idx < self.data.len(),
+            "Out of bit matrix bounds: Len {}, Index {}",
+            self.data.len(),
+            idx
+        );
+
+        // `elem_bits` divides 64, so the element never crosses into the next word.
+        let mask = if self.elem_bits == 64 { u64::MAX } else { (1u64 << self.elem_bits) - 1 };
+        (self.data[idx] >> off) & mask
+    }
+
+    pub fn put(&mut self, x: u32, y: u32, bits: u64) {
+        debug_assert!(x < self.w, "X coordinate is out of bounds: Width {}, X {}", self.w, x);
+        debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
+        debug_assert!(
+            self.elem_bits == 64 || bits >> self.elem_bits == 0,
+            "bits {bits} do not fit in elem_bits {}",
+            self.elem_bits
+        );
+
+        let flat_pos = (y * self.w + x) * self.elem_bits;
+        let idx = (flat_pos >> 6) as usize;
+        let off = flat_pos & 63;
+
+        debug_assert!(
+            idx < self.data.len(),
+            "Out of bit matrix bounds: Len {}, Index {}",
+            self.data.len(),
+            idx
+        );
+
+        // `elem_bits` divides 64, so the element sits wholly within word `idx`.
+        let mask = if self.elem_bits == 64 { u64::MAX } else { (1u64 << self.elem_bits) - 1 };
+        self.data[idx] = (self.data[idx] & !(mask << off)) | (bits << off);
+    }
+}
+
+#[cfg(test)]
+mod bit_matrix_tests {
+
+    use super::BitMatrix;
+
+    #[test]
+    fn test_new_is_all_zero() {
+        let (w, h) = (10, 7);
+        let bm = BitMatrix::new(w, h, 1);
+        assert_eq!(bm.width(), w);
+        assert_eq!(bm.height(), h);
+        assert_eq!(bm.elem_bits(), 1);
+        // ceil(70 / 64) = 2 words
+        assert_eq!(bm.data().len(), 2);
+        for y in 0..h {
+            for x in 0..w {
+                assert_eq!(bm.get(x, y), 0, "fresh matrix should be all zero at ({x}, {y})");
+            }
+        }
+    }
+
+    // A 4-bit-element matrix packs 16 elements per word and sizes its buffer accordingly.
+    #[test]
+    fn test_new_multibit_capacity() {
+        let bm = BitMatrix::new(10, 7, 4);
+        assert_eq!(bm.elem_bits(), 4);
+        // 10 * 7 * 4 = 280 bits -> ceil(280 / 64) = 5 words
+        assert_eq!(bm.data().len(), 5);
+    }
+
+    #[test]
+    fn test_put_get_roundtrip() {
+        let mut bm = BitMatrix::new(10, 7, 1);
+        bm.put(3, 2, 1);
+        assert_eq!(bm.get(3, 2), 1);
+        // Clearing a set element
+        bm.put(3, 2, 0);
+        assert_eq!(bm.get(3, 2), 0);
+    }
+
+    // Multi-bit elements round-trip their full value.
+    #[test]
+    fn test_put_get_roundtrip_multibit() {
+        let mut bm = BitMatrix::new(10, 7, 4);
+        bm.put(3, 2, 0b1011);
+        assert_eq!(bm.get(3, 2), 0b1011);
+        bm.put(3, 2, 0b0110);
+        assert_eq!(bm.get(3, 2), 0b0110, "overwrite must replace the element wholesale");
+    }
+
+    // Writing an element wider than `elem_bits` violates the contract and is rejected.
+    #[test]
+    #[should_panic]
+    fn test_put_oversized_element_panics() {
+        let mut bm = BitMatrix::new(10, 1, 4);
+        bm.put(0, 0, 0b1_0000); // needs 5 bits, only 4 allowed
+    }
+
+    // A transposed get/put (x*w+y instead of y*w+x) passes on the diagonal but fails
+    // off it. Use a non-square matrix and an asymmetric cell to catch that.
+    #[test]
+    fn test_not_transposed() {
+        let mut bm = BitMatrix::new(10, 7, 1);
+        bm.put(6, 2, 1);
+        assert_eq!(bm.get(6, 2), 1, "the exact cell that was set must read back");
+        // The mirror cell is a different location and must stay zero.
+        assert_eq!(bm.get(2, 6), 0, "mirror cell must be unaffected");
+    }
+
+    #[test]
+    fn test_elements_are_independent() {
+        let mut bm = BitMatrix::new(10, 7, 4);
+        bm.put(4, 3, 0b1010);
+        // Every 4-neighbour stays zero.
+        assert_eq!(bm.get(3, 3), 0);
+        assert_eq!(bm.get(5, 3), 0);
+        assert_eq!(bm.get(4, 2), 0);
+        assert_eq!(bm.get(4, 4), 0);
+        // Writing a neighbour doesn't disturb the set element.
+        bm.put(5, 3, 0b0101);
+        assert_eq!(bm.get(4, 3), 0b1010);
+    }
+
+    // Elements either side of a 64-bit word boundary must land in different words.
+    // With elem_bits = 4, element 16 begins exactly at bit 64 (word 1, bit 0).
+    #[test]
+    fn test_word_boundary() {
+        let mut bm = BitMatrix::new(100, 2, 4);
+        bm.put(15, 0, 0b1111); // last element of word 0 (bits 60..64)
+        bm.put(16, 0, 0b1111); // first element of word 1 (bits 64..68)
+        assert_eq!(bm.get(15, 0), 0b1111);
+        assert_eq!(bm.get(16, 0), 0b1111);
+        assert_eq!(bm.data()[0].count_ones(), 4);
+        assert_eq!(bm.data()[1].count_ones(), 4);
+        // They are genuinely distinct cells.
+        bm.put(15, 0, 0);
+        assert_eq!(bm.get(15, 0), 0);
+        assert_eq!(bm.get(16, 0), 0b1111);
+    }
+
+    // Fill a full non-square multi-bit matrix and read it all back.
+    #[test]
+    fn test_full_coverage() {
+        let (w, h, elem_bits) = (13u32, 9u32, 4u32);
+        let mut bm = BitMatrix::new(w, h, elem_bits);
+        let val = |x: u32, y: u32| ((x + y) & 0b1111) as u64;
+        for y in 0..h {
+            for x in 0..w {
+                bm.put(x, y, val(x, y));
+            }
+        }
+        for y in 0..h {
+            for x in 0..w {
+                assert_eq!(bm.get(x, y), val(x, y), "mismatch at ({x}, {y})");
+            }
+        }
+    }
+
+    #[test]
+    fn test_last_cell() {
+        let (w, h) = (10, 7);
+        let mut bm = BitMatrix::new(w, h, 1);
+        bm.put(w - 1, h - 1, 1);
+        assert_eq!(bm.get(w - 1, h - 1), 1);
+        assert_eq!(bm.data().iter().map(|word| word.count_ones()).sum::<u32>(), 1);
+    }
+
+    // elem_bits == 64: one element per word, mask is the whole word.
+    #[test]
+    fn test_full_word_element() {
+        let mut bm = BitMatrix::new(3, 1, 64);
+        let pattern = 0xF0F0_F0F0_0F0F_0F0Fu64;
+        bm.put(1, 0, pattern);
+        assert_eq!(bm.get(1, 0), pattern);
+        assert_eq!(bm.get(0, 0), 0, "neighbouring word must stay zero");
+        assert_eq!(bm.get(2, 0), 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_get_x_out_of_bounds() {
+        let bm = BitMatrix::new(10, 7, 1);
+        bm.get(10, 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_get_y_out_of_bounds() {
+        let bm = BitMatrix::new(10, 7, 1);
+        bm.get(0, 7);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_put_x_out_of_bounds() {
+        let mut bm = BitMatrix::new(10, 7, 1);
+        bm.put(10, 0, 1);
+    }
+
+    // elem_bits must divide 64 evenly.
+    #[test]
+    #[should_panic]
+    fn test_new_non_factor_elem_bits_panics() {
+        BitMatrix::new(10, 7, 3);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_new_zero_elem_bits_panics() {
+        BitMatrix::new(10, 7, 0);
+    }
+
+    // Exhaustive round trip for every factor-of-64 element width: each element preserves its value
+    // and leaves its immediate neighbours untouched, including across the word boundary.
+    #[test]
+    fn test_put_get_round_trip_sweep() {
+        // Deterministic pseudo-random payloads via a small LCG.
+        let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = || {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed
+        };
+
+        for elem_bits in [1u32, 2, 4, 8, 16, 32, 64] {
+            let mask = if elem_bits == 64 { u64::MAX } else { (1u64 << elem_bits) - 1 };
+            // Wide enough to span several words for the smaller element widths.
+            let w = 200u32;
+            let mut bm = BitMatrix::new(w, 1, elem_bits);
+
+            let mut expected = vec![0u64; w as usize];
+            for x in 0..w {
+                let v = next() & mask;
+                expected[x as usize] = v;
+                bm.put(x, 0, v);
+            }
+            for x in 0..w {
+                assert_eq!(
+                    bm.get(x, 0),
+                    expected[x as usize],
+                    "round trip failed at x={x}, elem_bits={elem_bits}"
+                );
+            }
+        }
+    }
+}
+
 // Global constants
 //------------------------------------------------------------------------------
 
