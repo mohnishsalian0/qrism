@@ -336,6 +336,14 @@ impl Symbol {
         self.h.map(x, y)
     }
 
+    /// The refined localization homography (logical module coords -> image pixels).
+    /// Test-only: the colour-strategy benchmark reuses it to sample module colours.
+    #[cfg(test)]
+    #[inline]
+    pub fn homography(&self) -> &Homography {
+        &self.h
+    }
+
     #[cfg(feature = "benchmark")]
     #[inline]
     pub fn raw_map(&self, x: f64, y: f64) -> QRResult<(f64, f64)> {
