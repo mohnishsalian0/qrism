@@ -6,22 +6,23 @@ use qrism::{MaskPattern, QRBuilder};
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Create a QR code
-    let data = "Hello, world! This is a demonstration of QR code generation and reading.";
+    let data = "Hello world";
     let qr = QRBuilder::new(data.as_bytes())
-        .version(Version::Normal(5)) // If not provided, finds smallest version to fit the data
+        .version(Version::Normal(1)) // If not provided, finds smallest version to fit the data
         .ec_level(ECLevel::M) // Defaults to ECLevel::M
-        .high_capacity(false) // Defaults to false, use true for high capacity QR
+        .high_capacity(true) // Defaults to false, use true for high capacity QR
         .mask(MaskPattern::new(1)) // If not provided, finds best mask based on penalty score
         .build()?;
 
     // Save QR code as image
-    let img = qr.to_image(4); // scale factor for output image size
-    let output_path = Path::new("./assets/qr_example.png");
+    let img = qr.to_image(5); // scale factor for output image size
+    let p = "./assets/sample.png";
+    let output_path = Path::new(&p);
     img.save(output_path)?;
     println!("QR code saved to: {}", output_path.display());
 
-    // Read the QR code back
-    let read_path = Path::new("./assets/hv1.jpg");
+    // // Read the QR code back
+    let read_path = Path::new("./assets/qr_example.png");
     let img = image::open(read_path)?;
     let mut res = detect_qr(&img);
 
@@ -34,7 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Read high capacity QR code
-    let read_path = Path::new("./assets/example6.png");
+    let read_path = Path::new("./benches/dataset/high_capacity/xs1.jpeg");
     let img = image::open(read_path)?;
     let mut res = detect_hc_qr(&img);
 

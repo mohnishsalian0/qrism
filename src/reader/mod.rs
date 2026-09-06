@@ -1,5 +1,7 @@
 mod alignment;
 pub mod binarize;
+#[cfg(test)]
+mod color;
 mod finder;
 mod locate;
 pub mod symbol;
@@ -157,7 +159,7 @@ mod reader_tests {
 
         let img = image::open(img_path).unwrap().to_luma8();
 
-        let prep_path = std::path::Path::new("assets/prep.png");
+        let prep_path = std::path::Path::new("assets/prepsm.png");
         let mut bin_img = BinaryImage::prepare(&img);
         bin_img.save(prep_path).unwrap();
         let mut img = image::open(prep_path).unwrap().to_rgb8();
