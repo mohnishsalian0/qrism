@@ -150,14 +150,14 @@ mod reader_tests {
         #[allow(unused_imports)]
         use std::sync::Arc;
 
-        let img_path = std::path::Path::new("assets/example1.png");
+        let img_path = std::path::Path::new("./assets/hv1.jpg");
 
-        let mut img = image::open(img_path).unwrap().to_rgb8();
+        let mut img = image::open(img_path).unwrap().to_luma8();
 
         let prep_path = std::path::Path::new("assets/prep.png");
         let mut bin_img = BinaryImage::prepare(&img);
-        // bin_img.save(prep_path).unwrap();
-        // let mut img = image::open(prep_path).unwrap().to_rgb8();
+        bin_img.save(prep_path).unwrap();
+        let mut img = image::open(prep_path).unwrap().to_rgb8();
 
         let finders = locate_finders(&mut bin_img);
         dbg!(finders.len());
@@ -165,7 +165,7 @@ mod reader_tests {
 
         let groups = group_finders(&finders);
         dbg!(groups.len());
-        // groups.iter().for_each(|g| g.highlight(&mut img));
+        groups.iter().for_each(|g| g.highlight(&mut img));
 
         let sym_locs = locate_symbols(&mut bin_img, groups);
         dbg!(sym_locs.len());
@@ -179,6 +179,6 @@ mod reader_tests {
         });
 
         let out_path = std::path::Path::new("assets/detect.png");
-        // img.save(out_path).unwrap();
+        img.save(out_path).unwrap();
     }
 }

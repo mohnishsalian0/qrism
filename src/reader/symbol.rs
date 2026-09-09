@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::Ordering, sync::Arc};
 
 use super::{
     binarize::BinaryImage,
@@ -27,6 +27,44 @@ use crate::{
 #[cfg(test)]
 use image::RgbImage;
 
+// Finder local frame
+//
+// An affine frame anchored at a finder centre, used to read the version info block beside the
+// BL & TR finders. It exists because the symbol homography isn't available yet at that point:
+// the homography needs the version, so the version has to be read first.
+//
+// The two basis vectors run from the finder centre to the midpoints of its black ring which sit
+// exactly 3 modules out
+// So the frame picks up the symbol's local rotation, scale and skew straight from the finder,
+// without needing the grid. Being affine it carries no perspective term and drifts the further
+// it extends, which is acceptable over the few modules between a finder and its version block.
+//------------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+struct LocalFrame {
+    o: Point,
+    x: Slope,
+    y: Slope,
+}
+
+impl LocalFrame {
+    // `mx` and `my` are the black ring midpoints that define the +x and +y directions; both
+    // axes therefore point inward, into the symbol.
+    fn new(o: &Point, mx: &Point, my: &Point) -> Self {
+        Self { o: *o, x: Slope::new(o, mx), y: Slope::new(o, my) }
+    }
+
+    // Maps module coordinates, relative to the finder centre, onto image pixels. The basis
+    // vectors span 3 modules each, hence scaling the offsets by 1/3.
+    fn map(&self, x: f64, y: f64) -> Point {
+        let (sx, sy) = (x / 3.0, y / 3.0);
+        Point {
+            x: (self.o.x as f64 + sx * self.x.dx as f64 + sy * self.y.dx as f64).round() as i32,
+            y: (self.o.y as f64 + sx * self.x.dy as f64 + sy * self.y.dy as f64).round() as i32,
+        }
+    }
+}
+
 // Locates symbol based on 3 finder centres, their edge points & provisional grid size
 //------------------------------------------------------------------------------
 
@@ -53,7 +91,7 @@ impl SymbolLocation {
     // ****                   *****              *****                   ****
     // ****                   *****              *****                   ****
     // ****************************              ****************************
-    // ************m10*************              ************m24*************
+    // ************m10*************              ************m23*************
     // ****************************              ****************************
     //
     //
@@ -76,7 +114,7 @@ impl SymbolLocation {
     pub fn locate(img: &mut BinaryImage, group: &mut FinderGroup) -> Option<SymbolLocation> {
         let [mut c0, c1, mut c2] = group.finders;
 
-        // Compute provisional location of alignment centre (c4)
+        // Compute provisional location of alignment centre (c3)
         let dx = c2.x - c1.x;
         let dy = c2.y - c1.y;
         let mut align = Point { x: c0.x + dx, y: c0.y + dy };
@@ -114,6 +152,8 @@ impl SymbolLocation {
 
         let ver = Version::from_grid_size(size as usize)?;
 
+        let app = ver.alignment_pattern();
+
         // For versions greater than 1, a more robust algorithm to locate align centre.
         // First, locate provisional centre from mid 1 with distance of c1 from mid 4.
         // Spiral out of provisional align pt to identify potential pt. Then compare the area of
@@ -131,61 +171,111 @@ impl SymbolLocation {
     }
 }
 
-// Validates the symbol and returns its size if valid. Validation involves:
-// 1. Ensuring the horizontal and vertical timing patterns are consistent.
-// 2. Verifying that the estimated number of modules along the center matches the timing patterns.
+// Verifies the symbol and returns its size in modules, or None if the measurements disagree.
+//
+// The size is first estimated geometrically: the module count along each leg (c1->c2 and
+// c1->c0) is derived from the finder centre-to-centre distances scaled by the finder widths,
+// then snapped to the nearest valid size. The leg needing the smaller correction wins.
+//
+// That estimate is then confirmed against a second, independent reading of the size:
+// 1. Below version 7 (size 45), by counting transitions along both timing patterns. Each run
+//    must agree with the module count estimated for its own leg, and the two runs must agree
+//    with each other.
+// 2. From version 7 up, by decoding the version info blocks beside the BL & TR finders. The
+//    block that needed fewer error corrections wins; if neither decodes, the geometric
+//    estimate stands in. The resulting size must agree with that estimate.
+//
+// Every comparison is a relative difference measured against SYMBOL_HEURISTIC_THRESHOLD.
 fn verify_symbol_size(img: &BinaryImage, finders: &[Point; 3], mids: &[Point; 6]) -> Option<u32> {
     let [c0, c1, c2] = finders;
     let [m03, m01, m10, m12, m21, m23] = mids;
 
-    // Measure timing pattern from c1 to c2
-    let t12 = measure_timing_patterns(img, m10, m23);
-
-    // Measure timing pattern from c1 to c3
-    let t10 = measure_timing_patterns(img, m12, m03);
-
-    // Closeness of horizontal and vertical timing patterns
-    let timing_score = ((t12 as f64 / t10 as f64) - 1.0).abs();
-    if timing_score > SYMBOL_HEURICTIC_THRESHOLD {
-        return None;
-    }
-
-    // Estimate mod size along f1->f2 & f1->f0. This is used as threshold to filter noise in timing
-    // pattern
-    let ms12 = estimate_mod_size(c1, m12, c2, m21);
-    let ms10 = estimate_mod_size(c1, m10, c0, m01);
-
-    // Estimate module count from c1 to c2
+    // Estimate module count from c1 to c2. The error estimates how far is the symbol dimension
+    // from closest valid dimension. Size is the closest valid dimension
     let mc12 = estimate_mod_count(c1, m12, c2, m21);
-    let mod_score12 = ((mc12 / (t12 + 6) as f64) - 1.0).abs();
-
-    // Skip if one is more than twice as long as the other
-    if mod_score12 > SYMBOL_HEURICTIC_THRESHOLD {
-        return None;
-    }
+    let (size12, err12) = nearest_valid_size(mc12);
 
     // Estimate module count from c1 to c3
     let mc10 = estimate_mod_count(c1, m10, c0, m01);
-    let mod_score10 = ((mc10 / (t10 + 6) as f64) - 1.0).abs();
+    let (size10, err10) = nearest_valid_size(mc10);
 
-    // Skip if one is more than twice as long as the other
-    if mod_score10 > SYMBOL_HEURICTIC_THRESHOLD {
-        return None;
-    }
+    let est_size = match err12.abs().cmp(&err10.abs()) {
+        Ordering::Less => size12,
+        Ordering::Equal => size12.min(size10),
+        Ordering::Greater => size10,
+    } as u32;
 
-    // Provisional width and version
-    let size = (t12 + t10) / 2 + 13;
-    let ver = ((size as f64 - 15.0) / 4.0).floor() as u32;
-    let size = ver * 4 + 17;
+    // For version 6 (size 41) or below, use timing pattern
+    // For version 7 (size 45) or above, use version info bits
+    let size = if est_size < 45 {
+        // Measure timing pattern from c1 to c2
+        let t12 = measure_timing_patterns(img, m10, m23);
+        let mod_score12 = ((mc12 / (t12 + 6) as f64) - 1.0).abs();
+
+        // Skip if one is more than twice as long as the other
+        if mod_score12 > SYMBOL_HEURISTIC_THRESHOLD {
+            return None;
+        }
+
+        // Measure timing pattern from c1 to c3
+        let t10 = measure_timing_patterns(img, m12, m03);
+        let mod_score10 = ((mc10 / (t10 + 6) as f64) - 1.0).abs();
+
+        // Skip if one is more than twice as long as the other
+        if mod_score10 > SYMBOL_HEURISTIC_THRESHOLD {
+            return None;
+        }
+
+        // Closeness of horizontal and vertical timing patterns
+        let timing_score = ((t12 as f64 / t10 as f64) - 1.0).abs();
+        if timing_score > SYMBOL_HEURISTIC_THRESHOLD {
+            return None;
+        }
+
+        // Provisional width and version
+        let size = (t12 + t10) / 2 + 13;
+        let ver = ((size as f64 - 15.0) / 4.0).floor() as u32;
+        ver * 4 + 17
+    } else {
+        // BL & TR finder local frames of reference
+        let blf = LocalFrame::new(c0, m03, m01);
+        let trf = LocalFrame::new(c2, m23, m21);
+
+        // Read version from BL & TR version info
+        let blvi = read_version_info(img, blf);
+        let trvi = read_version_info(img, trf);
+
+        let ver = match (blvi, trvi) {
+            (Some((blv, blerr)), Some((trv, trerr))) => match blerr.cmp(&trerr) {
+                Ordering::Less => blv,
+                Ordering::Greater => trv,
+                Ordering::Equal => blv.min(trv),
+            },
+            (Some((v, _)), None) | (None, Some((v, _))) => v,
+            (None, None) => (est_size - 17) / 4,
+        };
+
+        let size = ver * 4 + 17;
+
+        let score = ((size as f64 / est_size as f64) - 1.0).abs();
+        if score > SYMBOL_HEURISTIC_THRESHOLD {
+            return None;
+        }
+
+        size
+    };
+
+    dbg!(size);
 
     Some(size)
 }
 
-fn estimate_mod_size(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {
-    let d1 = c1.dist_sq(m1);
-    let d2 = c2.dist_sq(m2);
-
-    ((d1 + d2) as f64 / 18.0).sqrt()
+// Snaps a centre-to-centre module count to the nearest valid symbol size (always 1 mod 4),
+// returning that size and the signed distance from the estimate to it.
+fn nearest_valid_size(mod_count: f64) -> (i32, i32) {
+    let est = mod_count.round() as i32 + 7;
+    let err = 1 - (est % 4);
+    (est + err, err)
 }
 
 fn find_edge_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point> {
@@ -268,6 +358,128 @@ fn estimate_mod_count(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {
     (d12 * 9.0 / avg_d).sqrt()
 }
 
+fn read_version_info(img: &BinaryImage, fr: LocalFrame) -> Option<(u32, u32)> {
+    let mut vinfo = 0;
+    for x in (-3..3).rev() {
+        for y in 5..8 {
+            let pt = fr.map(x as f64, y as f64);
+            let clr = img.get_at_point(&pt)?;
+            let bit = (clr != Color::White) as u32;
+            vinfo = (vinfo << 1) | bit;
+        }
+    }
+
+    rectify_info(vinfo, &VERSION_INFOS, VERSION_ERROR_CAPACITY)
+        .map(|(v, e)| (v >> VERSION_ERROR_BIT_LEN, e))
+        .ok()
+}
+
+#[cfg(test)]
+mod symbol_locate_tests {
+    use crate::binarize::BinaryImage;
+    use crate::metadata::{Color, ECLevel, Version};
+    use crate::reader::utils::geometry::Point;
+    use crate::symbol::{read_version_info, LocalFrame};
+    use crate::{Module, QRBuilder};
+
+    #[test]
+    fn test_read_version_info() {
+        let data = "Hello, world! 🌎";
+        let ecl = ECLevel::L;
+        let k = 3.0;
+
+        for v in 7..=40u32 {
+            let ver = Version::Normal(v as usize);
+            let w = ver.width();
+
+            let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
+            let img = BinaryImage::prepare(&qr.to_image(k as u32));
+
+            let q = 4.0; // quiet zone, modules
+            let c = (3.5 + q) * k; // 3.5 modules in from the edge
+            let far = (w as f64 - 3.5 + q) * k;
+            let p = |x: f64, y: f64| Point { x: x.round() as i32, y: y.round() as i32 };
+
+            // BL: centre, then m03 (+3 modules right) and m01 (3 modules up)
+            let blf = LocalFrame::new(&p(c, far), &p(c + 3.0 * k, far), &p(c, far - 3.0 * k));
+            let (blv, blerr) = read_version_info(&img, blf).expect("Version read failed");
+            assert_eq!(blv, v);
+            assert_eq!(blerr, 0);
+
+            // TR: centre, then m23 (+3 modules down) and m21 (3 modules left)
+            let trf = LocalFrame::new(&p(far, c), &p(far, c + 3.0 * k), &p(far - 3.0 * k, c));
+            let (trv, trerr) = read_version_info(&img, trf).expect("Version read failed");
+            assert_eq!(trv, v);
+            assert_eq!(trerr, 0);
+        }
+    }
+
+    #[test]
+    fn test_read_version_info_partially_corrupted() {
+        let data = "Hello, world! 🌎";
+        let ver = Version::Normal(7);
+        let ecl = ECLevel::L;
+        let w = ver.width();
+        let k = 3.0;
+
+        // Bottom left version bits coords to corrupt
+        let blc = [(5, -9), (5, -10), (5, -11)];
+
+        for err in 0..4 {
+            let mut qr =
+                QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
+
+            for (x, y) in blc.iter().take(err) {
+                let clr = *qr.get(*x, *y);
+                let nclr = if clr == Color::Black { Color::White } else { Color::Black };
+                qr.set(*x, *y, Module::Format(nclr));
+            }
+
+            let img = BinaryImage::prepare(&qr.to_image(k as u32));
+
+            let q = 4.0; // quiet zone, modules
+            let c = (3.5 + q) * k; // 3.5 modules in from the edge
+            let far = (w as f64 - 3.5 + q) * k;
+            let p = |x: f64, y: f64| Point { x: x.round() as i32, y: y.round() as i32 };
+
+            // BL: centre, then m03 (+3 modules right) and m01 (3 modules up)
+            let blf = LocalFrame::new(&p(c, far), &p(c + 3.0 * k, far), &p(c, far - 3.0 * k));
+            let (blv, blerr) = read_version_info(&img, blf).expect("Version read failed");
+            assert_eq!(blv, *ver as u32);
+            assert_eq!(blerr, err as u32);
+        }
+    }
+
+    #[test]
+    fn test_read_version_info_fully_corrupted() {
+        let data = "Hello, world! 🌎";
+        let ver = Version::Normal(7);
+        let ecl = ECLevel::L;
+        let w = ver.width();
+        let k = 3.0;
+
+        let mut qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
+
+        for (x, y) in [(5, -9), (5, -10), (5, -11), (4, -9)] {
+            let clr = *qr.get(x, y);
+            let nclr = if clr == Color::Black { Color::White } else { Color::Black };
+            qr.set(x, y, Module::Format(nclr));
+        }
+
+        let img = BinaryImage::prepare(&qr.to_image(k as u32));
+
+        let q = 4.0; // quiet zone, modules
+        let c = (3.5 + q) * k; // 3.5 modules in from the edge
+        let far = (w as f64 - 3.5 + q) * k;
+        let p = |x: f64, y: f64| Point { x: x.round() as i32, y: y.round() as i32 };
+
+        // BL: centre, then m03 (+3 modules right) and m01 (3 modules up)
+        let blf = LocalFrame::new(&p(c, far), &p(c + 3.0 * k, far), &p(c, far - 3.0 * k));
+        let blv = read_version_info(&img, blf);
+        assert!(blv.is_none());
+    }
+}
+
 // Symbol
 //------------------------------------------------------------------------------
 
@@ -287,9 +499,6 @@ impl Symbol {
 
     pub fn decode(&mut self) -> QRResult<(Metadata, String)> {
         let (ecl, mask) = self.read_format_info()?;
-        if matches!(self.ver, Version::Normal(7..=40)) {
-            self.ver = self.read_version_info()?;
-        }
         let ver = self.ver;
         let hi_cap = self.read_capacity_info()?;
 
@@ -757,7 +966,7 @@ impl Symbol {
     pub fn read_format_info(&self) -> QRResult<(ECLevel, MaskPattern)> {
         // Parse main format area
         if let Some(main) = self.get_number(&FORMAT_INFO_COORDS_QR_MAIN) {
-            if let Ok(format) = rectify_info(main, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY) {
+            if let Ok((format, _)) = rectify_info(main, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY) {
                 let format = format ^ FORMAT_MASK;
                 let (ecl, mask) = parse_format_info_qr(format);
                 return Ok((ecl, mask));
@@ -766,7 +975,7 @@ impl Symbol {
 
         // Parse side format area
         if let Some(side) = self.get_number(&FORMAT_INFO_COORDS_QR_SIDE) {
-            if let Ok(format) = rectify_info(side, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY) {
+            if let Ok((format, _)) = rectify_info(side, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY) {
                 let format = format ^ FORMAT_MASK;
                 let (ecl, mask) = parse_format_info_qr(format);
                 return Ok((ecl, mask));
@@ -779,14 +988,14 @@ impl Symbol {
     pub fn read_version_info(&self) -> QRResult<Version> {
         // Parse bottom left version area
         if let Some(bl) = self.get_number(&VERSION_INFO_COORDS_BL) {
-            if let Ok(v) = rectify_info(bl, &VERSION_INFOS, VERSION_ERROR_CAPACITY) {
+            if let Ok((v, _)) = rectify_info(bl, &VERSION_INFOS, VERSION_ERROR_CAPACITY) {
                 return Ok(Version::Normal(v as usize >> VERSION_ERROR_BIT_LEN));
             }
         }
 
         // Parse top right version area
         if let Some(tr) = self.get_number(&VERSION_INFO_COORDS_TR) {
-            if let Ok(v) = rectify_info(tr, &VERSION_INFOS, VERSION_ERROR_CAPACITY) {
+            if let Ok((v, _)) = rectify_info(tr, &VERSION_INFOS, VERSION_ERROR_CAPACITY) {
                 return Ok(Version::Normal(v as usize >> VERSION_ERROR_BIT_LEN));
             }
         }
@@ -1075,4 +1284,4 @@ mod reader_tests {
 // Global constants
 //------------------------------------------------------------------------------
 
-pub const SYMBOL_HEURICTIC_THRESHOLD: f64 = 0.5;
+pub const SYMBOL_HEURISTIC_THRESHOLD: f64 = 0.5;

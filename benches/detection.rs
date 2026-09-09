@@ -228,5 +228,4 @@ fn main() {
     benchmark_detection(Path::new("benches/dataset/detection"));
     let detection_time = detection_start.elapsed();
     println!("Detection benchmark completed in: {:?}\n", detection_time);
-    qrism::reader::profile::print_stage_profile();
 }
