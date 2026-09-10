@@ -134,25 +134,7 @@ pub fn benchmark_detection(dataset_dir: &Path) {
 pub fn get_corners(symbols: &[&mut Symbol]) -> Vec<Vec<f64>> {
     let mut symbol_corners = Vec::with_capacity(100);
     for sym in symbols {
-        let sz = sym.ver.width() as f64;
-
-        let bl = match sym.raw_map(0.0, sz) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        let tl = match sym.raw_map(0.0, 0.0) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        let tr = match sym.raw_map(sz, 0.0) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        let br = match sym.raw_map(sz, sz) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-
+        let Ok([tl, tr, br, bl]) = sym.outline() else { continue };
         symbol_corners.push(vec![bl.0, bl.1, tl.0, tl.1, tr.0, tr.1, br.0, br.1])
     }
 
