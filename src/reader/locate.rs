@@ -86,10 +86,11 @@ impl LocalFrame {
 // Locates symbol based on 3 finder centres, their edge points & provisional grid size
 //------------------------------------------------------------------------------
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SymbolLocation {
     pub(super) ver: Version,
     pub(super) tiles: [[Option<Tile>; 6]; 6],
+    pub(super) bands: [u8; MAX_WIDTH], // module -> tile, both axes
     pub(super) _anchors: [[Option<Point>; 7]; 7],
 }
 
@@ -179,8 +180,16 @@ impl SymbolLocation {
         locate_alignment_centres(img, &group.finders, ver, &mut align_centres);
 
         let tiles = build_tiles(ver, &align_centres);
+        let bands = band_table(ver);
 
-        Some(Self { ver, tiles, _anchors: align_centres })
+        let sym_loc = Self { ver, tiles, bands, _anchors: align_centres };
+
+        // Reject symbol with fitness score below 45% max score
+        if sym_loc.symbol_fitness(img) < max_fitness_score(ver) * 45 / 100 {
+            return None;
+        }
+
+        Some(sym_loc)
     }
 
     // The symbol's outline in image space: TL, TR, BR, BL. These sit on the symbol boundary -- `sz` is
@@ -852,7 +861,7 @@ mod symbol_locate_integration_tests {
     }
 }
 
-// Building tiles
+// Symbol tiles & band
 //------------------------------------------------------------------------------
 
 // Module space centre of the alignment pattern
@@ -924,6 +933,40 @@ fn build_tiles(ver: Version, centres: &[[Option<Point>; 7]; 7]) -> [[Option<Tile
     }
 
     tiles
+}
+
+// Maps each module coordinate to the index of the tile owning it along that axis. The symbol is
+// square and both axes use the same alignment coordinates, so one table serves x and y alike.
+fn band_table(ver: Version) -> [u8; MAX_WIDTH] {
+    let w = ver.width();
+    let aps = ver.alignment_pattern();
+    let n = aps.len().max(2);
+    let interior = aps.get(1..n - 1).unwrap_or(&[]);
+
+    let mut table = [u8::MAX; MAX_WIDTH];
+    let mut band = 0usize;
+
+    for (m, slot) in table.iter_mut().enumerate().take(w) {
+        if interior.get(band).is_some_and(|&e| m as i32 >= e) {
+            band += 1;
+        }
+        *slot = band as u8;
+    }
+
+    table
+}
+
+impl SymbolLocation {
+    pub(super) fn tile_at(&self, x: usize, y: usize) -> QRResult<&Tile> {
+        debug_assert!(
+            x < self.ver.width() && y < self.ver.width(),
+            "Module coord x: {x} or y: {y} is out of bound"
+        );
+
+        let tx = self.bands[x] as usize;
+        let ty = self.bands[y] as usize;
+        self.tiles[ty][tx].as_ref().ok_or(QRError::TileNotFound)
+    }
 }
 
 #[cfg(test)]
@@ -1101,7 +1144,193 @@ mod tile_tests {
     }
 }
 
+// Symbol fitness
+//------------------------------------------------------------------------------
+
+impl SymbolLocation {
+    fn symbol_fitness(&self, img: &BinaryImage) -> i32 {
+        let mut score = 0;
+        let grid_size = self.ver.width() as i32;
+
+        // Score timing patterns
+        for i in 7..grid_size - 7 {
+            let flip = if i & 1 == 0 { -1 } else { 1 };
+            score += self.cell_fitness(img, i, 6) * flip;
+            score += self.cell_fitness(img, 6, i) * flip;
+        }
+
+        // Score finders
+        score += self.finder_fitness(img, 0, 0);
+        score += self.finder_fitness(img, grid_size - 7, 0);
+        score += self.finder_fitness(img, 0, grid_size - 7);
+
+        // Score alignment patterns
+        for (x, y) in alignment_centres(self.ver) {
+            score += self.alignment_fitness(img, x, y);
+        }
+
+        score
+    }
+
+    fn finder_fitness(&self, img: &BinaryImage, x: i32, y: i32) -> i32 {
+        let (x, y) = (x + 3, y + 3);
+        self.cell_fitness(img, x, y) + self.ring_fitness(img, x, y, 1)
+            - self.ring_fitness(img, x, y, 2)
+            + self.ring_fitness(img, x, y, 3)
+    }
+
+    fn alignment_fitness(&self, img: &BinaryImage, x: i32, y: i32) -> i32 {
+        self.cell_fitness(img, x, y) - self.ring_fitness(img, x, y, 1)
+            + self.ring_fitness(img, x, y, 2)
+    }
+
+    fn ring_fitness(&self, img: &BinaryImage, cx: i32, cy: i32, r: i32) -> i32 {
+        let mut score = 0;
+
+        for i in 0..r * 2 {
+            score += self.cell_fitness(img, cx - r + i, cy - r);
+            score += self.cell_fitness(img, cx - r, cy + r - i);
+            score += self.cell_fitness(img, cx + r, cy - r + i);
+            score += self.cell_fitness(img, cx + r - i, cy + r);
+        }
+
+        score
+    }
+
+    fn cell_fitness(&self, img: &BinaryImage, x: i32, y: i32) -> i32 {
+        const OFFSETS: [f64; 3] = [0.3, 0.5, 0.7];
+        let white = Color::White;
+        let mut score = 0;
+        let Ok(tile) = self.tile_at(x as usize, y as usize) else { return 0 };
+
+        for dy in OFFSETS.iter() {
+            for dx in OFFSETS.iter() {
+                let pt = match tile.map(x as f64 + dx, y as f64 + dy) {
+                    Ok(v) => v,
+                    Err(_) => return 0,
+                };
+                if let Some(color) = img.get_at_point(&pt) {
+                    if color == white {
+                        score -= 1;
+                    } else {
+                        score += 1;
+                    }
+                }
+            }
+        }
+        score
+    }
+}
+
+// Centres of every alignment pattern in the symbol, in module coordinates. The alignment
+// coordinates form a grid, minus the three corners occupied by the finders. Version 1 has
+// no alignment coordinates, so this yields nothing.
+fn alignment_centres(ver: Version) -> impl Iterator<Item = (i32, i32)> {
+    let aps = ver.alignment_pattern();
+    let len = aps.len();
+    let last = len.saturating_sub(1);
+
+    (0..len)
+        .flat_map(move |i| (0..len).map(move |j| (i, j)))
+        .filter(move |ij| ![(0, 0), (0, last), (last, 0)].contains(ij))
+        .map(move |(i, j)| (aps[i], aps[j]))
+}
+
+fn max_fitness_score(ver: Version) -> i32 {
+    let mut total_mods = 0;
+
+    // Finder modules
+    total_mods += 49 * 3;
+
+    // Timing modules
+    let grid_size = ver.width() as i32;
+    total_mods += (grid_size - 14) * 2;
+
+    // Alignment modules
+    total_mods += 25 * alignment_centres(ver).count() as i32;
+
+    total_mods * 9 // Each module has a maximum score of 9
+}
+
+#[cfg(test)]
+mod fitness_tests {
+    use super::{alignment_centres, max_fitness_score};
+    use crate::metadata::Version;
+    use std::collections::HashSet;
+
+    // Alignment pattern counts per version from ISO/IEC 18004 Annex E: the alignment
+    // coordinates form an n x n grid, minus the three cells taken by the finders.
+    fn spec_alignment_count(v: usize) -> usize {
+        let n = match v {
+            1 => return 0,
+            2..=6 => 2,
+            7..=13 => 3,
+            14..=20 => 4,
+            21..=27 => 5,
+            28..=34 => 6,
+            35..=40 => 7,
+            _ => unreachable!(),
+        };
+        n * n - 3
+    }
+
+    #[test]
+    fn alignment_centres_matches_spec_count() {
+        for v in 1..=40 {
+            assert_eq!(
+                alignment_centres(Version::Normal(v)).count(),
+                spec_alignment_count(v),
+                "version {v}: wrong number of alignment patterns"
+            );
+        }
+    }
+
+    #[test]
+    fn alignment_centres_skips_finder_corners_and_has_no_duplicates() {
+        for v in 2..=40 {
+            let ver = Version::Normal(v);
+            let aps = ver.alignment_pattern();
+            let (first, last) = (aps[0], aps[aps.len() - 1]);
+            let centres: Vec<_> = alignment_centres(ver).collect();
+            let uniq: HashSet<_> = centres.iter().copied().collect();
+
+            assert_eq!(uniq.len(), centres.len(), "version {v}: duplicate alignment centres");
+            for corner in [(first, first), (first, last), (last, first)] {
+                assert!(
+                    !uniq.contains(&corner),
+                    "version {v}: {corner:?} collides with a finder but was emitted"
+                );
+            }
+        }
+    }
+
+    // Version 1 has no alignment patterns; the iterator must stay empty rather than panic.
+    #[test]
+    fn version_1_has_no_alignment_centres() {
+        assert_eq!(alignment_centres(Version::Normal(1)).count(), 0);
+        assert_eq!(max_fitness_score(Version::Normal(1)), (49 * 3 + (21 - 14) * 2) * 9);
+    }
+
+    #[test]
+    fn max_fitness_score_accounts_for_every_scored_module() {
+        for v in 1..=40 {
+            let ver = Version::Normal(v);
+            let grid_size = ver.width() as i32;
+            let expected_mods = 49 * 3                                  // 3 finders
+                + (grid_size - 14) * 2                                  // 2 timing patterns
+                + 25 * spec_alignment_count(v) as i32; // alignment patterns
+            assert_eq!(
+                max_fitness_score(ver),
+                expected_mods * 9,
+                "version {v}: max_fitness_score disagrees with what symbol_fitness scores"
+            );
+        }
+    }
+}
+
 // Global constants
 //------------------------------------------------------------------------------
 
 const SYMBOL_HEURISTIC_THRESHOLD: f64 = 0.5;
+
+pub const MAX_WIDTH: usize = 177;

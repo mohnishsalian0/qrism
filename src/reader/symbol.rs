@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::{binarize::BinaryImage, locate::SymbolLocation, utils::geometry::Point};
+use super::{binarize::BinaryImage, locate::SymbolLocation};
 use crate::{
     codec::decode as codec_decode,
     ec::{rectify_info, Block},
@@ -8,9 +8,8 @@ use crate::{
         parse_format_info_qr, Color, Metadata, FORMAT_ERROR_CAPACITY, FORMAT_INFOS_QR,
         FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK,
     },
-    reader::fitness::Tile,
     utils::{BitArray, BitStream, EncRegionIter, QRError, QRResult},
-    ECLevel, MaskPattern, Version,
+    ECLevel, MaskPattern,
 };
 
 // Symbol
@@ -19,43 +18,17 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct Symbol {
     img: Arc<BinaryImage>,
-    pub ver: Version,
-    tiles: [[Option<Tile>; 6]; 6],
-    bands: [u8; MAX_WIDTH], // module -> tile, both axes
-    _anchors: [[Option<Point>; 7]; 7],
+    loc: SymbolLocation,
 }
 
 impl Symbol {
-    pub fn new(img: Arc<BinaryImage>, sym_loc: SymbolLocation) -> Self {
-        let SymbolLocation { ver, tiles, _anchors } = sym_loc;
-        let bands = Self::band_table(ver);
-        Self { img, ver, tiles, bands, _anchors }
-    }
-
-    // Maps each module coordinate to the index of the tile owning it along that axis. The symbol is
-    // square and both axes use the same alignment coordinates, so one table serves x and y alike.
-    fn band_table(ver: Version) -> [u8; MAX_WIDTH] {
-        let w = ver.width();
-        let aps = ver.alignment_pattern();
-        let n = aps.len().max(2);
-        let interior = aps.get(1..n - 1).unwrap_or(&[]);
-
-        let mut table = [u8::MAX; MAX_WIDTH];
-        let mut band = 0usize;
-
-        for (m, slot) in table.iter_mut().enumerate().take(w) {
-            if interior.get(band).is_some_and(|&e| m as i32 >= e) {
-                band += 1;
-            }
-            *slot = band as u8;
-        }
-
-        table
+    pub fn new(img: Arc<BinaryImage>, loc: SymbolLocation) -> Self {
+        Self { img, loc }
     }
 
     pub fn decode(&mut self) -> QRResult<(Metadata, String)> {
         let (ecl, mask) = self.read_format_info()?;
-        let ver = self.ver;
+        let ver = self.loc.ver;
         let hi_cap = self.read_capacity_info()?;
 
         let pld = self.extract_payload(&mask)?;
@@ -80,32 +53,26 @@ impl Symbol {
         Ok((meta, msg))
     }
 
-    fn tile_at(&self, x: usize, y: usize) -> QRResult<&Tile> {
-        debug_assert!(
-            x < self.ver.width() && y < self.ver.width(),
-            "Module coord x: {x} or y: {y} is out of bound"
-        );
-
-        let tx = self.bands[x] as usize;
-        let ty = self.bands[y] as usize;
-        self.tiles[ty][tx].as_ref().ok_or(QRError::TileNotFound)
-    }
-
     pub fn get(&self, x: i32, y: i32) -> QRResult<Color> {
         let (xp, yp) = self.wrap_coord(x, y);
-        let tile = self.tile_at(xp as usize, yp as usize)?;
+        let tile = self.loc.tile_at(xp as usize, yp as usize)?;
         let pt = tile.map(xp as f64 + 0.5, yp as f64 + 0.5)?;
         self.img.get_at_point(&pt).ok_or(QRError::PixelOutOfBounds)
     }
 
     fn wrap_coord(&self, x: i32, y: i32) -> (i32, i32) {
-        let w = self.ver.width() as i32;
+        let w = self.loc.ver.width() as i32;
         debug_assert!(-w <= x && x < w, "x shouldn't be greater than or equal to w");
         debug_assert!(-w <= y && y < w, "y shouldn't be greater than or equal to w");
 
         let x = if x < 0 { x + w } else { x };
         let y = if y < 0 { y + w } else { y };
         (x, y)
+    }
+
+    #[inline]
+    pub fn outline(&self) -> QRResult<[(f64, f64); 4]> {
+        self.loc.outline()
     }
 }
 
@@ -254,7 +221,7 @@ mod symbol_infos_tests {
 
 impl Symbol {
     pub fn extract_payload(&self, mask: &MaskPattern) -> QRResult<BitArray> {
-        let ver = self.ver;
+        let ver = self.loc.ver;
         let mask_fn = mask.mask_functions();
         let chan_bits = ver.channel_codewords() << 3;
         let offsets = [2 * chan_bits, chan_bits, 0]; // B, G, R offsets
@@ -273,7 +240,11 @@ impl Symbol {
             }
         }
 
-        debug_assert_eq!(rgn_iter.count(), self.ver.remainder_bits(), "Remainder bits don't match");
+        debug_assert_eq!(
+            rgn_iter.count(),
+            self.loc.ver.remainder_bits(),
+            "Remainder bits don't match"
+        );
 
         Ok(payload)
     }
@@ -337,8 +308,3 @@ mod reader_tests {
         assert_eq!(blks, exp_blks);
     }
 }
-
-// Global constants
-//------------------------------------------------------------------------------
-
-const MAX_WIDTH: usize = 177;
