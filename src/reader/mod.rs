@@ -1,3 +1,4 @@
+mod alignment;
 pub mod binarize;
 mod finder;
 mod locate;
