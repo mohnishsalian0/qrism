@@ -49,10 +49,6 @@ impl Slope {
         let dy = end.y - start.y;
         Self { dx, dy }
     }
-
-    pub fn cross(&self, other: &Self) -> i32 {
-        self.dx * other.dy - self.dy * other.dx
-    }
 }
 
 // Axis trait to modify functions based on X/Y axis at compile time

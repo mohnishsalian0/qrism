@@ -13,7 +13,6 @@ mod reader {
     use crate::utils::{BitStream, QRError, QRResult};
 
     pub fn write_segment(inp: &mut BitStream, ver: Version, out: &mut String) -> QRResult<usize> {
-        let old_len = out.len();
         let (mode, char_cnt) = take_header(inp, ver)?;
 
         let decoded_len = match mode {

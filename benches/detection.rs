@@ -35,11 +35,8 @@ pub fn benchmark_detection(dataset_dir: &Path) {
         // Filters QRs which can be decoded correctly. Measures time to decode all QRs
         let start = Instant::now();
         let mut res = detect_qr(&img);
-        let symbols: Vec<&mut Symbol> = res
-            .symbols()
-            .iter_mut()
-            .filter_map(|s| if s.decode().is_ok() { Some(s) } else { None })
-            .collect();
+        let symbols: Vec<&mut Symbol> =
+            res.symbols().iter_mut().filter_map(|s| s.decode().is_ok().then_some(s)).collect();
         let time = start.elapsed().as_millis();
 
         let symbols = get_corners(&symbols);

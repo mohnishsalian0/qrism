@@ -3,11 +3,8 @@ use std::{cmp::Ordering, collections::HashSet};
 use super::{
     binarize::BinaryImage,
     finder::FinderGroup,
-    fitness::Tile,
-    utils::{
-        geometry::{Axis, BresenhamLine, Point, Slope, X, Y},
-        verify_alignment_pattern,
-    },
+    tile::Tile,
+    utils::geometry::{Axis, BresenhamLine, Point, Slope, X, Y},
 };
 use crate::{
     ec::rectify_info,
@@ -144,7 +141,7 @@ impl SymbolLocation {
         }
 
         // Hypotenuse slope
-        let mut hm = Slope { dx: c2.x - c0.x, dy: c2.y - c0.y };
+        let mut hm = Slope::new(&c0, &c2);
 
         // Make sure the middle(datum) finder is top-left and not bottom-right
         if (c1.y - c0.y) * hm.dx - (c1.x - c0.x) * hm.dy > 0 {
@@ -159,33 +156,38 @@ impl SymbolLocation {
         // to measure timing patterns, and also to locate the provisional alignment centre for
         // versions above 1.
         let mids = [
-            find_edge_mid(img, &c0, &align)?,
-            find_edge_mid(img, &c0, &c1)?,
-            find_edge_mid(img, &c1, &c0)?,
-            find_edge_mid(img, &c1, &c2)?,
-            find_edge_mid(img, &c2, &c1)?,
-            find_edge_mid(img, &c2, &align)?,
+            find_ring_mid(img, &c0, &align)?,
+            find_ring_mid(img, &c0, &c1)?,
+            find_ring_mid(img, &c1, &c0)?,
+            find_ring_mid(img, &c1, &c2)?,
+            find_ring_mid(img, &c2, &c1)?,
+            find_ring_mid(img, &c2, &align)?,
         ];
 
         let size = verify_symbol_size(img, &group.finders, &mids)?;
-
         let ver = Version::from_grid_size(size as usize)?;
+        let span = (ver.width() - 7) as f64; // Modules between finders
+        let ff = LocalFrame::new(&c1, &c2, &c0, span, span); // Finders frame
 
         // Alignement pattern points
         let mut align_centres: [[Option<Point>; 7]; 7] = [[None; 7]; 7];
 
         // Predict each alignment centre from the 3 finder centres, then spiral out of the
-        // prediction to identify the potential stone. Compare the area of the black region with
-        // the estimated module size to confirm it, and settle on the centre of the stone.
-        locate_alignment_centres(img, &group.finders, ver, &mut align_centres);
+        // prediction to identify the potential stone. Confirm it by sweeping the white ring the
+        // stone sits in, and settle on the centre of the stone.
+        locate_alignment_centres(img, &group.finders, ver, &ff, &mut align_centres);
+
+        // Unfound alignment centres are inferred from the intersection of horizontal & vertical
+        // lines built with nearest found alignment centres
+        infer_alignment_centres(ver, &ff, &mut align_centres);
 
         let tiles = build_tiles(ver, &align_centres);
         let bands = band_table(ver);
 
         let sym_loc = Self { ver, tiles, bands, _anchors: align_centres };
 
-        // Reject symbol with fitness score below 45% max score
-        if sym_loc.symbol_fitness(img) < max_fitness_score(ver) * 45 / 100 {
+        // Reject symbol with fitness score below 40% max score
+        if sym_loc.symbol_fitness(img) < max_fitness_score(ver) * 40 / 100 {
             return None;
         }
 
@@ -362,7 +364,7 @@ fn nearest_valid_size(mod_count: f64) -> (i32, i32) {
     (est + err, err)
 }
 
-fn find_edge_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point> {
+fn find_ring_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point> {
     let dx = (to.x - from.x).abs();
     let dy = (to.y - from.y).abs();
     if dx > dy {
@@ -574,7 +576,7 @@ mod symbol_locate_tests {
 //
 // The three cells that coincide with finders are taken straight from the finder centres. Every
 // other cell is resolved in two steps: a local frame predicts where the pattern should sit, then
-// `search_alignment_centre` spirals out from that prediction until it finds a black region that
+// `pinpoint_alignment_centre` spirals out from that prediction until it finds a black region that
 // reads as the pattern's centre stone. The measured centre is what gets stored -- the prediction
 // only ever seeds the search. A cell whose search comes up empty is left `None`, marking a centre
 // the caller was not given rather than one that sits at the prediction. In case of v1, the bottom
@@ -593,18 +595,18 @@ fn locate_alignment_centres(
     img: &mut BinaryImage,
     finders: &[Point; 3],
     ver: Version,
+    ff: &LocalFrame,
     centres: &mut [[Option<Point>; 7]; 7],
 ) {
     let aps = ver.alignment_pattern();
     let [c0, c1, c2] = finders;
     let span = (ver.width() - 7) as f64; // Modules between finders
-    let lf = LocalFrame::new(c1, c2, c0, span, span);
 
     if aps.is_empty() {
         centres[1][0] = Some(*c0);
         centres[0][0] = Some(*c1);
         centres[0][1] = Some(*c2);
-        centres[1][1] = Some(lf.map(span, span));
+        centres[1][1] = Some(ff.map(span, span));
         return;
     }
 
@@ -614,21 +616,15 @@ fn locate_alignment_centres(
     centres[0][0] = Some(*c1);
     centres[0][n - 1] = Some(*c2);
 
-    let mod_size = lf.mod_size();
+    let mod_size = ff.mod_size();
     let search_radius = mod_size.round() as i32 * (n as i32 + 14);
-
-    let mod_area = lf.mod_area();
-    let min_area = (mod_area / 3.0).round() as u32;
-    let max_area = (mod_area * 2.0).round() as u32;
-
+    let mod_area = ff.mod_area();
     let mut visited_regs: HashSet<usize> = HashSet::new();
 
-    for (r, &my) in aps.iter().enumerate() {
-        let my = my as f64 - 3.0;
-        for (c, &mx) in aps.iter().enumerate() {
+    for r in 0..n {
+        for c in 0..n {
             if centres[r][c].is_none() {
-                let mx = mx as f64 - 3.0;
-                let seed = lf.map(mx, my);
+                let seed = provisional_alignment(r, c, ver, ff, centres);
 
                 let exact_centre = pinpoint_alignment_centre(
                     img,
@@ -636,8 +632,7 @@ fn locate_alignment_centres(
                     seed,
                     mod_size,
                     search_radius,
-                    min_area,
-                    max_area,
+                    mod_area,
                 );
 
                 centres[r][c] = exact_centre;
@@ -646,17 +641,47 @@ fn locate_alignment_centres(
     }
 }
 
+// Where the alignment pattern at cell (row, col) is expected to sit in the image. A seed for
+// the search.
+fn provisional_alignment(
+    row: usize,
+    col: usize,
+    ver: Version,
+    ff: &LocalFrame, // Finders frame
+    centres: &[[Option<Point>; 7]; 7],
+) -> Point {
+    debug_assert!(centres[row][col].is_none(), "Cell ({row}, {col}) is already located");
+    let n = ver.alignment_pattern().len();
+
+    // 1st row & column alignments are skipped, because they are close enough to the finders
+    // that we can use use finders frame to map them. The alignments which have finders as
+    // one of their neighbors are also skipped because we cant apply parallelogram extrapolation
+    // directly
+    if row > 0
+        && col > 0
+        && ![(1, 1), (n - 2, 1), (n - 1, 1), (1, n - 2), (1, n - 1)].contains(&(row, col))
+    {
+        if let (Some(left), Some(top_left), Some(top)) =
+            (centres[row][col - 1], centres[row - 1][col - 1], centres[row - 1][col])
+        {
+            return Point { x: left.x + top.x - top_left.x, y: left.y + top.y - top_left.y };
+        }
+    }
+
+    let aps = ver.alignment_pattern();
+    ff.map(aps[col] as f64 - 3.0, aps[row] as f64 - 3.0)
+}
+
 // Locates the centre of the alignment pattern nearest `seed`, or `None` if the spiral runs out
 // to `search_radius` without finding one.
 //
 // The search walks a square spiral outward from `seed`. At each black pixel it flood-fills the
-// region underneath and tests it as a candidate centre stone: the area has to reach `min_area`,
-// and the runs through the region's centre have to read 1:1:1 along both axes -- the stone with
-// the white ring to either side of it.
+// region underneath and tests it as a candidate centre stone, by sweeping the white ring that
+// encircles it -- see `verify_alignment_centre`.
 //
-// The upper bound on area is enforced by the fill rather than by a comparison: `get_region_capped`
-// abandons a fill that grows past `max_area` and returns `None`, so a `None` there means the blob
-// was too big to be a stone, not that anything went wrong.
+// The upper bound on the stone's area is enforced by the fill rather than by a comparison:
+// `get_region_capped` abandons a fill that grows past `max_area` and returns `None`, so a `None`
+// there means the blob was too big to be a stone, not that anything went wrong.
 //
 // `visited_regs` holds the ids of regions already tried, whether they passed or failed. It is
 // shared across every cell of the grid, so each stone can be claimed only once: a cell whose
@@ -667,15 +692,14 @@ fn pinpoint_alignment_centre(
     seed: Point,
     mod_size: f64,
     search_radius: i32,
-    min_area: u32,
-    max_area: u32,
+    mod_area: f64,
 ) -> Option<Point> {
     // Directional increment for x & y: [right, down, left, up]
     const DX: [i32; 4] = [1, 0, -1, 0];
     const DY: [i32; 4] = [0, -1, 0, 1];
-    const PATTERN: [f64; 3] = [1.0, 1.0, 1.0];
 
     let (w, h) = (img.w, img.h);
+    let max_area = (mod_area * STONE_AREA_TOLERANCE).round() as u32;
 
     // Spiral outward to find stone
     let mut cursor = seed;
@@ -689,30 +713,13 @@ fn pinpoint_alignment_centre(
 
             if let Some((x, y)) = px.filter(|&(x, y)| x < w && y < h) {
                 if img.get_at_point(&cursor) == Some(Color::Black) {
-                    if let Some(reg) = img.get_region_capped((x, y), max_area) {
-                        let (reg_id, reg_centre, reg_area) = (reg.id, reg.centre, reg.area);
+                    if let Some(stone) = img.get_region_capped((x, y), max_area) {
+                        let (stone_id, stone_centre) = (stone.id, stone.centre);
 
-                        if !visited_regs.contains(&reg_id) {
-                            visited_regs.insert(reg_id);
-                            // Check if region area is roughly equal to mod area with 100% tolerance
-                            // and crosscheck 1:1:1 ratio horizontally and vertically
-                            if min_area <= reg_area
-                                && verify_alignment_pattern::<X>(
-                                    img,
-                                    &reg_centre,
-                                    &PATTERN,
-                                    mod_size,
-                                    max_area,
-                                )
-                                && verify_alignment_pattern::<Y>(
-                                    img,
-                                    &reg_centre,
-                                    &PATTERN,
-                                    mod_size,
-                                    max_area,
-                                )
-                            {
-                                return Some(reg_centre);
+                        if !visited_regs.contains(&stone_id) {
+                            visited_regs.insert(stone_id);
+                            if verify_alignment_centre(img, &stone_centre, mod_size, mod_area) {
+                                return Some(stone_centre);
                             }
                         }
                     }
@@ -732,11 +739,162 @@ fn pinpoint_alignment_centre(
     None
 }
 
+// Sweeps the white ring encircling a candidate centre stone and reports whether it reads as
+// the middle band of an alignment pattern.
+//
+// The area is measured against the stone's own area rather than the symbol-wide module estimate,
+// which keeps the gate local: the white ring covers 8 modules to the stone's 1 whatever the scale or
+// warp is at this corner. And a closed white ring shares its centroid with what it encloses, so the
+// two centres must very nearly agree.
+fn verify_alignment_centre(
+    img: &mut BinaryImage,
+    stone_centre: &Point,
+    mod_size: f64,
+    mod_area: f64,
+) -> bool {
+    let mut step = 0;
+    let max_steps = (mod_size * 2.0).round() as u32;
+    let mut seed = *stone_centre;
+    while img.get_at_point(&seed) == Some(Color::Black) {
+        if step > max_steps {
+            return false;
+        }
+        seed.x += 1;
+        step += 1;
+    }
+
+    if img.get_at_point(&seed) != Some(Color::White) {
+        return false;
+    }
+
+    debug_assert!(seed.x >= 0);
+
+    let (x, y) = (seed.x as u32, seed.y as u32);
+    let area_cap = (mod_area * RING_MODS * RING_AREA_TOLERANCE).round() as u32;
+    let Some(ring) = img.get_region_capped((x, y), area_cap) else {
+        return false;
+    };
+
+    let max_drift = mod_size * CENTRE_DRIFT_TOLERANCE;
+    stone_centre.dist_sq(&ring.centre) as f64 <= max_drift * max_drift
+}
+
+fn infer_alignment_centres(ver: Version, ff: &LocalFrame, centres: &mut [[Option<Point>; 7]; 7]) {
+    let aps = ver.alignment_pattern();
+    let n = aps.len();
+    for r in 0..n {
+        for c in 0..n {
+            if centres[r][c].is_some() {
+                continue;
+            }
+            if let Some((xn, xsn, yn, ysn)) = nearest_pair(r, c, ver, centres) {
+                centres[r][c] = Some(line_intersection(xn, xsn, yn, ysn));
+            }
+            if centres[r][c].is_none() {
+                centres[r][c] = Some(ff.map(aps[c] as f64 - 3.0, aps[r] as f64 - 3.0));
+            }
+        }
+    }
+}
+
+fn nearest_pair(
+    row: usize,
+    col: usize,
+    ver: Version,
+    centres: &[[Option<Point>; 7]; 7],
+) -> Option<(Point, Point, Point, Point)> {
+    let (sr, sc) = (row as i32, col as i32);
+    let n = ver.alignment_pattern().len();
+
+    debug_assert_ne!(n, 0);
+
+    let finders = [(0, n - 1), (0, 0), (n - 1, 0)];
+    let n = n as i32;
+
+    // Zigzagging along row
+    let mut nearest: Option<Point> = None;
+    let mut second_nearest: Option<Point> = None;
+    for i in 2..(2 * n) {
+        let dir = ((i & 1) << 1) - 1;
+        let step = i >> 1;
+        let ncol = sc + dir * step;
+        if !(0..n).contains(&ncol) {
+            continue;
+        };
+        let ncol = ncol as usize;
+        if centres[row][ncol].is_some() && !finders.contains(&(row, ncol)) {
+            if nearest.is_none() {
+                nearest = centres[row][ncol];
+            } else if second_nearest.is_none() {
+                second_nearest = centres[row][ncol];
+            } else {
+                break;
+            }
+        }
+    }
+
+    let xn = nearest?;
+    let xsn = second_nearest?;
+
+    // Zigzagging along column
+    let mut nearest: Option<Point> = None;
+    let mut second_nearest: Option<Point> = None;
+    for i in 2..14i32 {
+        let dir = ((i & 1) << 1) - 1;
+        let step = i >> 1;
+        let nrow = sr + dir * step;
+        if !(0..n).contains(&nrow) {
+            continue;
+        };
+        let nrow = nrow as usize;
+        if centres[nrow][col].is_some() && !finders.contains(&(nrow, col)) {
+            if nearest.is_none() {
+                nearest = centres[nrow][col];
+            } else if second_nearest.is_none() {
+                second_nearest = centres[nrow][col];
+            } else {
+                break;
+            }
+        }
+    }
+
+    let yn = nearest?;
+    let ysn = second_nearest?;
+
+    Some((xn, xsn, yn, ysn))
+}
+
+// Intersection point of line p1 -> p2 and line p3 -> p4
+fn line_intersection(p1: Point, p2: Point, p3: Point, p4: Point) -> Point {
+    let (x1, y1) = (f64::from(p1.x), f64::from(p1.y));
+    let (x2, y2) = (f64::from(p2.x), f64::from(p2.y));
+    let (x3, y3) = (f64::from(p3.x), f64::from(p3.y));
+    let (x4, y4) = (f64::from(p4.x), f64::from(p4.y));
+
+    let dx1 = x2 - x1;
+    let dy1 = y2 - y1;
+    let dx2 = x4 - x3;
+    let dy2 = y4 - y3;
+
+    let denom = dx1 * dy2 - dy1 * dx2;
+
+    // Parallel / collinear
+    debug_assert!(denom.abs() > 1e-9);
+
+    let t = ((x3 - x1) * dy2 - (y3 - y1) * dx2) / denom;
+
+    let x = (x1 + t * dx1).round() as i32;
+    let y = (y1 + t * dy1).round() as i32;
+
+    Point { x, y }
+}
+
 #[cfg(test)]
 mod alignment_pattern_tests {
     use super::locate_alignment_centres;
     use crate::metadata::Version;
     use crate::reader::binarize::BinaryImage;
+    use crate::reader::locate::{infer_alignment_centres, provisional_alignment, LocalFrame};
     use crate::reader::utils::geometry::Point;
     use crate::{ECLevel, QRBuilder};
 
@@ -764,10 +922,12 @@ mod alignment_pattern_tests {
             let near = centre_px(3.0);
             let far = centre_px(w as f64 - 4.0);
             let finders = [p(near, far), p(near, near), p(far, near)]; // BL, TL, TR
+            let span = (ver.width() - 7) as f64; // Modules between finders
+            let ff = LocalFrame::new(&finders[1], &finders[2], &finders[0], span, span); // Finders frame
 
             let mut centres: [[Option<Point>; 7]; 7] = [[None; 7]; 7];
 
-            locate_alignment_centres(&mut img, &finders, ver, &mut centres);
+            locate_alignment_centres(&mut img, &finders, ver, &ff, &mut centres);
 
             assert_eq!(finders[0], centres[n - 1][0].unwrap(), "version {v}: BL finder centre");
             assert_eq!(finders[1], centres[0][0].unwrap(), "version {v}: TL finder centre");
@@ -802,15 +962,96 @@ mod alignment_pattern_tests {
         // Finder centres for a version 1 symbol at 3 px per module with a 4 module quiet zone
         let finders = [Point { x: 23, y: 65 }, Point { x: 23, y: 23 }, Point { x: 65, y: 23 }];
         let br = Point { x: 65, y: 65 };
+        let span = (ver.width() - 7) as f64; // Modules between finders
+        let ff = LocalFrame::new(&finders[1], &finders[2], &finders[0], span, span); // Finders frame
 
         let mut centres: [[Option<Point>; 7]; 7] = [[None; 7]; 7];
 
-        locate_alignment_centres(&mut img, &finders, ver, &mut centres);
+        locate_alignment_centres(&mut img, &finders, ver, &ff, &mut centres);
 
         assert_eq!(centres[1][0], Some(finders[0]));
         assert_eq!(centres[0][0], Some(finders[1]));
         assert_eq!(centres[0][1], Some(finders[2]));
         assert_eq!(centres[1][1], Some(br));
+    }
+
+    #[test]
+    fn test_provisional_alignment_centre() {
+        let q = 4.0;
+        let k = 3.0;
+        for v in 2..=40 {
+            let ver = Version::Normal(v);
+            let w = ver.width() as f64;
+            let near = ((q + 3.5) * k) as i32;
+            let far = ((q + w - 3.5) * k) as i32;
+            let c0 = Point { x: near, y: far };
+            let c1 = Point { x: near, y: near };
+            let c2 = Point { x: far, y: near };
+            let ff = LocalFrame::new(&c1, &c2, &c0, w - 7.0, w - 7.0);
+
+            let aps = ver.alignment_pattern();
+            let n = aps.len();
+
+            let mut centres: [[Option<Point>; 7]; 7] = [[None; 7]; 7];
+            centres[n - 1][0] = Some(c0);
+            centres[0][0] = Some(c1);
+            centres[0][n - 1] = Some(c2);
+
+            for r in 0..n {
+                for c in 0..n {
+                    if centres[r][c].is_none() {
+                        centres[r][c] = Some(provisional_alignment(r, c, ver, &ff, &centres));
+                        let exp_centre = Some(Point {
+                            x: ((q + aps[c] as f64 + 0.5) * k) as i32,
+                            y: ((q + aps[r] as f64 + 0.5) * k) as i32,
+                        });
+                        assert_eq!(
+                            centres[r][c], exp_centre,
+                            "Version = {v}, Row = {r}, Column = {c}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_infer_alignment_centre() {
+        let q = 4.0;
+        let k = 3.0;
+        for v in 2..=40 {
+            let ver = Version::Normal(v);
+            let w = ver.width() as f64;
+            let near = ((q + 3.5) * k) as i32;
+            let far = ((q + w - 3.5) * k) as i32;
+            let c0 = Point { x: near, y: far };
+            let c1 = Point { x: near, y: near };
+            let c2 = Point { x: far, y: near };
+            let ff = LocalFrame::new(&c1, &c2, &c0, w - 7.0, w - 7.0);
+
+            let aps = ver.alignment_pattern();
+            let n = aps.len();
+
+            let mut centres: [[Option<Point>; 7]; 7] = [[None; 7]; 7];
+            centres[n - 1][0] = Some(c0);
+            centres[0][0] = Some(c1);
+            centres[0][n - 1] = Some(c2);
+
+            infer_alignment_centres(ver, &ff, &mut centres);
+
+            for r in 0..n {
+                for c in 0..n {
+                    if [(0, 0), (n - 1, 0), (0, n - 1)].contains(&(r, c)) {
+                        continue;
+                    }
+                    let exp_centre = Some(Point {
+                        x: ((q + aps[c] as f64 + 0.5) * k) as i32,
+                        y: ((q + aps[r] as f64 + 0.5) * k) as i32,
+                    });
+                    assert_eq!(centres[r][c], exp_centre, "Version = {v}, Row = {r}, Column = {c}");
+                }
+            }
+        }
     }
 }
 
@@ -1334,3 +1575,11 @@ mod fitness_tests {
 const SYMBOL_HEURISTIC_THRESHOLD: f64 = 0.5;
 
 pub const MAX_WIDTH: usize = 177;
+
+const STONE_AREA_TOLERANCE: f64 = 2.0;
+
+const RING_MODS: f64 = 8.0;
+
+const RING_AREA_TOLERANCE: f64 = 2.0;
+
+const CENTRE_DRIFT_TOLERANCE: f64 = 0.5;

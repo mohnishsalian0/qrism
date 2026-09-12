@@ -1,8 +1,8 @@
 pub mod binarize;
 mod finder;
-mod fitness;
 mod locate;
 pub mod symbol;
+mod tile;
 mod utils;
 
 use std::{collections::HashSet, sync::Arc};
@@ -18,7 +18,6 @@ use symbol::Symbol;
 //------------------------------------------------------------------------------
 
 pub struct DecodeResult {
-    img: Arc<BinaryImage>,
     symbols: Vec<Symbol>,
 }
 
@@ -43,7 +42,7 @@ pub fn detect_qr(img: &DynamicImage) -> DecodeResult {
     let img = Arc::new(img);
     let symbols = sym_locs.into_iter().map(|sl| Symbol::new(img.clone(), sl)).collect::<_>();
 
-    DecodeResult { img, symbols }
+    DecodeResult { symbols }
 }
 
 // Detect high capacity QR
@@ -60,7 +59,7 @@ pub fn detect_hc_qr(img: &DynamicImage) -> DecodeResult {
     let rgb_bin = Arc::new(BinaryImage::prepare(&rgb_img));
     let symbols = sym_locs.into_iter().map(|sl| Symbol::new(rgb_bin.clone(), sl)).collect::<_>();
 
-    DecodeResult { img: rgb_bin, symbols }
+    DecodeResult { symbols }
 }
 
 fn locate_symbols(img: &mut BinaryImage, groups: Vec<FinderGroup>) -> Vec<SymbolLocation> {
@@ -153,7 +152,7 @@ mod reader_tests {
         #[allow(unused_imports)]
         use std::sync::Arc;
 
-        let img_path = std::path::Path::new("./assets/lot1.jpg");
+        let img_path = std::path::Path::new("./assets/hv1.jpg");
 
         let img = image::open(img_path).unwrap().to_luma8();
 
@@ -173,7 +172,6 @@ mod reader_tests {
         let sym_locs = locate_symbols(&mut bin_img, groups);
         dbg!(sym_locs.len());
         sym_locs.iter().for_each(|sl| sl.highlight(&mut img));
-        // sym_locs[0].highlight(&mut img);
 
         let bin_img = Arc::new(bin_img);
         let mut symbols: Vec<Symbol> =

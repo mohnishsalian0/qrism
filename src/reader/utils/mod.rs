@@ -1,4 +1,4 @@
-use geometry::{Axis, Point};
+use geometry::Point;
 
 use super::binarize::BinaryImage;
 
@@ -169,82 +169,6 @@ pub fn matches_finder_ratio_scaled(runs: &[u32], tol_scale: f64) -> bool {
     true
 }
 
-pub fn verify_alignment_pattern<A: Axis>(
-    img: &BinaryImage,
-    seed: &Point,
-    pattern: &[f64],
-    threshold: f64,
-    max_run: u32,
-) -> bool {
-    let px = img.get_at_point(seed).unwrap();
-    let pat_len = pattern.len();
-
-    let mut run_len = vec![0; pat_len];
-    run_len[pat_len / 2] = 1;
-
-    // Count backwards
-    let mut pos = *seed;
-    let dir = (-1, -1);
-    let mut flips = pat_len / 2;
-    let mut initial = img.get_at_point(seed).unwrap();
-    while run_len[flips] <= max_run {
-        A::shift(&mut pos, &dir);
-        if !A::bound_check(img, &pos) {
-            break;
-        }
-
-        let color = img.get_at_point(&pos).unwrap();
-        if initial != color {
-            if flips == 0 {
-                break;
-            }
-            initial = color;
-            flips -= 1;
-        }
-        run_len[flips] += 1;
-    }
-
-    // Count forwards
-    let mut pos = *seed;
-    let dir = (1, 1);
-    let mut flips = pat_len / 2;
-    let mut initial = img.get_at_point(seed).unwrap();
-    while A::bound_check(img, &pos) && run_len[flips] <= max_run {
-        A::shift(&mut pos, &dir);
-        if !A::bound_check(img, &pos) {
-            break;
-        }
-
-        let color = img.get_at_point(&pos).unwrap();
-        if initial != color {
-            if flips == pat_len - 1 {
-                break;
-            }
-            initial = color;
-            flips += 1;
-        }
-        run_len[flips] += 1;
-    }
-
-    // Ensure the average run length is roughly equal to the threshold (estimate mod size) with 50%
-    // tolerance
-    let avg = run_len.iter().sum::<u32>() as f64 / 3.0;
-    if avg < threshold * 0.5 || threshold * 1.5 < avg {
-        return false;
-    }
-
-    // Verify pattern with 80% tolerance. This was tuned to pass maximum number of test images
-    let tol = avg * ALIGNMENT_PATTERN_TOLERANCE;
-    for (i, r) in pattern.iter().enumerate() {
-        let rl = run_len[i] as f64;
-        if rl < r * avg - tol || rl > r * avg + tol {
-            return false;
-        }
-    }
-
-    true
-}
-
 #[cfg(test)]
 pub fn rnd_rgb() -> image::Rgb<u8> {
     let h = rand::random_range(0..360) as f64;
@@ -281,8 +205,6 @@ pub const BAR_TOLERANCE: f64 = 0.75;
 // Per-module tolerance for the finder's light spaces, as a fraction of the space module size.
 // Tighter than bars because ink bleed thins the spaces, so they carry less slack.
 pub const SPACE_TOLERANCE: f64 = 1.0 / 3.0;
-
-pub const ALIGNMENT_PATTERN_TOLERANCE: f64 = 0.8;
 
 // Tolerance multiplier for the diagonal finder crosscheck (see `verify_finder_diagonal`). Diagonal
 // run lengths are noisier than axis-aligned ones, so this loosens the 1:1:3:1:1 match to keep real
