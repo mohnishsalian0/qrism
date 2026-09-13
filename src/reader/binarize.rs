@@ -517,6 +517,16 @@ impl BinaryImage {
         })
     }
 
+    pub fn get_at_point(&self, pt: &Point) -> Option<Color> {
+        let (x, y) = self.wrap_coords(pt.x, pt.y)?;
+        let bits = self.buffer.get(x, y);
+        Some(if self.buffer.elem_bits() == 1 {
+            Color::from(bits != 0)
+        } else {
+            bits.try_into().ok()?
+        })
+    }
+
     fn wrap_coords(&self, x: i32, y: i32) -> Option<(u32, u32)> {
         let w = self.w as i32;
         let h = self.h as i32;
@@ -531,14 +541,8 @@ impl BinaryImage {
         Some((x as u32, y as u32))
     }
 
-    pub fn get_at_point(&self, pt: &Point) -> Option<Color> {
-        let (x, y) = self.wrap_coords(pt.x, pt.y)?;
-        let bits = self.buffer.get(x, y);
-        Some(if self.buffer.elem_bits() == 1 {
-            Color::from(bits != 0)
-        } else {
-            bits.try_into().ok()?
-        })
+    pub fn contains(&self, pt: &Point) -> bool {
+        0 <= pt.x && (pt.x as u32) < self.w && 0 <= pt.y && (pt.y as u32) < self.h
     }
 
     /// Flood-fill region label at (x, y), or None if unlabeled/oversized or out of bounds.

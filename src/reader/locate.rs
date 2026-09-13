@@ -1,10 +1,7 @@
 use std::cmp::Ordering;
 
 use super::{
-    alignment::{
-        alignment_coords, infer_alignment_centres, locate_alignment_centres, Anchors,
-        MAX_ALIGN_CELLS,
-    },
+    alignment::{alignment_coords, infer_alignment_centres, locate_alignment_centres, Anchors},
     binarize::BinaryImage,
     finder::FinderGroup,
     tile::{band_table, build_tiles, Tile, MAX_WIDTH},
@@ -16,6 +13,7 @@ use super::{
 use crate::{
     ec::rectify_info,
     metadata::{Color, VERSION_ERROR_BIT_LEN, VERSION_ERROR_CAPACITY, VERSION_INFOS},
+    reader::alignment::{anchors_from_finders, locate_br_anchor},
     utils::{QRError, QRResult},
     Version,
 };
@@ -110,15 +108,16 @@ impl SymbolLocation {
         let ff = LocalFrame::new(&c1, &c2, &c0, span, span); // Finders frame
 
         // Alignement pattern points
-        let mut align_centres: Anchors = [[None; MAX_ALIGN_CELLS]; MAX_ALIGN_CELLS];
+        let mut align_centres: Anchors = anchors_from_finders(ver, &group.finders);
 
-        // Predict each alignment centre from the 3 finder centres, then spiral out of the
-        // prediction to identify the potential stone. Confirm it by sweeping the white ring the
-        // stone sits in, and settle on the centre of the stone.
-        locate_alignment_centres(img, &group.finders, ver, &ff, &mut align_centres);
+        if ver.alignment_pattern().is_empty() {
+            align_centres[1][1] = Some(locate_br_anchor(img, ver, &group.finders, &ff));
+        } else {
+            locate_alignment_centres(img, ver, &ff, &mut align_centres);
+        }
 
         // Unfound alignment centres are inferred from the intersection of horizontal & vertical
-        // lines built with nearest found alignment centres
+        // lines drawn with nearest found alignment centres
         infer_alignment_centres(ver, &ff, &mut align_centres);
 
         let tiles = build_tiles(ver, &align_centres);
