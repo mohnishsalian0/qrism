@@ -26,15 +26,13 @@ pub enum QRError {
     InvalidFormatInfo,
     InvalidVersionInfo,
     InvalidCapacityInfo,
-    FinderMismatch,
-    TimingMismatch,
-    AlignmentMismatch,
     DivisionByZero,
     InvalidMode(u8),
     CorruptDataSegment,
     EndOfStream,
     InvalidUTF8Encoding,
     InvalidCharacterEncoding,
+    TileNotFound,
 }
 
 impl Display for QRError {
@@ -61,15 +59,13 @@ impl Display for QRError {
             Self::InvalidFormatInfo => "Invalid format info detected",
             Self::InvalidVersionInfo => "Invalid version info detected",
             Self::InvalidCapacityInfo => "Couldn't read capacity",
-            Self::FinderMismatch => "Finder color mismatch",
-            Self::TimingMismatch => "Timing color mismatch",
-            Self::AlignmentMismatch => "Alignment color mismatch",
             Self::DivisionByZero => "Division by zero in GF(256)",
             Self::InvalidMode(m) => &format!("Unexpected mode bits: {m}").to_string(),
             Self::CorruptDataSegment => "Truncated data segment",
             Self::EndOfStream => "End of stream reached",
             Self::InvalidUTF8Encoding => "Invalid UTF8 sequence",
             Self::InvalidCharacterEncoding => "Character sequence is neither utf8 nor shift jis",
+            Self::TileNotFound => "Module has no tile to map it onto the image",
         };
         f.write_str(msg)
     }

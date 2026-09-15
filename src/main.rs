@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("QR code saved to: {}", output_path.display());
 
     // Read the QR code back
-    let read_path = Path::new("./assets/qr_example.png");
+    let read_path = Path::new("./assets/hv1.jpg");
     let img = image::open(read_path)?;
     let mut res = detect_qr(&img);
 

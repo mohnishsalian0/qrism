@@ -1,6 +1,9 @@
+mod alignment;
 pub mod binarize;
 mod finder;
+mod locate;
 pub mod symbol;
+mod tile;
 mod utils;
 
 use std::{collections::HashSet, sync::Arc};
@@ -9,13 +12,13 @@ use finder::{group_finders, locate_finders, FinderGroup};
 
 use binarize::BinaryImage;
 use image::DynamicImage;
-use symbol::{Symbol, SymbolLocation};
+use locate::SymbolLocation;
+use symbol::Symbol;
 
 // Decode result
 //------------------------------------------------------------------------------
 
 pub struct DecodeResult {
-    img: Arc<BinaryImage>,
     symbols: Vec<Symbol>,
 }
 
@@ -40,7 +43,7 @@ pub fn detect_qr(img: &DynamicImage) -> DecodeResult {
     let img = Arc::new(img);
     let symbols = sym_locs.into_iter().map(|sl| Symbol::new(img.clone(), sl)).collect::<_>();
 
-    DecodeResult { img, symbols }
+    DecodeResult { symbols }
 }
 
 // Detect high capacity QR
@@ -57,7 +60,7 @@ pub fn detect_hc_qr(img: &DynamicImage) -> DecodeResult {
     let rgb_bin = Arc::new(BinaryImage::prepare(&rgb_img));
     let symbols = sym_locs.into_iter().map(|sl| Symbol::new(rgb_bin.clone(), sl)).collect::<_>();
 
-    DecodeResult { img: rgb_bin, symbols }
+    DecodeResult { symbols }
 }
 
 fn locate_symbols(img: &mut BinaryImage, groups: Vec<FinderGroup>) -> Vec<SymbolLocation> {
@@ -150,18 +153,18 @@ mod reader_tests {
         #[allow(unused_imports)]
         use std::sync::Arc;
 
-        let img_path = std::path::Path::new("assets/example1.png");
+        let img_path = std::path::Path::new("./assets/hv1.jpg");
 
-        let mut img = image::open(img_path).unwrap().to_rgb8();
+        let img = image::open(img_path).unwrap().to_luma8();
 
         let prep_path = std::path::Path::new("assets/prep.png");
         let mut bin_img = BinaryImage::prepare(&img);
-        // bin_img.save(prep_path).unwrap();
-        // let mut img = image::open(prep_path).unwrap().to_rgb8();
+        bin_img.save(prep_path).unwrap();
+        let mut img = image::open(prep_path).unwrap().to_rgb8();
 
         let finders = locate_finders(&mut bin_img);
         dbg!(finders.len());
-        finders.iter().for_each(|f| f.c.highlight(&mut img, image::Rgb([255, 0, 0])));
+        // finders.iter().for_each(|f| f.c.highlight(&mut img, image::Rgb([255, 0, 0])));
 
         let groups = group_finders(&finders);
         dbg!(groups.len());
@@ -169,16 +172,17 @@ mod reader_tests {
 
         let sym_locs = locate_symbols(&mut bin_img, groups);
         dbg!(sym_locs.len());
+        sym_locs.iter().for_each(|sl| sl.highlight(&mut img));
+
         let bin_img = Arc::new(bin_img);
         let mut symbols: Vec<Symbol> =
             sym_locs.into_iter().map(|sl| Symbol::new(bin_img.clone(), sl)).collect::<_>();
-        symbols.iter().for_each(|s| s.highlight(&mut img));
 
-        symbols.iter_mut().enumerate().for_each(|(i, s)| {
-            let _ = dbg!(s.decode());
-        });
+        // symbols.iter_mut().for_each(|s| {
+        //     let _ = dbg!(s.decode());
+        // });
 
         let out_path = std::path::Path::new("assets/detect.png");
-        // img.save(out_path).unwrap();
+        img.save(out_path).unwrap();
     }
 }

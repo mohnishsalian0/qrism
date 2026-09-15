@@ -49,10 +49,6 @@ impl Slope {
         let dy = end.y - start.y;
         Self { dx, dy }
     }
-
-    pub fn cross(&self, other: &Self) -> i32 {
-        self.dx * other.dy - self.dy * other.dx
-    }
 }
 
 // Axis trait to modify functions based on X/Y axis at compile time
@@ -186,5 +182,117 @@ impl<A: Axis> Iterator for BresenhamLine<A> {
         self.err += A::delta_cross(&self.m);
 
         res
+    }
+}
+
+// Square spiral iterator for alignment centre & bottom right anchor search
+//------------------------------------------------------------------------------
+
+pub struct SquareSpiral {
+    start: Point,
+    cursor: Point,
+    run: i32,
+    run_len: i32,
+    dir: usize,
+    radius: i32,
+}
+
+impl SquareSpiral {
+    // Directional increment for x & y: [right, up, left, down]
+    const DX: [i32; 4] = [1, 0, -1, 0];
+    const DY: [i32; 4] = [0, -1, 0, 1];
+
+    pub fn new(start: &Point, radius: i32) -> Self {
+        debug_assert!(radius >= 0);
+
+        Self { start: *start, cursor: *start, run: 0, run_len: 1, dir: 0, radius }
+    }
+}
+
+impl Iterator for SquareSpiral {
+    type Item = Point;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let reach = (self.cursor.x - self.start.x).abs().max((self.cursor.y - self.start.y).abs());
+        if reach > self.radius {
+            return None;
+        }
+
+        let res = self.cursor;
+
+        self.cursor.x += Self::DX[self.dir];
+        self.cursor.y += Self::DY[self.dir];
+        self.run += 1;
+
+        // Cycle direction
+        if self.run == self.run_len {
+            self.run = 0;
+            self.dir = (self.dir + 1) & 3;
+            if self.dir & 1 == 0 {
+                self.run_len += 1;
+            }
+        }
+
+        Some(res)
+    }
+}
+
+#[cfg(test)]
+mod square_spiral_tests {
+    use super::{Point, SquareSpiral};
+    use std::collections::HashSet;
+
+    fn walk(start: Point, radius: i32) -> Vec<Point> {
+        SquareSpiral::new(&start, radius).collect()
+    }
+
+    fn reach(start: &Point, pt: &Point) -> i32 {
+        (pt.x - start.x).abs().max((pt.y - start.y).abs())
+    }
+
+    #[test]
+    fn test_radius_zero_yields_only_start() {
+        let start = Point { x: 7, y: -3 };
+        assert_eq!(walk(start, 0), vec![start]);
+    }
+
+    #[test]
+    fn test_first_point_is_start() {
+        let start = Point { x: -12, y: 40 };
+        assert_eq!(SquareSpiral::new(&start, 5).next(), Some(start));
+    }
+
+    #[test]
+    fn test_covers_square_exactly_once() {
+        let start = Point { x: 100, y: 250 };
+
+        for radius in 0..=6 {
+            let pts = walk(start, radius);
+            let uniq: HashSet<Point> = pts.iter().copied().collect();
+            let exp: HashSet<Point> = (-radius..=radius)
+                .flat_map(|dy| (-radius..=radius).map(move |dx| (dx, dy)))
+                .map(|(dx, dy)| Point { x: start.x + dx, y: start.y + dy })
+                .collect();
+            let side = (2 * radius + 1) as usize;
+
+            assert_eq!(pts.len(), side * side, "Radius = {radius}");
+            assert_eq!(uniq.len(), pts.len(), "Radius = {radius}");
+            assert_eq!(uniq, exp, "Radius = {radius}");
+        }
+    }
+
+    #[test]
+    fn test_visits_inner_rings_first() {
+        let start = Point { x: -5, y: 8 };
+        let rings: Vec<i32> = walk(start, 6).iter().map(|p| reach(&start, p)).collect();
+
+        assert!(rings.windows(2).all(|w| w[0] <= w[1]));
+    }
+
+    #[test]
+    fn test_steps_are_contiguous() {
+        let pts = walk(Point { x: 0, y: 0 }, 5);
+
+        assert!(pts.windows(2).all(|w| (w[1].x - w[0].x).abs() + (w[1].y - w[0].y).abs() == 1));
     }
 }

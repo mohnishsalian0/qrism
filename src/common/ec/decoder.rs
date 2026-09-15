@@ -181,11 +181,12 @@ mod ec_rectifier_tests {
 }
 
 // Rectifier for format and version infos
-pub fn rectify_info(info: u32, valid_numbers: &[u32], err_capacity: u32) -> QRResult<u32> {
+pub fn rectify_info(info: u32, valid_numbers: &[u32], err_capacity: u32) -> QRResult<(u32, u32)> {
     let res = *valid_numbers.iter().min_by_key(|&n| (info ^ n).count_ones()).unwrap();
+    let err = (info ^ res).count_ones();
 
-    if (info ^ res).count_ones() <= err_capacity {
-        Ok(res)
+    if err <= err_capacity {
+        Ok((res, err))
     } else {
         Err(QRError::InvalidInfo)
     }

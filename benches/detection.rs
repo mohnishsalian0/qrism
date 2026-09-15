@@ -35,11 +35,8 @@ pub fn benchmark_detection(dataset_dir: &Path) {
         // Filters QRs which can be decoded correctly. Measures time to decode all QRs
         let start = Instant::now();
         let mut res = detect_qr(&img);
-        let symbols: Vec<&mut Symbol> = res
-            .symbols()
-            .iter_mut()
-            .filter_map(|s| if s.decode().is_ok() { Some(s) } else { None })
-            .collect();
+        let symbols: Vec<&mut Symbol> =
+            res.symbols().iter_mut().filter_map(|s| s.decode().is_ok().then_some(s)).collect();
         let time = start.elapsed().as_millis();
 
         let symbols = get_corners(&symbols);
@@ -134,25 +131,7 @@ pub fn benchmark_detection(dataset_dir: &Path) {
 pub fn get_corners(symbols: &[&mut Symbol]) -> Vec<Vec<f64>> {
     let mut symbol_corners = Vec::with_capacity(100);
     for sym in symbols {
-        let sz = sym.ver.width() as f64;
-
-        let bl = match sym.raw_map(0.0, sz) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        let tl = match sym.raw_map(0.0, 0.0) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        let tr = match sym.raw_map(sz, 0.0) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        let br = match sym.raw_map(sz, sz) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-
+        let Ok([tl, tr, br, bl]) = sym.outline() else { continue };
         symbol_corners.push(vec![bl.0, bl.1, tl.0, tl.1, tr.0, tr.1, br.0, br.1])
     }
 
@@ -228,5 +207,4 @@ fn main() {
     benchmark_detection(Path::new("benches/dataset/detection"));
     let detection_time = detection_start.elapsed();
     println!("Detection benchmark completed in: {:?}\n", detection_time);
-    qrism::reader::profile::print_stage_profile();
 }

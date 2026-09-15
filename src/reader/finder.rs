@@ -285,8 +285,7 @@ pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
     // f1 is the candidate corner (TL); f2 and f3 are its two arms (BL/TR).
     for (i1, f1) in finders.iter().enumerate() {
         // Build the arm list for this vertex, keeping only candidates whose scale and separation
-        // are consistent with belonging to the same symbol. These integer/f32 gates carry no
-        // transcendentals and cut the O(n^3) triple explosion down to a handful of pairs per vertex.
+        // are consistent with belonging to the same symbol
         arms.clear();
         let m = f1.mod_size;
         // Finder centre-to-centre distance is (symbol_side - 7) modules, symbol_side in [21, 177],
@@ -301,7 +300,7 @@ pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
 
             // Size-ratio gate: same-symbol finders share a scale; drop mismatched candidates.
             let ratio = f2.mod_size / m;
-            if ratio < 1.0 / MOD_SIZE_RATIO || ratio > MOD_SIZE_RATIO {
+            if !(1.0 / MOD_SIZE_RATIO..MOD_SIZE_RATIO).contains(&ratio) {
                 continue;
             }
 
