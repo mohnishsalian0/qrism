@@ -231,27 +231,26 @@ fn verify_and_mark_finder_with_contour(img: &mut BinaryImage, datum: &DatumLine)
     let (l, s, w, r, e, y) =
         (datum.left, datum.stone, datum.white, datum.right, datum.end, datum.y);
 
-    let sx = r - (s - l) * 5 / 4;
+    let sx = (w + s + 1).div_ceil(2);
     let probe = (sx, y);
 
     // Both caps are estimated from this row's stone run, so they shift slightly row to row. A
     // square stone of side n has a crack perimeter of 4n, so the 8x here is 2x the ideal, leaving
     // room for the staircasing a thresholded edge adds; `max_dist` bounds how far the walk may
     // stray from the centre, which catches a runaway blob long before the step cap does.
-    let max_perimeter = (w - s) * 4 * 4;
+    let max_perimeter = (w - s) * 4 * 3;
     let max_dist = (w - s) * 3;
 
     // A finder spans several scan rows, so the rows after the first re-reach a stone already
     // accepted. `w - 1` is the stone's rightmost pixel on this row, which the outer walk always
     // touches, so its contour id is the memo. `get_contour_capped` returns None for a stone that
     // bailed or that this row's caps reject; that is not an accept, so fall through and re-check.
-    if img.get_px_contour(w - 1, y).is_some() {
-        let stone = img.get_contour_capped((w - 1, y), probe, max_perimeter, max_dist);
-        if let Some(st) = stone {
-            if st.is_finder {
-                return None;
-            }
-        }
+    if img.get_px_contour(w - 1, y).is_some()
+        && img
+            .get_contour_capped((w - 1, y), probe, max_perimeter, max_dist)
+            .is_some_and(|st| st.is_finder)
+    {
+        return None;
     }
 
     let seed = Point { x: sx as i32, y: datum.y as i32 };
@@ -280,14 +279,24 @@ fn verify_and_mark_finder_with_contour(img: &mut BinaryImage, datum: &DatumLine)
         return None;
     }
 
-    // Outer boundaries, so the ring's 7 module sides against the stone's 3 put the true ratio near
-    // 2.3; 3x absorbs the extra steps a noisy edge adds without admitting a runaway blob.
-    let ring_max_perimeter = stone.perimeter().saturating_mul(3);
+    // A ring broken anywhere -- one bleached or blurred module on its border -- has no hole, so the
+    // walk dives through the gap and traces the inner edge as well as the outer. That doubles back
+    // over the annulus: the perimeter runs ~3.8x the stone's rather than ~2.3x, and the area comes
+    // out as the annulus (~24 modules^2) instead of the filled 7x7 block (49). A flood fill never
+    // sees this difference -- it measures the annulus either way -- which is why the gates below
+    // have to branch on `encloses` instead of assuming the closed-ring geometry.
+    let ring_max_perimeter = stone.perimeter().saturating_mul(RING_PERIMETER_MULT);
     let ring_max_dist = (r - l) * 3;
     let ring = img.get_contour_capped((e, y), probe, ring_max_perimeter, ring_max_dist)?.clone();
-    let rc = ring.compactness();
-    if !(MIN_COMPACTNESS_THRESHOLD..MAX_COMPACTNESS_THRESHOLD).contains(&rc) {
-        return None;
+
+    // Compactness is only meaningful for a simple outline; a broken ring's doubled-back walk makes
+    // it large by construction, so the check applies to closed rings alone. `ring_max_dist` is what
+    // bounds a runaway blob in either case.
+    if ring.encloses {
+        let rc = ring.compactness();
+        if !(MIN_COMPACTNESS_THRESHOLD..MAX_RING_COMPACTNESS).contains(&rc) {
+            return None;
+        }
     }
 
     // All three points are extreme pixels of the ring — leftmost in row y, top and bottom-most in
@@ -300,10 +309,16 @@ fn verify_and_mark_finder_with_contour(img: &mut BinaryImage, datum: &DatumLine)
         return None;
     }
 
-    // The traced ring encloses its hole, so this compares the full 7x7 block against the 3x3
-    // stone, putting a true finder at 49/9 ~= 5.4.
+    // A closed ring's outline encloses its hole, so this compares the full 7x7 block against the
+    // 3x3 stone: 49/9 ~= 5.4. A broken ring traces the annulus instead, so the same finder reads
+    // (49 - 25)/9 ~= 2.7, and is gated against that figure rather than rejected for it.
     let ratio = ring.area() / stone.area();
-    if ratio <= 3 || 8 <= ratio {
+    let (min_ratio, max_ratio) = if ring.encloses {
+        (CLOSED_RING_MIN, CLOSED_RING_MAX)
+    } else {
+        (OPEN_RING_MIN, OPEN_RING_MAX)
+    };
+    if ratio <= min_ratio || max_ratio <= ratio {
         return None;
     }
 
@@ -539,3 +554,19 @@ pub const MAX_CENTRE_SPAN_MODULES: f32 = 185.0;
 
 const MIN_COMPACTNESS_THRESHOLD: f64 = 1.0;
 const MAX_COMPACTNESS_THRESHOLD: f64 = 2.5;
+
+// A closed ring's outline runs ~2.3x the stone's perimeter; a broken one doubles back over the
+// annulus and runs ~3.8x. 8x clears both with room for a staircased edge -- `ring_max_dist` is what
+// actually bounds a runaway blob here, so this cap need not be tight.
+const RING_PERIMETER_MULT: u32 = 8;
+
+// Looser than the stone's: the ring is a thin annulus, so a staircased or blurred edge moves its
+// compactness far more than it moves a solid block's.
+const MAX_RING_COMPACTNESS: f64 = 3.5;
+
+// Ring-to-stone area ratio. A closed ring's outline encloses its hole (49/9 ~= 5.4); a broken one
+// traces the annulus instead ((49 - 25)/9 ~= 2.7).
+const CLOSED_RING_MIN: u32 = 3;
+const CLOSED_RING_MAX: u32 = 8;
+const OPEN_RING_MIN: u32 = 1;
+const OPEN_RING_MAX: u32 = 4;
