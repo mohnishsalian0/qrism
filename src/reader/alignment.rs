@@ -372,6 +372,10 @@ fn verify_alignment_centre_with_contour(
         return false;
     };
 
+    if !ring.encloses {
+        return false;
+    }
+
     let max_drift = mod_size * CENTRE_DRIFT_TOLERANCE;
     stone_centre.dist_sq(&ring.centre().unwrap()) as f64 <= max_drift * max_drift
 }
