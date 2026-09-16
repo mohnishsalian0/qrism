@@ -59,12 +59,11 @@ impl Contour {
             return f64::INFINITY;
         }
 
-        (self.perimeter as f64).powi(2) / a as f64
+        (self.perimeter as f64).powi(2) / (16.0 * a as f64)
     }
 
     pub fn contains(&self, p: &Point) -> bool {
-        !self.bailed
-            && p.x >= 0
+        p.x >= 0
             && p.y >= 0
             && (self.bounds.0..self.bounds.2).contains(&(p.x as u32))
             && (self.bounds.1..self.bounds.3).contains(&(p.y as u32))
@@ -250,9 +249,8 @@ mod contour_tests {
         assert_eq!(c.perimeter, 4, "L1 perimeter of one pixel");
         assert_eq!(c.area(), 1);
         assert_eq!(c.centre(), Some(Point { x: 2, y: 1 }));
-        // Bounds are crack corners, not pixels: the one pixel (2, 1) is boxed by the corners
-        // (2, 1) and (3, 2), so the high corner sits one past the last pixel on each axis.
         assert_eq!(c.bounds, (2, 1, 3, 2), "corner box around a single pixel");
+        assert_eq!(c.compactness(), 1.0, "Compactness test failed");
     }
 
     #[test]
@@ -264,6 +262,7 @@ mod contour_tests {
         assert_eq!(c.area(), 9, "shoelace over cracks is the exact pixel count");
         assert_eq!(c.centre(), Some(Point { x: 2, y: 2 }));
         assert_eq!(c.bounds, (1, 1, 4, 4), "pixels x,y in 1..=3, so corners in 1..=4");
+        assert_eq!(c.compactness(), 1.0, "Compactness test failed");
     }
 
     #[test]

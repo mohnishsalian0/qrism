@@ -126,14 +126,14 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
                 None => continue,
             };
 
-            if let Some(centre) = verify_and_mark_finder(img, &datum) {
+            if let Some(centre) = verify_and_mark_finder_with_contour(img, &datum) {
                 finders.push(centre);
             }
         }
 
         // Handles an edge case where the QR is located at the right edge of the image
         if let Some(datum) = scanner.advance(Color::White) {
-            if let Some(centre) = verify_and_mark_finder(img, &datum) {
+            if let Some(centre) = verify_and_mark_finder_with_contour(img, &datum) {
                 finders.push(centre);
             }
         }
@@ -231,14 +231,14 @@ fn verify_and_mark_finder_with_contour(img: &mut BinaryImage, datum: &DatumLine)
     let (l, s, w, r, e, y) =
         (datum.left, datum.stone, datum.white, datum.right, datum.end, datum.y);
 
-    let sx = (e + l + 1).div_ceil(2);
+    let sx = r - (s - l) * 5 / 4;
     let probe = (sx, y);
 
     // Both caps are estimated from this row's stone run, so they shift slightly row to row. A
     // square stone of side n has a crack perimeter of 4n, so the 8x here is 2x the ideal, leaving
     // room for the staircasing a thresholded edge adds; `max_dist` bounds how far the walk may
     // stray from the centre, which catches a runaway blob long before the step cap does.
-    let max_perimeter = (w - s) * 4 * 2;
+    let max_perimeter = (w - s) * 4 * 4;
     let max_dist = (w - s) * 3;
 
     // A finder spans several scan rows, so the rows after the first re-reach a stone already
@@ -276,7 +276,7 @@ fn verify_and_mark_finder_with_contour(img: &mut BinaryImage, datum: &DatumLine)
     // the walk closes on the hole and the negative area is rejected there.
     let stone = img.get_contour_capped((w - 1, y), probe, max_perimeter, max_dist)?.clone();
     let sc = stone.compactness();
-    if !(0.5..1.5).contains(&sc) {
+    if !(MIN_COMPACTNESS_THRESHOLD..MAX_COMPACTNESS_THRESHOLD).contains(&sc) {
         return None;
     }
 
@@ -285,8 +285,8 @@ fn verify_and_mark_finder_with_contour(img: &mut BinaryImage, datum: &DatumLine)
     let ring_max_perimeter = stone.perimeter().saturating_mul(3);
     let ring_max_dist = (r - l) * 3;
     let ring = img.get_contour_capped((e, y), probe, ring_max_perimeter, ring_max_dist)?.clone();
-    let rc = stone.compactness();
-    if !(0.5..1.5).contains(&rc) {
+    let rc = ring.compactness();
+    if !(MIN_COMPACTNESS_THRESHOLD..MAX_COMPACTNESS_THRESHOLD).contains(&rc) {
         return None;
     }
 
@@ -536,3 +536,6 @@ pub const MOD_SIZE_RATIO: f32 = 2.0;
 // ~[14, 170]. These loosened bounds keep every real symbol while rejecting cross-symbol arm pairs.
 pub const MIN_CENTRE_SPAN_MODULES: f32 = 10.0;
 pub const MAX_CENTRE_SPAN_MODULES: f32 = 185.0;
+
+const MIN_COMPACTNESS_THRESHOLD: f64 = 1.0;
+const MAX_COMPACTNESS_THRESHOLD: f64 = 2.5;
