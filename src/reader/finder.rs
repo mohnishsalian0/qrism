@@ -11,15 +11,18 @@ use image::RgbImage;
 // Finder line
 //------------------------------------------------------------------------------
 
-// **   ******   **  <- Finder line
-// ^    ^        ^
-// left |        right
-//      stone
+// ***   *********   ***  <- Finder line
+// ^     ^       ^   ^ ^
+// left  |       |   | end
+//       stone   |   right
+//               white
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct DatumLine {
     left: u32,
     stone: u32,
+    white: u32,
     right: u32,
+    end: u32,
     y: u32,
 }
 
@@ -65,7 +68,9 @@ impl LineScanner {
             Some(DatumLine {
                 left: self.pos - 1 - self.buffer[..5].iter().sum::<u32>(),
                 stone: self.pos - 1 - self.buffer[2..5].iter().sum::<u32>(),
+                white: self.pos - 1 - self.buffer[3..5].iter().sum::<u32>(),
                 right: self.pos - 1 - self.buffer[4],
+                end: self.pos - 2,
                 y: self.y,
             })
         } else {
@@ -213,6 +218,105 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
     let mod_size = (stone.area as f32 / 9.0).sqrt();
 
     Some(Finder { c: stone.centre, mod_size })
+}
+
+// Verifies a finder candidate by walking the outer boundary of its stone and ring, which costs
+// O(perimeter) rather than O(area). Three properties of the walk shape the checks below:
+// 1. A seed must be the last pixel of a horizontal run, so `trace` starts on an outer boundary
+//    rather than a hole's — hence `w - 1` for the stone and `e` for the ring, not `s` and `r`.
+// 2. Only boundary pixels carry a contour id, so a point can be tested against a contour only if
+//    it is extreme along some axis (leftmost in its row, top/bottom-most in its column).
+// 3. A traced outline encloses its holes, so `ring.area()` is the whole 7x7 block, not the annulus.
+fn verify_and_mark_finder_with_contour(img: &mut BinaryImage, datum: &DatumLine) -> Option<Finder> {
+    let (l, s, w, r, e, y) =
+        (datum.left, datum.stone, datum.white, datum.right, datum.end, datum.y);
+
+    let sx = (e + l + 1).div_ceil(2);
+    let probe = (sx, y);
+
+    // Both caps are estimated from this row's stone run, so they shift slightly row to row. A
+    // square stone of side n has a crack perimeter of 4n, so the 8x here is 2x the ideal, leaving
+    // room for the staircasing a thresholded edge adds; `max_dist` bounds how far the walk may
+    // stray from the centre, which catches a runaway blob long before the step cap does.
+    let max_perimeter = (w - s) * 4 * 2;
+    let max_dist = (w - s) * 3;
+
+    // A finder spans several scan rows, so the rows after the first re-reach a stone already
+    // accepted. `w - 1` is the stone's rightmost pixel on this row, which the outer walk always
+    // touches, so its contour id is the memo. `get_contour_capped` returns None for a stone that
+    // bailed or that this row's caps reject; that is not an accept, so fall through and re-check.
+    if img.get_px_contour(w - 1, y).is_some() {
+        let stone = img.get_contour_capped((w - 1, y), probe, max_perimeter, max_dist);
+        if let Some(st) = stone {
+            if st.is_finder {
+                return None;
+            }
+        }
+    }
+
+    let seed = Point { x: sx as i32, y: datum.y as i32 };
+    let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
+    let max_run = (r - l) * 2; // Setting a loose upper limit on the run
+
+    // Verify 1:1:3:1:1 pattern along Y axis. Returns the top and bottom pts if valid
+    let (t, b) = verify_finder_pattern(img, &seed, &pattern, max_run)?;
+
+    // Cheap reject before the stone trace, run on the ~1 in 6 candidates that clear the vertical
+    // crosscheck but are mostly not finders. Confirms the 1:1:3:1:1 ratio along the main diagonal
+    // through the centre — a third independent axis a spurious candidate almost never satisfies.
+    // This keeps the two traces below off candidates a pixel walk can already rule out.
+    let centre = Point { x: sx as i32, y: ((t + b) / 2) as i32 };
+    if !verify_finder_diagonal(img, &centre, max_run) {
+        return None;
+    }
+
+    // Cap both walks so a candidate whose stone or ring bleeds into a large background blob is
+    // rejected after a few hundred steps rather than walking the blob's whole outline. A stone
+    // fused to its ring is caught separately, by `trace`: it has no outer boundary of its own, so
+    // the walk closes on the hole and the negative area is rejected there.
+    let stone = img.get_contour_capped((w - 1, y), probe, max_perimeter, max_dist)?.clone();
+    let sc = stone.compactness();
+    if !(0.5..1.5).contains(&sc) {
+        return None;
+    }
+
+    // Outer boundaries, so the ring's 7 module sides against the stone's 3 put the true ratio near
+    // 2.3; 3x absorbs the extra steps a noisy edge adds without admitting a runaway blob.
+    let ring_max_perimeter = stone.perimeter().saturating_mul(3);
+    let ring_max_dist = (r - l) * 3;
+    let ring = img.get_contour_capped((e, y), probe, ring_max_perimeter, ring_max_dist)?.clone();
+    let rc = stone.compactness();
+    if !(0.5..1.5).contains(&rc) {
+        return None;
+    }
+
+    // All three points are extreme pixels of the ring — leftmost in row y, top and bottom-most in
+    // column sx — so each lies on the walked outline and carries its id. An interior point would
+    // read None here, which is why `r`, the ring's inner edge, cannot be used for this.
+    let lid = img.get_px_contour(l, y)?;
+    let tid = img.get_px_contour(sx, t)?;
+    let bid = img.get_px_contour(sx, b)?;
+    if lid != ring.id || tid != ring.id || bid != ring.id {
+        return None;
+    }
+
+    // The traced ring encloses its hole, so this compares the full 7x7 block against the 3x3
+    // stone, putting a true finder at 49/9 ~= 5.4.
+    let ratio = ring.area() / stone.area();
+    if ratio <= 3 || 8 <= ratio {
+        return None;
+    }
+
+    // Mark via the traced ids rather than a pixel lookup: the walk labels only boundary pixels,
+    // so `s` and `r` are not guaranteed to resolve, and both ids are already in hand.
+    img.get_contours_mut()[stone.id as usize].is_finder = true;
+    img.get_contours_mut()[ring.id as usize].is_finder = true;
+
+    // The stone is the central 3x3-module block, so its area is ~9 modules^2. This estimate only
+    // feeds the loose scale gates in `group_finders`, so it needn't be exact.
+    let mod_size = (stone.area() as f32 / 9.0).sqrt();
+
+    Some(Finder { c: stone.centre()?, mod_size })
 }
 
 #[cfg(test)]

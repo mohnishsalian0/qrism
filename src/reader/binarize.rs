@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use image::{GenericImageView, Pixel as ImgPixel, RgbImage};
 
 use crate::metadata::Color;
+use crate::reader::utils::contour::{trace, Contour};
 use crate::utils::BitMatrix;
 
 use super::utils::accumulate::AreaAndCentreLocator;
@@ -58,8 +59,10 @@ impl Stat {
 #[derive(Debug)]
 pub struct BinaryImage {
     pub buffer: BitMatrix,
-    px_reg: Vec<u16>,     // Region each pixel belongs to
-    regions: Vec<Region>, // Areas of visited regions. Index is id
+    px_reg: Vec<u16>,       // Region each pixel belongs to
+    regions: Vec<Region>,   // Areas of visited regions. Index is id
+    px_cont: Vec<u16>,      // Contour each boundary pixel belongs to
+    contours: Vec<Contour>, // Visited contours, index is id
     pub w: u32,
     pub h: u32,
 }
@@ -257,7 +260,9 @@ impl BinaryImage {
 
         let px_reg = vec![u16::MAX; (w * h) as usize];
         let regions = Vec::with_capacity(100);
-        Self { buffer, px_reg, regions, w, h }
+        let px_cont = vec![u16::MAX; (w * h) as usize];
+        let contours = Vec::with_capacity(100);
+        Self { buffer, px_reg, regions, px_cont, contours, w, h }
     }
 
     /// Performs absolute/naive binarization
@@ -265,7 +270,6 @@ impl BinaryImage {
         let (w, h) = img.dimensions();
         // Colour plane packs 4 bits per pixel; the matrix strides columns by it.
         let mut buffer = BitMatrix::new(w, h, 4);
-        let px_reg = vec![u16::MAX; (w * h) as usize];
 
         for (x, y, p) in img.enumerate_pixels() {
             let r = (p[0] > 127) as u8;
@@ -274,7 +278,12 @@ impl BinaryImage {
             let color_byte = (r << 2 | g << 1 | b) as u64;
             buffer.put(x, y, color_byte);
         }
-        Self { buffer, px_reg, regions: Vec::with_capacity(100), w, h }
+
+        let px_reg = vec![u16::MAX; (w * h) as usize];
+        let regions = Vec::with_capacity(100);
+        let px_cont = vec![u16::MAX; (w * h) as usize];
+        let contours = Vec::with_capacity(100);
+        Self { buffer, px_reg, regions, px_cont, contours, w, h }
     }
 }
 
@@ -499,7 +508,9 @@ impl BinaryImage {
 
         let px_reg = vec![u16::MAX; (w * h) as usize];
         let regions = Vec::with_capacity(100);
-        Self { buffer, px_reg, regions, w, h }
+        let px_cont = vec![u16::MAX; (w * h) as usize];
+        let contours = Vec::with_capacity(100);
+        Self { buffer, px_reg, regions, px_cont, contours, w, h }
     }
 }
 
@@ -509,6 +520,24 @@ impl BinaryImage {
         if x >= self.w || y >= self.h {
             return None;
         }
+        let bits = self.buffer.get(x, y);
+        Some(if self.buffer.elem_bits() == 1 {
+            Color::from(bits != 0)
+        } else {
+            bits.try_into().ok()?
+        })
+    }
+
+    pub fn get_bounded(&self, x: i32, y: i32) -> Option<Color> {
+        if x < 0 || y < 0 {
+            return None;
+        }
+
+        let (x, y) = (x as u32, y as u32);
+        if self.w <= x || self.h <= y {
+            return None;
+        }
+
         let bits = self.buffer.get(x, y);
         Some(if self.buffer.elem_bits() == 1 {
             Color::from(bits != 0)
@@ -541,8 +570,16 @@ impl BinaryImage {
         Some((x as u32, y as u32))
     }
 
-    pub fn contains(&self, pt: &Point) -> bool {
-        0 <= pt.x && (pt.x as u32) < self.w && 0 <= pt.y && (pt.y as u32) < self.h
+    pub fn contains(&self, x: i32, y: i32) -> bool {
+        0 <= x && (x as u32) < self.w && 0 <= y && (y as u32) < self.h
+    }
+
+    pub fn matches_bits(&self, x: i32, y: i32, bits: u64) -> bool {
+        if x < 0 || y < 0 {
+            return false;
+        }
+        let (x, y) = (x as u32, y as u32);
+        x < self.w && y < self.h && self.buffer.get(x, y) == bits
     }
 
     /// Flood-fill region label at (x, y), or None if unlabeled/oversized or out of bounds.
@@ -564,6 +601,29 @@ impl BinaryImage {
     pub fn set_region_id(&mut self, x: u32, y: u32, reg_id: u16) {
         if x < self.w && y < self.h {
             self.px_reg[(y * self.w + x) as usize] = reg_id;
+        }
+    }
+
+    pub fn get_px_contour(&self, x: u32, y: u32) -> Option<u16> {
+        if self.w <= x || self.h <= y {
+            return None;
+        }
+
+        let id = self.px_cont[(y * self.w + x) as usize];
+        (id < UNLABELED).then_some(id)
+    }
+
+    pub fn get_contours(&self) -> &[Contour] {
+        &self.contours
+    }
+
+    pub fn get_contours_mut(&mut self) -> &mut Vec<Contour> {
+        &mut self.contours
+    }
+
+    pub fn set_px_contour(&mut self, x: u32, y: u32, cont_id: u16) {
+        if x < self.w && y < self.h {
+            self.px_cont[(y * self.w + x) as usize] = cont_id;
         }
     }
 
@@ -647,6 +707,41 @@ impl BinaryImage {
             }
             Some(id) => {
                 Some(self.regions.get_mut(id as usize).expect("No region found for visited pixel"))
+            }
+        }
+    }
+
+    pub(crate) fn get_contour_capped(
+        &mut self,
+        src: (u32, u32),
+        probe: (u32, u32),
+        max_perimeter: u32,
+        max_dist: u32,
+    ) -> Option<&mut Contour> {
+        if self.w <= src.0 || self.h <= src.1 || self.w <= probe.0 || self.h <= probe.1 {
+            return None;
+        }
+
+        let seed = Point { x: src.0 as i32, y: src.1 as i32 };
+        let probe = Point { x: probe.0 as i32, y: probe.1 as i32 };
+
+        match self.get_px_contour(src.0, src.1) {
+            None => trace(self, seed, probe, max_perimeter, max_dist),
+            Some(id) => {
+                let contour =
+                    self.contours.get(id as usize).expect("No contour found for visited pixel");
+
+                if contour.perimeter() > max_perimeter || !contour.contains(&probe) {
+                    return None;
+                }
+
+                if contour.bailed {
+                    return trace(self, seed, probe, max_perimeter, max_dist);
+                }
+
+                let contour =
+                    self.contours.get_mut(id as usize).expect("No contour found for visited pixel");
+                (contour.area() != 0).then_some(contour)
             }
         }
     }
@@ -782,10 +877,10 @@ impl BinaryImage {
 // Number of blocks the shorter dimension of image should be divided into
 const BLOCK_COUNT: f64 = 20.0;
 
-// `px_reg` sentinels. Real region ids run 0..OVERSIZED_LABEL. UNLABELED marks an unfilled pixel;
+// `px_reg` sentinels. Real region or contour ids run 0..OVERSIZED_LABEL. UNLABELED marks an unfilled pixel;
 // OVERSIZED_LABEL marks a pixel in a region that a capped fill abandoned as too large to be a
 // finder part — cached so it isn't re-filled, but never surfaced as a real region.
-const UNLABELED: u16 = u16::MAX;
+pub const UNLABELED: u16 = u16::MAX;
 const OVERSIZED_LABEL: u16 = u16::MAX - 1;
 
 // Number of blocks along row/col in a grid

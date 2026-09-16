@@ -61,7 +61,7 @@ pub(super) fn locate_br_anchor(
 
     for cursor in SquareSpiral::new(&seed, radius) {
         // Drop a cursor that has spiralled off the image before looking it up
-        if img.contains(&cursor) {
+        if img.contains(cursor.x, cursor.y) {
             dst[2] = (cursor.x as f64, cursor.y as f64);
             let Ok(h) = Homography::compute(src, dst) else { continue };
             let score = quiet_zone_score(img, ver, &h);
@@ -238,7 +238,7 @@ fn pinpoint_alignment_centre(
 
     for cursor in SquareSpiral::new(&seed, radius) {
         // Drop a cursor that has spiralled off the image before looking it up
-        if img.contains(&cursor) && img.get_at_point(&cursor) == Some(Color::Black) {
+        if img.get_bounded(cursor.x, cursor.y) == Some(Color::Black) {
             if let Some(stone) = img.get_region_capped((cursor.x as u32, cursor.y as u32), max_area)
             {
                 let (stone_id, stone_centre) = (stone.id, stone.centre);

@@ -5,6 +5,37 @@ use image::{Rgb, RgbImage};
 
 use crate::reader::binarize::BinaryImage;
 
+// Direction enum
+//------------------------------------------------------------------------------
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Direction {
+    Right,
+    Down,
+    Left,
+    Up,
+}
+
+impl Direction {
+    pub fn turn_right(&self) -> Self {
+        match self {
+            Self::Right => Self::Down,
+            Self::Down => Self::Left,
+            Self::Left => Self::Up,
+            Self::Up => Self::Right,
+        }
+    }
+
+    pub fn turn_left(&self) -> Self {
+        match self {
+            Self::Right => Self::Up,
+            Self::Down => Self::Right,
+            Self::Left => Self::Down,
+            Self::Up => Self::Left,
+        }
+    }
+}
+
 // Point
 //------------------------------------------------------------------------------
 
@@ -30,6 +61,15 @@ impl Point {
                 let ny = ((self.y - j) as u32).min(h - 1);
                 img.put_pixel(nx, ny, color);
             }
+        }
+    }
+
+    pub fn advance(&mut self, d: Direction) {
+        match d {
+            Direction::Right => self.x += 1,
+            Direction::Down => self.y += 1,
+            Direction::Left => self.x -= 1,
+            Direction::Up => self.y -= 1,
         }
     }
 }
