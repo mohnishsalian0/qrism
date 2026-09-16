@@ -166,7 +166,7 @@ pub(super) fn locate_alignment_centres(
             if centres[r][c].is_none() {
                 let seed = provisional_alignment(r, c, ver, ff, centres);
 
-                let exact_centre = pinpoint_alignment_centre(
+                let exact_centre = pinpoint_alignment_centre_with_contour(
                     img,
                     &mut visited_regs,
                     seed,
@@ -256,12 +256,8 @@ fn pinpoint_alignment_centre(
 }
 
 // Sweeps the white ring encircling a candidate centre stone and reports whether it reads as
-// the middle band of an alignment pattern.
-//
-// The area is measured against the stone's own area rather than the symbol-wide module estimate,
-// which keeps the gate local: the white ring covers 8 modules to the stone's 1 whatever the scale or
-// warp is at this corner. And a closed white ring shares its centroid with what it encloses, so the
-// two centres must very nearly agree.
+// the middle band of an alignment pattern. And a closed white ring shares its centroid with
+// what it encloses, so the two centres must very nearly agree.
 fn verify_alignment_centre(
     img: &mut BinaryImage,
     stone_centre: &Point,
@@ -293,6 +289,91 @@ fn verify_alignment_centre(
 
     let max_drift = mod_size * CENTRE_DRIFT_TOLERANCE;
     stone_centre.dist_sq(&ring.centre) as f64 <= max_drift * max_drift
+}
+
+fn pinpoint_alignment_centre_with_contour(
+    img: &mut BinaryImage,
+    visited_regs: &mut HashSet<usize>,
+    seed: Point,
+    mod_size: f64,
+    radius: i32,
+    mod_area: f64,
+) -> Option<Point> {
+    let max_perimeter = mod_size as u32 * 4 * 3;
+    let max_dist = mod_size as u32 * 3;
+
+    for cursor in SquareSpiral::new(&seed, radius) {
+        // Drop a cursor that has spiralled off the image before looking it up
+        let clr = img.get_bounded(cursor.x, cursor.y);
+        let right_clr = img.get_bounded(cursor.x + 1, cursor.y);
+        if clr == Some(Color::Black) && right_clr != Some(Color::Black) {
+            let (x, y) = (cursor.x as u32, cursor.y as u32);
+            if let Some(stone) = img.get_contour_capped((x, y), (x, y), max_perimeter, max_dist) {
+                let stone_id = stone.id as usize;
+                let Some(stone_centre) = stone.centre() else {
+                    continue;
+                };
+
+                if !visited_regs.contains(&stone_id) {
+                    visited_regs.insert(stone_id);
+                    if verify_alignment_centre_with_contour(img, &stone_centre, mod_size, mod_area)
+                    {
+                        return Some(stone_centre);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn verify_alignment_centre_with_contour(
+    img: &mut BinaryImage,
+    stone_centre: &Point,
+    mod_size: f64,
+    mod_area: f64,
+) -> bool {
+    debug_assert!(img.contains(stone_centre.x, stone_centre.y));
+
+    let mut step = 0;
+    let max_steps = (mod_size * 3.0).round() as u32;
+    let (mut x, y) = (stone_centre.x as u32, stone_centre.y as u32);
+    let mut prev = img.get(x, y);
+    if prev != Some(Color::Black) {
+        return false;
+    }
+    let mut flips = 0;
+    while flips < 2 {
+        x += 1;
+        step += 1;
+        let Some(cur) = img.get(x, y) else { return false };
+        if prev != Some(cur) {
+            flips += 1;
+        }
+        prev = Some(cur);
+        if step > max_steps {
+            return false;
+        }
+    }
+
+    x -= 1;
+    if img.get(x, y) != Some(Color::White) {
+        return false;
+    }
+
+    let max_perimeter = (mod_size * 12.0) as u32 * 3;
+    let max_dist = (mod_size * 3.0).round() as u32;
+    let Some(ring) = img.get_contour_capped(
+        (x, y),
+        (stone_centre.x as u32, stone_centre.y as u32),
+        max_perimeter,
+        max_dist,
+    ) else {
+        return false;
+    };
+
+    let max_drift = mod_size * CENTRE_DRIFT_TOLERANCE;
+    stone_centre.dist_sq(&ring.centre().unwrap()) as f64 <= max_drift * max_drift
 }
 
 pub(super) fn infer_alignment_centres(ver: Version, ff: &LocalFrame, centres: &mut Anchors) {
