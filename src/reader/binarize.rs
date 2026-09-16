@@ -731,12 +731,21 @@ impl BinaryImage {
                 let contour =
                     self.contours.get(id as usize).expect("No contour found for visited pixel");
 
-                if contour.perimeter() > max_perimeter || !contour.contains(&probe) {
+                // Regardless of whether the contour bailed or not, if its perimeter is over limit
+                // we exit
+                if contour.perimeter() > max_perimeter {
                     return None;
                 }
 
+                // If perimeter is within limit and contour bailed then we retrace it
                 if contour.bailed {
                     return trace(self, seed, probe, max_perimeter, max_dist);
+                }
+
+                // Lastly, if perimeter is within limits and the contour completed the loop, we check
+                // whether the probe is within the contour bounds
+                if !contour.contains(&probe) {
+                    return None;
                 }
 
                 let contour =

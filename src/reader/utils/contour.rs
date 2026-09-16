@@ -63,7 +63,8 @@ impl Contour {
     }
 
     pub fn contains(&self, p: &Point) -> bool {
-        p.x >= 0
+        !self.bailed
+            && p.x >= 0
             && p.y >= 0
             && (self.bounds.0..self.bounds.2).contains(&(p.x as u32))
             && (self.bounds.1..self.bounds.3).contains(&(p.y as u32))
