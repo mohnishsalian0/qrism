@@ -299,8 +299,8 @@ fn pinpoint_alignment_centre_with_contour(
     radius: i32,
     mod_area: f64,
 ) -> Option<Point> {
-    let max_perimeter = mod_size as u32 * 4 * 3;
-    let max_dist = mod_size as u32 * 3;
+    let max_perimeter = (mod_size * 4.0 * ALIGNMENT_TRACE_SLACK).round() as u32;
+    let max_dist = (mod_size * 2.0 * ALIGNMENT_TRACE_SLACK).round() as u32;
 
     for cursor in SquareSpiral::new(&seed, radius) {
         // Drop a cursor that has spiralled off the image before looking it up
@@ -361,8 +361,8 @@ fn verify_alignment_centre_with_contour(
         return false;
     }
 
-    let max_perimeter = (mod_size * 12.0) as u32 * 3;
-    let max_dist = (mod_size * 3.0).round() as u32;
+    let max_perimeter = (mod_size * 12.0 * ALIGNMENT_TRACE_SLACK) as u32;
+    let max_dist = (mod_size * ALIGNMENT_TRACE_SLACK).round() as u32;
     let Some(ring) = img.get_contour_capped(
         (x, y),
         (stone_centre.x as u32, stone_centre.y as u32),
@@ -372,7 +372,7 @@ fn verify_alignment_centre_with_contour(
         return false;
     };
 
-    if !ring.encloses {
+    if !ring.contains(stone_centre) {
         return false;
     }
 
@@ -765,3 +765,5 @@ const CENTRE_DRIFT_TOLERANCE: f64 = 0.5;
 const ALIGNMENT_SEARCH_RADIUS: f64 = 4.0;
 
 const BR_ANCHOR_SEARCH_RADIUS: f64 = 0.5;
+
+const ALIGNMENT_TRACE_SLACK: f64 = 3.0;

@@ -233,19 +233,15 @@ pub struct SquareSpiral {
     cursor: Point,
     run: i32,
     run_len: i32,
-    dir: usize,
+    dir: Direction,
     radius: i32,
 }
 
 impl SquareSpiral {
-    // Directional increment for x & y: [right, up, left, down]
-    const DX: [i32; 4] = [1, 0, -1, 0];
-    const DY: [i32; 4] = [0, -1, 0, 1];
-
     pub fn new(start: &Point, radius: i32) -> Self {
         debug_assert!(radius >= 0);
 
-        Self { start: *start, cursor: *start, run: 0, run_len: 1, dir: 0, radius }
+        Self { start: *start, cursor: *start, run: 0, run_len: 1, dir: Direction::Right, radius }
     }
 }
 
@@ -260,15 +256,14 @@ impl Iterator for SquareSpiral {
 
         let res = self.cursor;
 
-        self.cursor.x += Self::DX[self.dir];
-        self.cursor.y += Self::DY[self.dir];
+        self.cursor.advance(self.dir);
         self.run += 1;
 
         // Cycle direction
         if self.run == self.run_len {
             self.run = 0;
-            self.dir = (self.dir + 1) & 3;
-            if self.dir & 1 == 0 {
+            self.dir = self.dir.turn_left();
+            if self.dir == Direction::Left || self.dir == Direction::Right {
                 self.run_len += 1;
             }
         }

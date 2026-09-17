@@ -750,7 +750,7 @@ impl BinaryImage {
 
                 let contour =
                     self.contours.get_mut(id as usize).expect("No contour found for visited pixel");
-                (contour.area() != 0).then_some(contour)
+                (contour.area() > 0).then_some(contour)
             }
         }
     }
