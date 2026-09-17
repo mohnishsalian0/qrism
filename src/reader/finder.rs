@@ -12,17 +12,17 @@ use image::RgbImage;
 //------------------------------------------------------------------------------
 
 // ***   *********   ***  <- Finder line
-// ^     ^       ^   ^ ^
-// left  |       |   | end
-//       stone   |   right
-//               white
+// ^     ^       ^     ^
+// rl    |       |     rr
+//       sl      sr
+// rl = Ring left, rr = Ring right
+// sl = Stone left, sr = Stone right
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct DatumLine {
-    left: u32,
-    stone: u32,
-    white: u32,
-    right: u32,
-    end: u32,
+    rl: u32,
+    rr: u32,
+    sl: u32,
+    sr: u32,
     y: u32,
 }
 
@@ -66,11 +66,10 @@ impl LineScanner {
 
         if self.is_finder_line() {
             Some(DatumLine {
-                left: self.pos - 1 - self.buffer[..5].iter().sum::<u32>(),
-                stone: self.pos - 1 - self.buffer[2..5].iter().sum::<u32>(),
-                white: self.pos - 1 - self.buffer[3..5].iter().sum::<u32>(),
-                right: self.pos - 1 - self.buffer[4],
-                end: self.pos - 2,
+                rl: self.pos - 1 - self.buffer[..5].iter().sum::<u32>(),
+                sl: self.pos - 1 - self.buffer[2..5].iter().sum::<u32>(),
+                sr: self.pos - 1 - self.buffer[3..5].iter().sum::<u32>(),
+                rr: self.pos - 2,
                 y: self.y,
             })
         } else {
@@ -152,31 +151,30 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
 //    it is extreme along some axis (leftmost in its row, top/bottom-most in its column).
 // 3. A traced outline encloses its holes, so `ring.area()` is the whole 7x7 block, not the annulus.
 fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Finder> {
-    let (l, s, w, r, e, y) =
-        (datum.left, datum.stone, datum.white, datum.right, datum.end, datum.y);
+    let (rl, sl, sr, rr, y) = (datum.rl, datum.sl, datum.sr, datum.rr, datum.y);
 
-    let sx = (w + s + 1).div_ceil(2);
+    let sx = (sl + sr + 1).div_ceil(2);
     let probe = (sx, y);
 
     // Both caps are estimated from this row's stone run, so they shift slightly row to row. A
     // square stone of side n has a crack perimeter of 4n, so the 8x here is 2x the ideal, leaving
     // room for the staircasing a thresholded edge adds; `max_dist` bounds how far the walk may
     // stray from the centre, which catches a runaway blob long before the step cap does.
-    let max_width = (w - s) * 3;
+    let max_width = (sr - sl) * 3;
 
     // A finder spans several scan rows, so the rows after the first re-reach a stone already
     // accepted. `w - 1` is the stone's rightmost pixel on this row, which the outer walk always
     // touches, so its contour id is the memo. `get_contour_capped` returns None for a stone that
     // bailed or that this row's caps reject; that is not an accept, so fall through and re-check.
-    if img.get_px_contour(w - 1, y).is_some()
-        && img.get_contour_capped((w - 1, y), probe, max_width).is_some_and(|st| st.is_finder)
+    if img.get_px_contour(sr - 1, y).is_some()
+        && img.get_contour_capped((sr - 1, y), probe, max_width).is_some_and(|st| st.is_finder)
     {
         return None;
     }
 
     let seed = Point { x: sx as i32, y: datum.y as i32 };
     let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
-    let max_run = (r - l) * 2; // Setting a loose upper limit on the run
+    let max_run = (rr - rl) * 2; // Setting a loose upper limit on the run
 
     // Verify 1:1:3:1:1 pattern along Y axis. Returns the top and bottom pts if valid
     let (t, b) = verify_finder_pattern(img, &seed, &pattern, max_run)?;
@@ -194,20 +192,17 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
     // rejected after a few hundred steps rather than walking the blob's whole outline. A stone
     // fused to its ring is caught separately, by `trace`: it has no outer boundary of its own, so
     // the walk closes on the hole and the negative area is rejected there.
-    let stone = img.get_contour_capped((w - 1, y), probe, max_width)?.clone();
+    let stone = img.get_contour_capped((sr - 1, y), probe, max_width)?.clone();
     let sc = stone.compactness();
     if !(MIN_COMPACTNESS_THRESHOLD..MAX_COMPACTNESS_THRESHOLD).contains(&sc) {
         return None;
     }
 
-    // A ring broken anywhere -- one bleached or blurred module on its border -- has no hole, so the
-    // walk dives through the gap and traces the inner edge as well as the outer. That doubles back
-    // over the annulus: the perimeter runs ~3.8x the stone's rather than ~2.3x, and the area comes
-    // out as the annulus (~24 modules^2) instead of the filled 7x7 block (49). A flood fill never
-    // sees this difference -- it measures the annulus either way -- which is why the gates below
-    // have to branch on `encloses` instead of assuming the closed-ring geometry.
+    // A ring broken anywhere (one bleached or blurred module on its border) has no hole, so the
+    // walk dives through the gap and traces the inner edge as well as the outer. This doubles the
+    // perimeter
     let ring_max_width = stone.perimeter().saturating_mul(RING_PERIMETER_MULT).div_ceil(4);
-    let ring = img.get_contour_capped((e, y), probe, ring_max_width)?.clone();
+    let ring = img.get_contour_capped((rr, y), probe, ring_max_width)?.clone();
 
     // Compactness is only meaningful for a simple outline; a broken ring's doubled-back walk makes
     // it large by construction, so the check applies to closed rings alone. `ring_max_dist` is what
@@ -222,7 +217,7 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
     // All three points are extreme pixels of the ring — leftmost in row y, top and bottom-most in
     // column sx — so each lies on the walked outline and carries its id. An interior point would
     // read None here, which is why `r`, the ring's inner edge, cannot be used for this.
-    let lid = img.get_px_contour(l, y)?;
+    let lid = img.get_px_contour(rl, y)?;
     let tid = img.get_px_contour(sx, t)?;
     let bid = img.get_px_contour(sx, b)?;
     if lid != ring.id || tid != ring.id || bid != ring.id {

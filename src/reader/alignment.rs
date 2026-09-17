@@ -78,16 +78,14 @@ pub(super) fn locate_br_anchor(
 
 fn quiet_zone_score(img: &BinaryImage, ver: Version, h: &Homography) -> u32 {
     let w = ver.width();
-    let mut white_score = 0;
+    let mut white_score = 0u32;
 
     // Bottom edge + bottom right corner point
     let my = w as f64 + 0.5;
     for mx in 0..w + 1 {
         let Ok(px) = h.map(mx as f64 + 0.5, my) else { continue };
         let Some(clr) = img.get_at_point(&px) else { continue };
-        if clr == Color::White {
-            white_score += 1;
-        };
+        white_score += (clr == Color::White) as u32;
     }
 
     // Right edge
@@ -95,9 +93,7 @@ fn quiet_zone_score(img: &BinaryImage, ver: Version, h: &Homography) -> u32 {
     for my in 0..w {
         let Ok(px) = h.map(mx, my as f64 + 0.5) else { continue };
         let Some(clr) = img.get_at_point(&px) else { continue };
-        if clr == Color::White {
-            white_score += 1;
-        };
+        white_score += (clr == Color::White) as u32;
     }
 
     white_score

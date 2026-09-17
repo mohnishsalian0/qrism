@@ -148,10 +148,13 @@ pub fn trace(
 
     let mut cursor = start;
     let mut dir = start_dir;
+    // The blob pixel the first crack runs along. Every later one falls out of the turn `next_step`
+    // picks, so this is the only place the walk looks a flank up on its own.
+    let (_, mut walked_in) = flanks(&cursor, dir);
     let mut contour = Contour::new(id);
     loop {
-        // (cursor, dir) always name the crack about to be walked; its right flank is a blob pixel.
-        let (_, walked_in) = flanks(&cursor, dir);
+        // (cursor, dir) always name the crack about to be walked, and `walked_in` is its right
+        // flank -- the blob pixel that crack runs along.
         img.set_px_contour(walked_in.0 as u32, walked_in.1 as u32, id);
 
         let last_y = cursor.y;
@@ -163,8 +166,6 @@ pub fn trace(
             break;
         }
 
-        let (out_px, in_px) = flanks(&cursor, dir);
-
         // Ray cast rightward from the probe's pixel centre, which in corner coordinates sits at
         // (probe + 0.5). Only vertical cracks can cross a horizontal ray, and one does when it spans
         // the probe's row and lies to its right; an odd total means the probe is inside.
@@ -172,9 +173,9 @@ pub fn trace(
             && cursor.x > probe.x
             && cursor.y.min(last_y) == probe.y;
 
-        // Pixels on the left and right flank of the next crack straight ahead. 'in_px' is on the blob
-        // side & 'out_px' is on the background side
-        dir = next_dir(img, dir, clr_bits, out_px, in_px);
+        // Where to head next, and the blob pixel that crack runs along. Both come off the flanks of
+        // the crack straight ahead, which `next_step` reads for itself.
+        (dir, walked_in) = next_step(img, dir, clr_bits, walked_in, &cursor);
 
         if cursor == start && dir == start_dir {
             contour.bailed = false;
@@ -190,21 +191,28 @@ pub fn trace(
         .then_some(contour)
 }
 
-// Direction to leave `cursor`, keeping the blob on the right of travel.
+// Direction to leave `cursor`, keeping the blob on the right of travel, paired with the blob pixel
+// the crack leaving in that direction runs along.
 // Both flanks filled means the blob wraps around the corner: hug it by turning in.
-fn next_dir(
+//
+// That pixel is fixed by the same two lookups that pick the direction, so carrying it out spares
+// the caller a second `flanks` per step: going straight on keeps the right flank just read, turning
+// left swings onto what was the left flank, and turning right pivots about the pixel the walk is
+// already running along -- which is why `blob_px` comes in as well as out.
+fn next_step(
     img: &BinaryImage,
     dir: Direction,
     blob_bits: u64,
-    ahead_left: (i32, i32),
-    ahead_right: (i32, i32),
-) -> Direction {
+    blob_px: (i32, i32),
+    cursor: &Point,
+) -> (Direction, (i32, i32)) {
+    let (ahead_left, ahead_right) = flanks(cursor, dir);
     if !img.matches_bits(ahead_right.0, ahead_right.1, blob_bits) {
-        dir.turn_right()
+        (dir.turn_right(), blob_px)
     } else if !img.matches_bits(ahead_left.0, ahead_left.1, blob_bits) {
-        dir
+        (dir, ahead_right)
     } else {
-        dir.turn_left()
+        (dir.turn_left(), ahead_left)
     }
 }
 
