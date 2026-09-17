@@ -251,25 +251,31 @@ fn pinpoint_alignment_centre(
 fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &Point, mod_size: f64) -> bool {
     debug_assert!(img.contains(stone_centre.x, stone_centre.y));
 
+    let w = img.w;
     let mut step = 0;
     let max_steps = (mod_size * 3.0).round() as u32;
     let (mut x, y) = (stone_centre.x as u32, stone_centre.y as u32);
-    let mut prev = img.get(x, y);
-    if prev != Some(Color::Black) {
+    let mut prev = img.buffer.get(x, y);
+    if prev != 0 {
         return false;
     }
     let mut flips = 0;
-    while flips < 2 {
+    while step <= max_steps && flips < 2 {
         x += 1;
         step += 1;
-        let Some(cur) = img.get(x, y) else { return false };
-        if prev != Some(cur) {
-            flips += 1;
-        }
-        prev = Some(cur);
-        if step > max_steps {
+        if x == w {
             return false;
         }
+
+        let cur = img.buffer.get(x, y);
+        if prev != cur {
+            flips += 1;
+        }
+        prev = cur;
+    }
+
+    if flips < 2 {
+        return false;
     }
 
     x -= 1;
@@ -288,7 +294,8 @@ fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &Point, mod_size
         return false;
     }
 
-    let max_drift = mod_size * CENTRE_DRIFT_TOLERANCE;
+    // Concentricity test. The ring and stone centre should be reasonably near each other
+    let max_drift = mod_size * ALIGNMENT_CENTRE_DRIFT_TOLERANCE;
     stone_centre.dist_sq(&ring.centre().unwrap()) as f64 <= max_drift * max_drift
 }
 
@@ -666,7 +673,7 @@ mod alignment_pattern_tests {
 // Global constants
 //------------------------------------------------------------------------------
 
-const CENTRE_DRIFT_TOLERANCE: f64 = 0.5;
+const ALIGNMENT_CENTRE_DRIFT_TOLERANCE: f64 = 0.5;
 
 const ALIGNMENT_SEARCH_RADIUS: f64 = 4.0;
 

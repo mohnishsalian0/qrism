@@ -237,6 +237,15 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
         return None;
     }
 
+    // Concentricity test. The ring and stone centre should be reasonably near each other
+    let mod_size = stone.area() as f64 / 9.0;
+    let max_drift = mod_size * FINDER_CENTRE_DRIFT_TOLERANCE;
+    let rcentre = ring.centre().unwrap();
+    let scentre = stone.centre().unwrap();
+    if rcentre.dist_sq(&scentre) > max_drift.powi(2).round() as u32 {
+        return None;
+    }
+
     // Mark via the traced ids rather than a pixel lookup: the walk labels only boundary pixels,
     // so `s` and `r` are not guaranteed to resolve, and both ids are already in hand.
     img.get_contours_mut()[stone.id as usize].is_finder = true;
@@ -485,3 +494,6 @@ const CLOSED_RING_MIN: u32 = 3;
 const CLOSED_RING_MAX: u32 = 8;
 const OPEN_RING_MIN: u32 = 1;
 const OPEN_RING_MAX: u32 = 4;
+
+// For ring and stone centre closeness
+const FINDER_CENTRE_DRIFT_TOLERANCE: f64 = 0.5;

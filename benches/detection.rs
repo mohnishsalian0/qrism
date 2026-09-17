@@ -25,7 +25,7 @@ pub fn benchmark_detection(dataset_dir: &Path) {
     let runtimes = Arc::new(Mutex::new(HashMap::<String, Vec<u128>>::new()));
 
     // Change to iter() for sequential, change to par_iter() for parallel
-    image_paths.par_iter().for_each(|img_path| {
+    image_paths.iter().for_each(|img_path| {
         let parent = get_parent(img_path);
 
         let exp_path = img_path.with_extension("txt");
