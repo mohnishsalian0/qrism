@@ -16,7 +16,7 @@ pub struct Contour {
     area2: i64,                   // 2 * signed enclosed area (shoelace sum)
     cx6: i64,                     // 6 * area * centroid x
     cy6: i64,                     // 6 * area * centroid y
-    pub is_finder: bool,
+    pub is_finder: bool,          // Whether the outline is a finder pattern
 }
 
 impl Contour {
@@ -60,6 +60,12 @@ impl Contour {
         }
 
         (self.perimeter as f64).powi(2) / (16.0 * a as f64)
+    }
+
+    // Longer side of the bounding box. Unlike a displacement from the caller's probe this depends
+    // only on the outline itself, so the verdict it produces transfers between callers.
+    pub fn extent(&self) -> u32 {
+        self.bounds.2.saturating_sub(self.bounds.0).max(self.bounds.3.saturating_sub(self.bounds.1))
     }
 
     pub fn contains(&self, p: &Point) -> bool {
@@ -111,16 +117,21 @@ impl Contour {
 // rather than a second pass over a stored outline.
 pub fn trace(
     img: &mut BinaryImage,
+    reuse: Option<u16>,
     seed: Point,
     probe: Point,
-    max_perimeter: u32,
-    max_dist: u32,
+    max_width: u32,
 ) -> Option<&mut Contour> {
-    let id = img.get_contours().len();
-    debug_assert!(id < UNLABELED as usize, "Number of contours exceed 65,534");
-    let id = id as u16;
+    let id = match reuse {
+        Some(id) => id,
+        None => {
+            let n = img.get_contours().len();
+            debug_assert!(n < UNLABELED as usize, "Number of contours exceed 65,534");
+            n as u16
+        }
+    };
 
-    let max_dist_sq = max_dist.pow(2);
+    let max_perimeter = max_width * 4;
     let clr_bits =
         img.contains(seed.x, seed.y).then(|| img.buffer.get(seed.x as u32, seed.y as u32))?;
 
@@ -148,9 +159,8 @@ pub fn trace(
         cursor.advance(dir);
         contour.accumulate(&cursor, dir);
 
-        if contour.perimeter > max_perimeter || probe.dist_sq(&cursor) > max_dist_sq {
-            img.get_contours_mut().push(contour);
-            return None;
+        if contour.perimeter > max_perimeter || contour.extent() > max_width {
+            break;
         }
 
         let (out_px, in_px) = flanks(&cursor, dir);
@@ -172,13 +182,12 @@ pub fn trace(
         }
     }
 
-    img.get_contours_mut().push(contour);
-
-    let contour = img.get_contours_mut().last_mut().expect("Contour should exist");
+    let contour = store(reuse, contour, img.get_contours_mut());
 
     // A hole boundary walks clockwise and sums negative, so the sign is what tells an outer
     // outline from an inner one when the seed lands on a hole (a stone bled into its ring).
-    (contour.area2 > 0).then_some(contour)
+    (contour.perimeter <= max_perimeter && contour.extent() <= max_width && contour.area2 > 0)
+        .then_some(contour)
 }
 
 // Direction to leave `cursor`, keeping the blob on the right of travel.
@@ -210,6 +219,20 @@ fn flanks(cursor: &Point, dir: Direction) -> ((i32, i32), (i32, i32)) {
     }
 }
 
+fn store(reuse: Option<u16>, contour: Contour, contours: &mut Vec<Contour>) -> &mut Contour {
+    match reuse {
+        Some(id) => {
+            let id = id as usize;
+            contours[id] = contour;
+            &mut contours[id]
+        }
+        None => {
+            contours.push(contour);
+            contours.last_mut().unwrap()
+        }
+    }
+}
+
 #[cfg(test)]
 mod contour_tests {
     use super::*;
@@ -224,7 +247,7 @@ mod contour_tests {
 
     fn trace_sketch_probe(rows: &[&str], seed: Point, probe: Point) -> BinaryImage {
         let mut bin = sketch(rows);
-        trace(&mut bin, seed, probe, 10000, 10000);
+        trace(&mut bin, None, seed, probe, 10000);
         bin
     }
 
@@ -288,21 +311,6 @@ mod contour_tests {
         assert_eq!(c.bounds, (0, 0, 3, 3), "box clamps to the image corner");
     }
 
-    // The area and centre must agree with what a flood fill accumulates, since the finder gates
-    // and the reported finder centre are ported across unchanged.
-    #[test]
-    fn test_matches_flood_fill() {
-        let rows = ["........", ".#####..", ".#####..", ".###....", ".###....", "........"];
-        let img = trace_sketch(&rows, Point { x: 5, y: 1 });
-        let c = img.get_contours().last().unwrap();
-
-        let mut bin = sketch(&rows);
-        let region = bin.get_region((1, 1)).clone();
-
-        assert_eq!(c.area(), region.area, "traced area vs filled area");
-        assert_eq!(c.centre().unwrap(), region.centre, "traced centroid vs filled centroid");
-    }
-
     // A diagonal touch must not merge the two blobs: the flood fill is 4-connected and the gates
     // ported onto the tracer assume the same.
     #[test]
@@ -357,7 +365,7 @@ mod contour_tests {
         let mut bin = sketch(&["......", ".####.", ".####.", ".####.", ".####.", "......"]);
         let probe = Point { x: 4, y: 1 };
         assert!(
-            trace(&mut bin, Point { x: 4, y: 1 }, probe, 16, 6).is_some(),
+            trace(&mut bin, None, Point { x: 4, y: 1 }, probe, 4).is_some(),
             "16 step outline under an 16 step cap"
         );
         assert!(!bin.get_contours().last().unwrap().bailed, "16 step outline under an 16 step cap");
@@ -368,83 +376,28 @@ mod contour_tests {
         let mut bin = sketch(&["......", ".####.", ".####.", ".####.", ".####.", "......"]);
         let probe = Point { x: 4, y: 1 };
         assert!(
-            trace(&mut bin, Point { x: 4, y: 1 }, probe, 15, 6).is_none(),
+            trace(&mut bin, None, Point { x: 4, y: 1 }, probe, 3).is_none(),
             "16 step outline under an 15 step cap"
         );
     }
 
-    // The distance cap rejects a blob that runs away from the probe, which the step cap only
-    // notices much later. The square's corners span (1, 1)..(5, 5), so from the probe at (4, 1)
-    // the far corner (1, 5) sits at dist_sq = 3^2 + 4^2 = 25 -- inside a cap of 5, outside a 4.
     #[test]
-    fn test_dist_cap_no_bail() {
+    fn test_extent_cap_no_bail() {
         let mut bin = sketch(&["......", ".####.", ".####.", ".####.", ".####.", "......"]);
         let seed = Point { x: 4, y: 1 };
-        assert!(trace(&mut bin, seed, seed, 100, 5).is_some(), "far corner at dist_sq 25, cap 25");
+        assert!(trace(&mut bin, None, seed, seed, 4).is_some());
         assert!(!bin.get_contours().last().unwrap().bailed);
     }
 
     #[test]
-    fn test_dist_cap_bails() {
+    fn test_extent_cap_bails() {
         let mut bin = sketch(&["......", ".####.", ".####.", ".####.", ".####.", "......"]);
         let seed = Point { x: 4, y: 1 };
-        assert!(trace(&mut bin, seed, seed, 100, 4).is_none(), "far corner at dist_sq 25, cap 16");
+        assert!(trace(&mut bin, None, seed, seed, 3).is_none());
 
         let c = bin.get_contours().last().unwrap();
-        assert!(c.bailed, "a distance bail is recorded like a step bail");
-        assert!(c.perimeter() < 100, "distance stopped the walk well inside the step cap");
-    }
-
-    // The walk starts at the corner just past the seed, which on a blob with a long arm is the one
-    // point of the outline furthest from the probe. Here every corner is within dist_sq 9 of the
-    // probe except that first one at 10, so a cap of 3 kills the trace on its very first step —
-    // a blob the cap was never meant to reject, thrown out because of where the caller seeded it.
-    #[test]
-    fn test_dist_cap_bails_on_seed_alone() {
-        let rows = ["......", "..#...", ".####.", "..#...", "......"];
-        let seed = Point { x: 4, y: 2 }; // run end of the long arm
-        let probe = Point { x: 2, y: 2 }; // centre of the plus
-
-        let mut bin = sketch(&rows);
-        assert!(
-            trace(&mut bin, seed, probe, 100, 3).is_none(),
-            "corner (5, 3) past the seed is at dist_sq 10, over the 3^2 = 9 cap"
-        );
-        let c = bin.get_contours().last().unwrap();
-        assert!(c.bailed);
-        assert_eq!(c.perimeter(), 1, "bailed on the first step, before walking any of the blob");
-
-        // One more unit of slack and the same outline traces to completion.
-        let mut bin = sketch(&rows);
-        assert!(trace(&mut bin, seed, probe, 100, 4).is_some(), "dist_sq 10 under a 4^2 = 16 cap");
-        let c = bin.get_contours().last().unwrap();
-        assert_eq!(c.perimeter(), 14);
-        assert_eq!(c.area(), 6);
-        assert_eq!(c.bounds, (1, 1, 5, 4));
-    }
-
-    // The cap measures from the probe, not from the blob, so the same outline passes or bails
-    // depending on where the caller's probe sits. That is the difference from the step cap, which
-    // is a property of the blob alone -- and the reason a distance bail cannot be cached the way
-    // `get_contour_capped` caches a step bail.
-    #[test]
-    fn test_dist_cap_is_probe_anchored() {
-        let rows = ["......", ".####.", ".####.", ".####.", ".####.", "......"];
-        let seed = Point { x: 4, y: 1 };
-
-        // (3, 3) is the centre of the corner box, so every corner is dist_sq 8 away.
-        let mut bin = sketch(&rows);
-        assert!(
-            trace(&mut bin, seed, Point { x: 3, y: 3 }, 100, 3).is_some(),
-            "centred probe: every corner within 3"
-        );
-
-        // From (2, 2) the opposite corner (5, 5) is dist_sq 18, past the same cap.
-        let mut bin = sketch(&rows);
-        assert!(
-            trace(&mut bin, seed, Point { x: 2, y: 2 }, 100, 3).is_none(),
-            "same outline, off-centre probe: far corner at dist_sq 18"
-        );
+        assert!(c.bailed, "a extent bail is recorded like a step bail");
+        assert!(c.perimeter() < 100, "max width stopped the walk well inside the step cap");
     }
 
     #[test]
@@ -462,5 +415,13 @@ mod contour_tests {
                 }
             }
         }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_non_run_end_pixel_contour() {
+        let rows = ["......", ".####.", ".####.", ".####.", ".####.", "......"];
+        let seed = Point { x: 3, y: 1 };
+        let _img = trace_sketch(&rows, seed);
     }
 }

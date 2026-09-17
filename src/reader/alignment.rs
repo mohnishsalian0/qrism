@@ -158,22 +158,15 @@ pub(super) fn locate_alignment_centres(
 
     let mod_size = ff.mod_size();
     let search_span = (mod_size * ALIGNMENT_SEARCH_RADIUS).round() as i32;
-    let mod_area = ff.mod_area();
-    let mut visited_regs: HashSet<usize> = HashSet::new();
+    let mut visited_conts: HashSet<usize> = HashSet::new();
 
     for r in 0..n {
         for c in 0..n {
             if centres[r][c].is_none() {
                 let seed = provisional_alignment(r, c, ver, ff, centres);
 
-                let exact_centre = pinpoint_alignment_centre_with_contour(
-                    img,
-                    &mut visited_regs,
-                    seed,
-                    mod_size,
-                    search_span,
-                    mod_area,
-                );
+                let exact_centre =
+                    pinpoint_alignment_centre(img, &mut visited_conts, seed, mod_size, search_span);
 
                 centres[r][c] = exact_centre;
             }
@@ -215,37 +208,37 @@ fn provisional_alignment(
 // Locates the centre of the alignment pattern nearest `seed`, or `None` if the spiral runs out
 // to `search_span` without finding one.
 //
-// The search walks a square spiral outward from `seed`. At each black pixel it flood-fills the
-// region underneath and tests it as a candidate centre stone, by sweeping the white ring that
+// The search walks a square spiral outward from `seed`. At each black pixel it traces contour of
+// the region within and tests it as a candidate centre stone, by tracing the white ring that
 // encircles it -- see `verify_alignment_centre`.
 //
-// The upper bound on the stone's area is enforced by the fill rather than by a comparison:
-// `get_region_capped` abandons a fill that grows past `max_area` and returns `None`, so a `None`
-// there means the blob was too big to be a stone, not that anything went wrong.
-//
-// `visited_regs` holds the ids of regions already tried, whether they passed or failed. It is
+// `visited_conts` holds the ids of contours already tried, whether they passed or failed. It is
 // shared across every cell of the grid, so each stone can be claimed only once: a cell whose
 // spiral reaches a stone that another cell has already taken passes over it and keeps searching.
 fn pinpoint_alignment_centre(
     img: &mut BinaryImage,
-    visited_regs: &mut HashSet<usize>,
+    visited_conts: &mut HashSet<usize>,
     seed: Point,
     mod_size: f64,
     radius: i32,
-    mod_area: f64,
 ) -> Option<Point> {
-    let max_area = (mod_area * STONE_AREA_TOLERANCE).round() as u32;
+    let max_width = (mod_size * ALIGNMENT_TRACE_SLACK).round() as u32;
 
     for cursor in SquareSpiral::new(&seed, radius) {
         // Drop a cursor that has spiralled off the image before looking it up
-        if img.get_bounded(cursor.x, cursor.y) == Some(Color::Black) {
-            if let Some(stone) = img.get_region_capped((cursor.x as u32, cursor.y as u32), max_area)
-            {
-                let (stone_id, stone_centre) = (stone.id, stone.centre);
+        let clr = img.get_bounded(cursor.x, cursor.y);
+        let right_clr = img.get_bounded(cursor.x + 1, cursor.y);
+        if clr == Some(Color::Black) && right_clr != Some(Color::Black) {
+            let (x, y) = (cursor.x as u32, cursor.y as u32);
+            if let Some(stone) = img.get_contour_capped((x, y), (x, y), max_width) {
+                let stone_id = stone.id as usize;
+                let Some(stone_centre) = stone.centre() else {
+                    continue;
+                };
 
-                if !visited_regs.contains(&stone_id) {
-                    visited_regs.insert(stone_id);
-                    if verify_alignment_centre(img, &stone_centre, mod_size, mod_area) {
+                if !visited_conts.contains(&stone_id) {
+                    visited_conts.insert(stone_id);
+                    if verify_alignment_centre(img, &stone_centre, mod_size) {
                         return Some(stone_centre);
                     }
                 }
@@ -258,81 +251,8 @@ fn pinpoint_alignment_centre(
 // Sweeps the white ring encircling a candidate centre stone and reports whether it reads as
 // the middle band of an alignment pattern. And a closed white ring shares its centroid with
 // what it encloses, so the two centres must very nearly agree.
-fn verify_alignment_centre(
-    img: &mut BinaryImage,
-    stone_centre: &Point,
-    mod_size: f64,
-    mod_area: f64,
-) -> bool {
-    let mut step = 0;
-    let max_steps = (mod_size * 2.0).round() as u32;
-    let mut seed = *stone_centre;
-    while img.get_at_point(&seed) == Some(Color::Black) {
-        if step > max_steps {
-            return false;
-        }
-        seed.x += 1;
-        step += 1;
-    }
 
-    if img.get_at_point(&seed) != Some(Color::White) {
-        return false;
-    }
-
-    debug_assert!(seed.x >= 0);
-
-    let (x, y) = (seed.x as u32, seed.y as u32);
-    let area_cap = (mod_area * RING_MODS * RING_AREA_TOLERANCE).round() as u32;
-    let Some(ring) = img.get_region_capped((x, y), area_cap) else {
-        return false;
-    };
-
-    let max_drift = mod_size * CENTRE_DRIFT_TOLERANCE;
-    stone_centre.dist_sq(&ring.centre) as f64 <= max_drift * max_drift
-}
-
-fn pinpoint_alignment_centre_with_contour(
-    img: &mut BinaryImage,
-    visited_regs: &mut HashSet<usize>,
-    seed: Point,
-    mod_size: f64,
-    radius: i32,
-    mod_area: f64,
-) -> Option<Point> {
-    let max_perimeter = (mod_size * 4.0 * ALIGNMENT_TRACE_SLACK).round() as u32;
-    let max_dist = (mod_size * 2.0 * ALIGNMENT_TRACE_SLACK).round() as u32;
-
-    for cursor in SquareSpiral::new(&seed, radius) {
-        // Drop a cursor that has spiralled off the image before looking it up
-        let clr = img.get_bounded(cursor.x, cursor.y);
-        let right_clr = img.get_bounded(cursor.x + 1, cursor.y);
-        if clr == Some(Color::Black) && right_clr != Some(Color::Black) {
-            let (x, y) = (cursor.x as u32, cursor.y as u32);
-            if let Some(stone) = img.get_contour_capped((x, y), (x, y), max_perimeter, max_dist) {
-                let stone_id = stone.id as usize;
-                let Some(stone_centre) = stone.centre() else {
-                    continue;
-                };
-
-                if !visited_regs.contains(&stone_id) {
-                    visited_regs.insert(stone_id);
-                    if verify_alignment_centre_with_contour(img, &stone_centre, mod_size, mod_area)
-                    {
-                        return Some(stone_centre);
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-fn verify_alignment_centre_with_contour(
-    img: &mut BinaryImage,
-    stone_centre: &Point,
-    mod_size: f64,
-    mod_area: f64,
-) -> bool {
+fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &Point, mod_size: f64) -> bool {
     debug_assert!(img.contains(stone_centre.x, stone_centre.y));
 
     let mut step = 0;
@@ -361,14 +281,10 @@ fn verify_alignment_centre_with_contour(
         return false;
     }
 
-    let max_perimeter = (mod_size * 12.0 * ALIGNMENT_TRACE_SLACK) as u32;
-    let max_dist = (mod_size * ALIGNMENT_TRACE_SLACK).round() as u32;
-    let Some(ring) = img.get_contour_capped(
-        (x, y),
-        (stone_centre.x as u32, stone_centre.y as u32),
-        max_perimeter,
-        max_dist,
-    ) else {
+    let max_width = (mod_size * 3.0 * ALIGNMENT_TRACE_SLACK).round() as u32;
+    let Some(ring) =
+        img.get_contour_capped((x, y), (stone_centre.x as u32, stone_centre.y as u32), max_width)
+    else {
         return false;
     };
 
@@ -639,7 +555,7 @@ mod alignment_pattern_tests {
         // nearest-to-TL tie break settles those ties on the inward edge of that plateau, so the
         // anchor lands a few pixels short of the calculated point.
         assert_eq!(Point { x: far, y: far }, Point { x: 215, y: 215 });
-        assert_eq!(br, Point { x: 213, y: 212 });
+        assert_eq!(br, Point { x: 212, y: 213 });
     }
 
     #[test]
@@ -753,12 +669,6 @@ mod alignment_pattern_tests {
 
 // Global constants
 //------------------------------------------------------------------------------
-
-const STONE_AREA_TOLERANCE: f64 = 2.0;
-
-const RING_MODS: f64 = 8.0;
-
-const RING_AREA_TOLERANCE: f64 = 2.0;
 
 const CENTRE_DRIFT_TOLERANCE: f64 = 0.5;
 

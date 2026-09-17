@@ -126,14 +126,14 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
                 None => continue,
             };
 
-            if let Some(centre) = verify_and_mark_finder_with_contour(img, &datum) {
+            if let Some(centre) = verify_and_mark_finder(img, &datum) {
                 finders.push(centre);
             }
         }
 
         // Handles an edge case where the QR is located at the right edge of the image
         if let Some(datum) = scanner.advance(Color::White) {
-            if let Some(centre) = verify_and_mark_finder_with_contour(img, &datum) {
+            if let Some(centre) = verify_and_mark_finder(img, &datum) {
                 finders.push(centre);
             }
         }
@@ -144,82 +144,6 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
     finders
 }
 
-// Checks multiple conditions to ensure the finder is valid
-// 1. Left and right datum points are connected
-// 2. The region wasn't already marked as candidate
-// 3. Ring and stone regions aren't connected
-// 4. Area of stone region is roughly 37.5% of ring region
-// 5. Crosscheck 1:1:3:1:1 pattern along Y axis
-// Finally it marks the regions are candidate and returns the centre
-fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Finder> {
-    let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
-
-    // If pixel has been visited, check if regions is already marked as finder
-    if img.get_region_id(s, y).is_some() {
-        let stone = img.get_region((s, y));
-
-        // Exit if stone is already made a candidate from previous iterations
-        if stone.is_finder {
-            return None;
-        }
-    }
-
-    let sx = r - (s - l) * 5 / 4;
-    let seed = Point { x: sx as i32, y: datum.y as i32 };
-    let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
-    let max_run = (r - l) * 2; // Setting a loose upper limit on the run
-
-    // Verify 1:1:3:1:1 pattern along Y axis. Returns the top and bottom pts if valid
-    let (t, b) = verify_finder_pattern(img, &seed, &pattern, max_run)?;
-
-    // Cheap reject before the expensive stone flood fill, run on the ~1 in 6 candidates that clear
-    // the vertical crosscheck but are mostly not finders. Confirms the 1:1:3:1:1 ratio along the main
-    // diagonal through the centre — a third independent axis a spurious candidate almost never
-    // satisfies. This cuts the number of stone fills (the single biggest cost in `locate_finders`)
-    // without touching the area-ratio confirmation that follows.
-    let centre = Point { x: sx as i32, y: ((t + b) / 2) as i32 };
-    if !verify_finder_diagonal(img, &centre, max_run) {
-        return None;
-    }
-
-    // Cap both fills so a spurious candidate whose stone/ring bleeds into a large background blob
-    // is rejected without filling the whole blob. Both caps derive from row-stable quantities — the
-    // finder-width bound `max_run` (~2x the 7-module span, so `max_run²` comfortably exceeds a real
-    // stone even when it bleeds into a few data modules) and the stone area — so the "oversized"
-    // verdict is identical on every scan row crossing this finder, which the memoised sentinel needs.
-    let stone_cap = max_run.saturating_mul(max_run);
-    // let stone_cap = max_run * 2;
-    let stone = img.get_region_capped((s, y), stone_cap)?.clone();
-
-    // A valid ring is at most ~10x the stone area, else the area-ratio check below rejects it.
-    let ring_cap = stone.area.saturating_mul(10);
-    // let ring_cap = max_run * 4;
-    let ring = img.get_region_capped((r, y), ring_cap)?.clone();
-
-    // Check if left, top and bottom points lie within the ring
-    let lid = img.get_region_id(l, y)? as usize;
-    let tid = img.get_region_id(sx, t)? as usize;
-    let bid = img.get_region_id(sx, b)? as usize;
-    if lid != ring.id || tid != ring.id || bid != ring.id {
-        return None;
-    }
-
-    // False if ring & stone are connected, or if ring to stone area is not roughly 37,5%
-    let ratio = stone.area * 100 / ring.area;
-    if stone.id == ring.id || ratio <= 10 || 70 <= ratio {
-        return None;
-    }
-
-    img.get_region((r, y)).is_finder = true;
-    img.get_region((s, y)).is_finder = true;
-
-    // The stone is the central 3x3-module block, so its area is ~9 modules^2. This estimate only
-    // feeds the loose scale gates in `group_finders`, so it needn't be exact.
-    let mod_size = (stone.area as f32 / 9.0).sqrt();
-
-    Some(Finder { c: stone.centre, mod_size })
-}
-
 // Verifies a finder candidate by walking the outer boundary of its stone and ring, which costs
 // O(perimeter) rather than O(area). Three properties of the walk shape the checks below:
 // 1. A seed must be the last pixel of a horizontal run, so `trace` starts on an outer boundary
@@ -227,7 +151,7 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
 // 2. Only boundary pixels carry a contour id, so a point can be tested against a contour only if
 //    it is extreme along some axis (leftmost in its row, top/bottom-most in its column).
 // 3. A traced outline encloses its holes, so `ring.area()` is the whole 7x7 block, not the annulus.
-fn verify_and_mark_finder_with_contour(img: &mut BinaryImage, datum: &DatumLine) -> Option<Finder> {
+fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Finder> {
     let (l, s, w, r, e, y) =
         (datum.left, datum.stone, datum.white, datum.right, datum.end, datum.y);
 
@@ -238,17 +162,14 @@ fn verify_and_mark_finder_with_contour(img: &mut BinaryImage, datum: &DatumLine)
     // square stone of side n has a crack perimeter of 4n, so the 8x here is 2x the ideal, leaving
     // room for the staircasing a thresholded edge adds; `max_dist` bounds how far the walk may
     // stray from the centre, which catches a runaway blob long before the step cap does.
-    let max_perimeter = (w - s) * 4 * 3;
-    let max_dist = (w - s) * 3;
+    let max_width = (w - s) * 3;
 
     // A finder spans several scan rows, so the rows after the first re-reach a stone already
     // accepted. `w - 1` is the stone's rightmost pixel on this row, which the outer walk always
     // touches, so its contour id is the memo. `get_contour_capped` returns None for a stone that
     // bailed or that this row's caps reject; that is not an accept, so fall through and re-check.
     if img.get_px_contour(w - 1, y).is_some()
-        && img
-            .get_contour_capped((w - 1, y), probe, max_perimeter, max_dist)
-            .is_some_and(|st| st.is_finder)
+        && img.get_contour_capped((w - 1, y), probe, max_width).is_some_and(|st| st.is_finder)
     {
         return None;
     }
@@ -273,7 +194,7 @@ fn verify_and_mark_finder_with_contour(img: &mut BinaryImage, datum: &DatumLine)
     // rejected after a few hundred steps rather than walking the blob's whole outline. A stone
     // fused to its ring is caught separately, by `trace`: it has no outer boundary of its own, so
     // the walk closes on the hole and the negative area is rejected there.
-    let stone = img.get_contour_capped((w - 1, y), probe, max_perimeter, max_dist)?.clone();
+    let stone = img.get_contour_capped((w - 1, y), probe, max_width)?.clone();
     let sc = stone.compactness();
     if !(MIN_COMPACTNESS_THRESHOLD..MAX_COMPACTNESS_THRESHOLD).contains(&sc) {
         return None;
@@ -285,9 +206,8 @@ fn verify_and_mark_finder_with_contour(img: &mut BinaryImage, datum: &DatumLine)
     // out as the annulus (~24 modules^2) instead of the filled 7x7 block (49). A flood fill never
     // sees this difference -- it measures the annulus either way -- which is why the gates below
     // have to branch on `encloses` instead of assuming the closed-ring geometry.
-    let ring_max_perimeter = stone.perimeter().saturating_mul(RING_PERIMETER_MULT);
-    let ring_max_dist = (r - l) * 3;
-    let ring = img.get_contour_capped((e, y), probe, ring_max_perimeter, ring_max_dist)?.clone();
+    let ring_max_width = stone.perimeter().saturating_mul(RING_PERIMETER_MULT).div_ceil(4);
+    let ring = img.get_contour_capped((e, y), probe, ring_max_width)?.clone();
 
     // Compactness is only meaningful for a simple outline; a broken ring's doubled-back walk makes
     // it large by construction, so the check applies to closed rings alone. `ring_max_dist` is what

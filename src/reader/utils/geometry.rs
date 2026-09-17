@@ -241,7 +241,7 @@ impl SquareSpiral {
     pub fn new(start: &Point, radius: i32) -> Self {
         debug_assert!(radius >= 0);
 
-        Self { start: *start, cursor: *start, run: 0, run_len: 1, dir: Direction::Right, radius }
+        Self { start: *start, cursor: *start, run: 0, run_len: 1, dir: Direction::Left, radius }
     }
 }
 
@@ -262,7 +262,7 @@ impl Iterator for SquareSpiral {
         // Cycle direction
         if self.run == self.run_len {
             self.run = 0;
-            self.dir = self.dir.turn_left();
+            self.dir = self.dir.turn_right();
             if self.dir == Direction::Left || self.dir == Direction::Right {
                 self.run_len += 1;
             }
