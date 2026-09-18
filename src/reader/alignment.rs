@@ -49,29 +49,33 @@ pub(super) fn locate_br_anchor(
     let mut dst = [c1, c2, &seed, c0].map(|p| (p.x as f64, p.y as f64));
     let h = Homography::compute(src, dst);
 
-    let mut best_br_anchor = seed;
+    let mut best_br_anchor = (seed.x, seed.y);
     let mut best_score = if let Ok(h) = h { quiet_zone_score(img, ver, &h) } else { 0 };
-    let mut best_dist_sq = c1.dist_sq(&seed);
+    let mut best_dist_sq = (c1.x - seed.x).pow(2) + (c1.y - seed.y).pow(2);
 
     // Spiral outward
     let mod_size = ff.mod_size();
-    let radius = (mod_size * BR_ANCHOR_SEARCH_RADIUS).round() as i32;
+    let reach = (mod_size * BR_ANCHOR_SEARCH_RADIUS).round() as i32;
 
-    for cursor in SquareSpiral::new(&seed, radius) {
-        // Drop a cursor that has spiralled off the image before looking it up
-        if img.contains(cursor.x, cursor.y) {
-            dst[2] = (cursor.x as f64, cursor.y as f64);
-            let Ok(h) = Homography::compute(src, dst) else { continue };
-            let score = quiet_zone_score(img, ver, &h);
-            let dist_sq = c1.dist_sq(&cursor);
-            if score > best_score || (score == best_score && dist_sq < best_dist_sq) {
-                best_br_anchor = cursor;
-                best_score = score;
-                best_dist_sq = dist_sq;
+    let (l, r) = (seed.x - reach, seed.x + reach);
+    let (t, b) = (seed.y - reach, seed.y + reach);
+    for cx in l..=r {
+        for cy in t..=b {
+            // Drop a cursor that has spiralled off the image before looking it up
+            if img.contains(cx, cy) {
+                dst[2] = (cx as f64, cy as f64);
+                let Ok(h) = Homography::compute(src, dst) else { continue };
+                let score = quiet_zone_score(img, ver, &h);
+                let dist_sq = (c1.x - cx).pow(2) + (c1.y - cy).pow(2);
+                if score > best_score || (score == best_score && dist_sq < best_dist_sq) {
+                    best_br_anchor = (cx, cy);
+                    best_score = score;
+                    best_dist_sq = dist_sq;
+                }
             }
         }
     }
-    best_br_anchor
+    Point { x: best_br_anchor.0, y: best_br_anchor.1 }
 }
 
 fn quiet_zone_score(img: &BinaryImage, ver: Version, h: &Homography) -> u32 {

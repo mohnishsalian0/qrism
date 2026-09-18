@@ -229,19 +229,26 @@ impl<A: Axis> Iterator for BresenhamLine<A> {
 //------------------------------------------------------------------------------
 
 pub struct SquareSpiral {
-    start: Point,
     cursor: Point,
     run: i32,
     run_len: i32,
+    steps: i32,
+    max_steps: i32,
     dir: Direction,
-    radius: i32,
 }
 
 impl SquareSpiral {
     pub fn new(start: &Point, radius: i32) -> Self {
         debug_assert!(radius >= 0);
 
-        Self { start: *start, cursor: *start, run: 0, run_len: 1, dir: Direction::Left, radius }
+        Self {
+            cursor: *start,
+            run: 0,
+            run_len: 1,
+            steps: 0,
+            max_steps: (2 * radius + 1).pow(2),
+            dir: Direction::Left,
+        }
     }
 }
 
@@ -249,15 +256,14 @@ impl Iterator for SquareSpiral {
     type Item = Point;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let reach = (self.cursor.x - self.start.x).abs().max((self.cursor.y - self.start.y).abs());
-        if reach > self.radius {
-            return None;
-        }
-
         let res = self.cursor;
 
         self.cursor.advance(self.dir);
         self.run += 1;
+        self.steps += 1;
+        if self.steps > self.max_steps {
+            return None;
+        }
 
         // Cycle direction
         if self.run == self.run_len {
