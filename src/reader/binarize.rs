@@ -57,6 +57,7 @@ pub struct BinaryImage {
     contours: Vec<Contour>, // Visited contours, index is id
     pub w: u32,
     pub h: u32,
+    pass: u32, // Used to mark alignment pattern
 }
 
 // Binarizing functions
@@ -252,7 +253,7 @@ impl BinaryImage {
 
         let px_cont = vec![u16::MAX; (w * h) as usize];
         let contours = Vec::with_capacity(100);
-        Self { buffer, px_cont, contours, w, h }
+        Self { buffer, px_cont, contours, w, h, pass: 0 }
     }
 
     /// Performs absolute/naive binarization
@@ -271,7 +272,7 @@ impl BinaryImage {
 
         let px_cont = vec![u16::MAX; (w * h) as usize];
         let contours = Vec::with_capacity(100);
-        Self { buffer, px_cont, contours, w, h }
+        Self { buffer, px_cont, contours, w, h, pass: 0 }
     }
 }
 
@@ -496,7 +497,7 @@ impl BinaryImage {
 
         let px_cont = vec![u16::MAX; (w * h) as usize];
         let contours = Vec::with_capacity(100);
-        Self { buffer, px_cont, contours, w, h }
+        Self { buffer, px_cont, contours, w, h, pass: 0 }
     }
 }
 
@@ -512,6 +513,21 @@ impl BinaryImage {
         } else {
             bits.try_into().ok()?
         })
+    }
+
+    // Colour at `(x, y)` plus the length of the run of that colour reaching to the row's right
+    // edge. Lets a row scan step by whole runs; see `BitMatrix::run`.
+    pub fn run(&self, x: u32, y: u32) -> Option<(Color, u32)> {
+        if x >= self.w || y >= self.h {
+            return None;
+        }
+        let (bits, len) = self.buffer.run(x, y);
+        let color = if self.buffer.elem_bits() == 1 {
+            Color::from(bits != 0)
+        } else {
+            bits.try_into().ok()?
+        };
+        Some((color, len))
     }
 
     pub fn get_bounded(&self, x: i32, y: i32) -> Option<Color> {
@@ -589,6 +605,11 @@ impl BinaryImage {
         if x < self.w && y < self.h {
             self.px_cont[(y * self.w + x) as usize] = cont_id;
         }
+    }
+
+    pub fn next_pass(&mut self) -> u32 {
+        self.pass += 1;
+        self.pass
     }
 
     #[cfg(test)]

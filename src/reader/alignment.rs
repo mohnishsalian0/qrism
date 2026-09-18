@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use super::{
     binarize::BinaryImage,
     utils::{frame::LocalFrame, geometry::Point},
@@ -135,9 +133,12 @@ pub(super) fn alignment_coords(ver: Version) -> impl Iterator<Item = (i32, i32)>
 // over the whole symbol rather than measurements taken at the cell being searched. On a strongly
 // warped symbol the module footprint in the far corner will not match that average.
 //
-// The set of regions already tried is likewise shared by every cell, so each stone in the symbol
-// can be claimed only once. A cell whose spiral reaches a stone another cell has already taken
-// finds nothing and is left `None`.
+// Each stone in the symbol can likewise be claimed only once, so a cell whose spiral reaches a
+// stone another cell has already taken passes over it, and is left `None` if it finds nothing
+// else. A claim is recorded on the contour itself, stamped with the pass number `next_pass` hands
+// out here. Contours outlive a single symbol -- a second symbol in the same image sees every
+// outline traced for the first -- and a stamp only ever matches the call that wrote it, so claims
+// made for an earlier symbol read as stale and leave those stones free to be claimed again.
 pub(super) fn locate_alignment_centres(
     img: &mut BinaryImage,
     ver: Version,
@@ -154,7 +155,7 @@ pub(super) fn locate_alignment_centres(
 
     let mod_size = ff.mod_size();
     let search_span = (mod_size * ALIGNMENT_SEARCH_RADIUS).round() as i32;
-    let mut visited_conts: HashSet<usize> = HashSet::new();
+    let pass = img.next_pass();
 
     for r in 0..n {
         for c in 0..n {
@@ -162,7 +163,7 @@ pub(super) fn locate_alignment_centres(
                 let seed = provisional_alignment(r, c, ver, ff, centres);
 
                 let exact_centre =
-                    pinpoint_alignment_centre(img, &mut visited_conts, seed, mod_size, search_span);
+                    pinpoint_alignment_centre(img, seed, mod_size, search_span, pass);
 
                 centres[r][c] = exact_centre;
             }
@@ -208,15 +209,17 @@ fn provisional_alignment(
 // the region within and tests it as a candidate centre stone, by tracing the white ring that
 // encircles it -- see `verify_alignment_centre`.
 //
-// `visited_conts` holds the ids of contours already tried, whether they passed or failed. It is
-// shared across every cell of the grid, so each stone can be claimed only once: a cell whose
-// spiral reaches a stone that another cell has already taken passes over it and keeps searching.
+// A stone is claimed by stamping its contour with `pass`, whether it went on to verify or not, and
+// a stone already carrying this pass is passed over. `pass` is the same for every cell of the grid,
+// so each stone can be claimed only once: a cell whose spiral reaches a stone that another cell has
+// already taken keeps searching. Stamps left by an earlier symbol carry a different pass and never
+// match -- see `locate_alignment_centres`.
 fn pinpoint_alignment_centre(
     img: &mut BinaryImage,
-    visited_conts: &mut HashSet<usize>,
     seed: Point,
     mod_size: f64,
     radius: i32,
+    pass: u32,
 ) -> Option<Point> {
     let max_width = (mod_size * ALIGNMENT_TRACE_SLACK).round() as u32;
 
@@ -227,13 +230,12 @@ fn pinpoint_alignment_centre(
         if clr == Some(Color::Black) && right_clr != Some(Color::Black) {
             let (x, y) = (cursor.x as u32, cursor.y as u32);
             if let Some(stone) = img.get_contour_capped((x, y), (x, y), max_width) {
-                let stone_id = stone.id as usize;
                 let Some(stone_centre) = stone.centre() else {
                     continue;
                 };
 
-                if !visited_conts.contains(&stone_id) {
-                    visited_conts.insert(stone_id);
+                if stone.visited_in != pass {
+                    stone.visited_in = pass;
                     if verify_alignment_centre(img, &stone_centre, mod_size) {
                         return Some(stone_centre);
                     }

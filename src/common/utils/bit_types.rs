@@ -380,7 +380,9 @@ impl BitArray {
 /// A packed grid of `w`×`h` elements, each `elem_bits` wide. `get`/`put` address an element by its
 /// column/row and stride by `elem_bits` internally, so callers never multiply the column by hand.
 /// `elem_bits` is required to be a factor of 64, so every element sits wholly within one 64-bit
-/// word — no element ever straddles a word boundary.
+/// word, no element ever straddles a word boundary. Elements are arranged right to left within a
+/// word. Which means an element at x=0, y=0 will be placed at right end of first word in the
+/// matrix.
 #[derive(Debug, Clone)]
 pub struct BitMatrix {
     data: Vec<u64>,
@@ -422,9 +424,7 @@ impl BitMatrix {
         debug_assert!(x < self.w, "X coordinate is out of bounds: Width {}, X {}", self.w, x);
         debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
 
-        let flat_pos = (y * self.w + x) * self.elem_bits;
-        let idx = (flat_pos >> 6) as usize;
-        let off = flat_pos & 63;
+        let (idx, off) = self.elem_pos(x, y);
 
         debug_assert!(
             idx < self.data.len(),
@@ -438,6 +438,51 @@ impl BitMatrix {
         (self.data[idx] >> off) & mask
     }
 
+    /// Returns the element at `(x, y)` together with the length of the maximal run of that same
+    /// element starting there and ending at row `y`'s right edge. Scanning a row run-by-run
+    /// instead of pixel-by-pixel. XORing a word against the element broadcast into all its lanes
+    /// zeroes the lanes that match, so `trailing_zeros` of the result names the first differing lane
+    /// directly.
+    pub fn run(&self, x: u32, y: u32) -> (u64, u32) {
+        debug_assert!(x < self.w, "X coordinate is out of bounds: Width {}, X {}", self.w, x);
+        debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
+
+        let bits = self.elem_bits;
+        let remaining = self.w - x;
+
+        let (mut idx, mut off) = self.elem_pos(x, y);
+
+        let mask = if bits == 64 { u64::MAX } else { (1u64 << bits) - 1 };
+        let elem = (self.data[idx] >> off) & mask;
+
+        // Broadcast the element into every lane. `elem_bits` is a factor of 64 and so a power of
+        // two, which is what lets the doubling loop fill the word exactly.
+        let mut pattern = elem;
+        let mut filled = bits;
+        while filled < 64 {
+            pattern |= pattern << filled;
+            filled <<= 1;
+        }
+
+        // Lanes past the row's end are still compared, so the count is clamped at the end rather
+        // than masked off per word. Lanes past the matrix's end read as zero padding, which can only
+        // extend a run of zeroes, also caught by the clamp.
+        let mut run = 0;
+        while run < remaining {
+            let diff = (self.data[idx] ^ pattern) >> off;
+            if diff == 0 {
+                run += (64 - off) / bits;
+                idx += 1;
+                off = 0;
+            } else {
+                run += diff.trailing_zeros() / bits;
+                break;
+            }
+        }
+
+        (elem, run.min(remaining))
+    }
+
     pub fn put(&mut self, x: u32, y: u32, bits: u64) {
         debug_assert!(x < self.w, "X coordinate is out of bounds: Width {}, X {}", self.w, x);
         debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
@@ -447,9 +492,7 @@ impl BitMatrix {
             self.elem_bits
         );
 
-        let flat_pos = (y * self.w + x) * self.elem_bits;
-        let idx = (flat_pos >> 6) as usize;
-        let off = flat_pos & 63;
+        let (idx, off) = self.elem_pos(x, y);
 
         debug_assert!(
             idx < self.data.len(),
@@ -461,6 +504,14 @@ impl BitMatrix {
         // `elem_bits` divides 64, so the element sits wholly within word `idx`.
         let mask = if self.elem_bits == 64 { u64::MAX } else { (1u64 << self.elem_bits) - 1 };
         self.data[idx] = (self.data[idx] & !(mask << off)) | (bits << off);
+    }
+
+    fn elem_pos(&self, x: u32, y: u32) -> (usize, u32) {
+        let flat_pos = (y * self.w + x) * self.elem_bits;
+        let idx = (flat_pos >> 6) as usize;
+        let off = flat_pos & 63;
+
+        (idx, off)
     }
 }
 
@@ -492,6 +543,69 @@ mod bit_matrix_tests {
         assert_eq!(bm.elem_bits(), 4);
         // 10 * 7 * 4 = 280 bits -> ceil(280 / 64) = 5 words
         assert_eq!(bm.data().len(), 5);
+    }
+
+    // `run` must agree with a naive per-element scan for every start position, at every element
+    // width and at row widths that leave rows unaligned to the 64-bit words.
+    #[test]
+    fn test_run_matches_naive_scan() {
+        for &elem_bits in &[1u32, 2, 4, 8, 16, 32] {
+            for &(w, h) in &[(1u32, 1u32), (7, 5), (63, 3), (64, 3), (65, 3), (130, 4)] {
+                let mut bm = BitMatrix::new(w, h, elem_bits);
+                let max = (1u64 << elem_bits) - 1;
+
+                // A deterministic mix of long runs and rapid flips.
+                let mut seed = 0x9e3779b9u64;
+                for y in 0..h {
+                    for x in 0..w {
+                        seed = seed
+                            .wrapping_mul(6364136223846793005)
+                            .wrapping_add(1442695040888963407);
+                        let v = if (seed >> 33) % 3 == 0 {
+                            (seed >> 17) & max
+                        } else {
+                            (x as u64 / 5) & max
+                        };
+                        bm.put(x, y, v);
+                    }
+                }
+
+                for y in 0..h {
+                    for x in 0..w {
+                        let (elem, len) = bm.run(x, y);
+                        assert_eq!(elem, bm.get(x, y), "elem at ({x}, {y}) w={w} bits={elem_bits}");
+
+                        let mut naive = 0;
+                        while x + naive < w && bm.get(x + naive, y) == elem {
+                            naive += 1;
+                        }
+                        assert_eq!(
+                            len, naive,
+                            "run length at ({x}, {y}) w={w} h={h} bits={elem_bits}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // A uniform row must resolve in one run, including when the row straddles words.
+    #[test]
+    fn test_run_spans_whole_uniform_row() {
+        for &elem_bits in &[1u32, 4, 16] {
+            let (w, h) = (200, 3);
+            let mut bm = BitMatrix::new(w, h, elem_bits);
+            let val = (1u64 << elem_bits) - 1;
+            for y in 0..h {
+                for x in 0..w {
+                    bm.put(x, y, val);
+                }
+            }
+            for y in 0..h {
+                assert_eq!(bm.run(0, y), (val, w), "bits={elem_bits} y={y}");
+                assert_eq!(bm.run(w - 1, y), (val, 1), "last element, bits={elem_bits}");
+            }
+        }
     }
 
     #[test]

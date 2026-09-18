@@ -17,6 +17,7 @@ pub struct Contour {
     cx6: i64,                     // 6 * area * centroid x
     cy6: i64,                     // 6 * area * centroid y
     pub is_finder: bool,          // Whether the outline is a finder pattern
+    pub visited_in: u32,          // Pass that claimed this contour, 0 = never
 }
 
 impl Contour {
@@ -31,6 +32,7 @@ impl Contour {
             cx6: 0,
             cy6: 0,
             is_finder: false,
+            visited_in: 0,
         }
     }
 

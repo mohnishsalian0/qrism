@@ -52,19 +52,24 @@ impl LineScanner {
     }
 
     pub fn advance(&mut self, color: Color) -> Option<DatumLine> {
-        self.pos += 1;
+        self.advance_run(color, 1)
+    }
 
+    // Advances a whole run of pixels with the color instead of pixel-by-pixel
+    pub fn advance_run(&mut self, color: Color, len: u32) -> Option<DatumLine> {
         if self.prev.is_some() && self.prev == Some(color) {
-            self.buffer[5] += 1;
+            self.buffer[5] += len;
+            self.pos += len;
             return None;
         }
 
+        self.pos += 1;
         self.buffer.rotate_left(1);
         self.buffer[5] = 1;
         self.prev = Some(color);
         self.flips += 1;
 
-        if self.is_finder_line() {
+        let datum = if self.is_finder_line() {
             Some(DatumLine {
                 rl: self.pos - 1 - self.buffer[..5].iter().sum::<u32>(),
                 sl: self.pos - 1 - self.buffer[2..5].iter().sum::<u32>(),
@@ -74,7 +79,12 @@ impl LineScanner {
             })
         } else {
             None
-        }
+        };
+
+        self.buffer[5] += len - 1;
+        self.pos += len - 1;
+
+        datum
     }
 
     // Validates whether last 5 run lengths are in the 1:1:3:1:1 ratio
@@ -118,9 +128,13 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
     while y < h {
         scanner.reset(y);
 
-        for x in 0..w {
-            let color = img.get(x, y).unwrap();
-            let datum = match scanner.advance(color) {
+        // Step by whole colour runs
+        let mut x = 0;
+        while x < w {
+            let (color, len) = img.run(x, y).unwrap();
+            x += len;
+
+            let datum = match scanner.advance_run(color, len) {
                 Some(d) => d,
                 None => continue,
             };
@@ -146,7 +160,7 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
 // Verifies a finder candidate by walking the outer boundary of its stone and ring, which costs
 // O(perimeter) rather than O(area). Three properties of the walk shape the checks below:
 // 1. A seed must be the last pixel of a horizontal run, so `trace` starts on an outer boundary
-//    rather than a hole's — hence `w - 1` for the stone and `e` for the ring, not `s` and `r`.
+//    rather than a hole's, hence `w - 1` for the stone and `e` for the ring, not `s` and `r`.
 // 2. Only boundary pixels carry a contour id, so a point can be tested against a contour only if
 //    it is extreme along some axis (leftmost in its row, top/bottom-most in its column).
 // 3. A traced outline encloses its holes, so `ring.area()` is the whole 7x7 block, not the annulus.
