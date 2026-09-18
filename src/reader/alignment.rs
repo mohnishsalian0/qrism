@@ -310,7 +310,7 @@ pub(super) fn infer_alignment_centres(ver: Version, ff: &LocalFrame, centres: &m
                 continue;
             }
             if let Some((xn, xsn, yn, ysn)) = nearest_pair(r, c, ver, centres) {
-                centres[r][c] = Some(line_intersection(xn, xsn, yn, ysn));
+                centres[r][c] = line_intersection(xn, xsn, yn, ysn);
             }
             if centres[r][c].is_none() {
                 centres[r][c] = Some(ff.map(aps[c] as f64 - 3.0, aps[r] as f64 - 3.0));
@@ -387,7 +387,7 @@ fn nearest_pair(
 }
 
 // Intersection point of line p1 -> p2 and line p3 -> p4
-fn line_intersection(p1: Point, p2: Point, p3: Point, p4: Point) -> Point {
+fn line_intersection(p1: Point, p2: Point, p3: Point, p4: Point) -> Option<Point> {
     let (x1, y1) = (f64::from(p1.x), f64::from(p1.y));
     let (x2, y2) = (f64::from(p2.x), f64::from(p2.y));
     let (x3, y3) = (f64::from(p3.x), f64::from(p3.y));
@@ -401,14 +401,16 @@ fn line_intersection(p1: Point, p2: Point, p3: Point, p4: Point) -> Point {
     let denom = dx1 * dy2 - dy1 * dx2;
 
     // Parallel / collinear
-    debug_assert!(denom.abs() > 1e-9);
+    if denom.abs() > 1e-9 {
+        return None;
+    }
 
     let t = ((x3 - x1) * dy2 - (y3 - y1) * dx2) / denom;
 
     let x = (x1 + t * dx1).round() as i32;
     let y = (y1 + t * dy1).round() as i32;
 
-    Point { x, y }
+    Some(Point { x, y })
 }
 
 #[cfg(test)]
