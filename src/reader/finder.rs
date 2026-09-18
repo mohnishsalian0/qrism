@@ -241,7 +241,7 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
     // A closed ring's outline encloses its hole, so this compares the full 7x7 block against the
     // 3x3 stone: 49/9 ~= 5.4. A broken ring traces the annulus instead, so the same finder reads
     // (49 - 25)/9 ~= 2.7, and is gated against that figure rather than rejected for it.
-    let ratio = ring.area() / stone.area();
+    let ratio = ring.area() as f64 / stone.area() as f64;
     let (min_ratio, max_ratio) = if ring.encloses {
         (CLOSED_RING_MIN, CLOSED_RING_MAX)
     } else {
@@ -504,10 +504,10 @@ const MAX_RING_COMPACTNESS: f64 = 3.5;
 
 // Ring-to-stone area ratio. A closed ring's outline encloses its hole (49/9 ~= 5.4); a broken one
 // traces the annulus instead ((49 - 25)/9 ~= 2.7).
-const CLOSED_RING_MIN: u32 = 3;
-const CLOSED_RING_MAX: u32 = 8;
-const OPEN_RING_MIN: u32 = 1;
-const OPEN_RING_MAX: u32 = 4;
+const CLOSED_RING_MIN: f64 = 3.0;
+const CLOSED_RING_MAX: f64 = 8.0;
+const OPEN_RING_MIN: f64 = 1.0;
+const OPEN_RING_MAX: f64 = 4.0;
 
 // For ring and stone centre closeness
 const FINDER_CENTRE_DRIFT_TOLERANCE: f64 = 0.5;
