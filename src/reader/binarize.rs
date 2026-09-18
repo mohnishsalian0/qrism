@@ -661,7 +661,7 @@ impl BinaryImage {
 
                 // Regardless of whether the contour bailed or not, if its perimeter is over limit
                 // we exit
-                if contour.perimeter() > max_perimeter {
+                if contour.perimeter() > max_perimeter || contour.extent() > max_width {
                     return None;
                 }
 
