@@ -503,9 +503,13 @@ const RING_PERIMETER_MULT: u32 = 8;
 const MAX_RING_COMPACTNESS: f64 = 3.5;
 
 // Ring-to-stone area ratio. A closed ring's outline encloses its hole (49/9 ~= 5.4); a broken one
-// traces the annulus instead ((49 - 25)/9 ~= 2.7).
+// traces the annulus instead ((49 - 25)/9 ~= 2.7). The upper closed bound sits well above the ideal
+// because blur fattens the ring's outline while eroding the stone, so the measured ratio drifts up:
+// a blurred symbol in the bench reads ~8.4. The gate's job is only to reject candidates whose ring
+// and stone are wildly mismatched in scale -- across the whole detection dataset removing it
+// entirely costs no precision, so a generous ceiling is free.
 const CLOSED_RING_MIN: f64 = 3.0;
-const CLOSED_RING_MAX: f64 = 8.0;
+const CLOSED_RING_MAX: f64 = 10.0;
 const OPEN_RING_MIN: f64 = 1.0;
 const OPEN_RING_MAX: f64 = 4.0;
 

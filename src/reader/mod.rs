@@ -153,7 +153,7 @@ mod reader_tests {
         #[allow(unused_imports)]
         use std::sync::Arc;
 
-        let img_path = std::path::Path::new("./assets/hv1.jpg");
+        let img_path = std::path::Path::new("./assets/test.jpg");
 
         let img = image::open(img_path).unwrap().to_luma8();
 
@@ -164,11 +164,11 @@ mod reader_tests {
 
         let finders = locate_finders(&mut bin_img);
         dbg!(finders.len());
-        // finders.iter().for_each(|f| f.c.highlight(&mut img, image::Rgb([255, 0, 0])));
+        finders.iter().for_each(|f| f.c.highlight(&mut img, image::Rgb([255, 0, 0])));
 
         let groups = group_finders(&finders);
         dbg!(groups.len());
-        // groups.iter().for_each(|g| g.highlight(&mut img));
+        groups.iter().for_each(|g| g.highlight(&mut img));
 
         let sym_locs = locate_symbols(&mut bin_img, groups);
         dbg!(sym_locs.len());
@@ -178,9 +178,9 @@ mod reader_tests {
         let mut symbols: Vec<Symbol> =
             sym_locs.into_iter().map(|sl| Symbol::new(bin_img.clone(), sl)).collect::<_>();
 
-        // symbols.iter_mut().for_each(|s| {
-        //     let _ = dbg!(s.decode());
-        // });
+        symbols.iter_mut().for_each(|s| {
+            let _ = dbg!(s.decode());
+        });
 
         let out_path = std::path::Path::new("assets/detect.png");
         img.save(out_path).unwrap();
