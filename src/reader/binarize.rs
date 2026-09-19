@@ -1,4 +1,4 @@
-use image::{GenericImageView, Pixel as ImgPixel, RgbImage};
+use image::{GenericImageView, GrayImage, Pixel as ImgPixel, RgbImage};
 
 use crate::metadata::Color;
 use crate::reader::utils::contour::{trace, Contour};
@@ -63,7 +63,7 @@ pub struct BinaryImage {
 // Binarizing functions
 impl BinaryImage {
     // Steps:
-    // 1. Divides image into blocks of 8x8 pixels. Note: For the last fractional block is, the
+    // 1. Divides image into blocks of 8x8 pixels. Note: For the last fractional block, the
     //    last 8 pixels are considered. So few pixels might overlap with last 2 blocks
     // 2. Calculates average of each block
     // 3. Calculates the threshold for each block by averaging 5x5 block around the current block if
@@ -71,7 +71,152 @@ impl BinaryImage {
     // 4. Sets pixel value as false if less than or equal to threshold, else true
     // Note: If the pixel value is equal to threshold, it is set as false for the edge case when
     // threshold is 0 in which case the pixel should be false/black
-    pub fn prepare<P>(img: &image::ImageBuffer<P, Vec<u8>>) -> Self
+    pub fn prepare(img: &GrayImage) -> Self {
+        let (w, h) = img.dimensions();
+        let raw: &[u8] = img.as_raw();
+        let px = |x: u32, y: u32| raw[(y * w + x) as usize];
+        let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
+        let block_size = 1 << block_pow;
+        let mask = (1 << block_pow) - 1;
+
+        let wsteps = (w + mask) >> block_pow;
+        let hsteps = (h + mask) >> block_pow;
+        let len = (wsteps * hsteps) as usize;
+
+        let mut stats = vec![Stat::new(); len];
+
+        // Calculate sum of 8x8 pixels for each block
+        // Skip last few pixels which form fractional blocks. The last block will be computed later
+        // Round w and h to skips these pixels
+        let (wr, hr) = (w & !mask, h & !mask);
+        let bw = wr >> block_pow; // full block columns
+        let bh = hr >> block_pow; // full block rows
+        for by in 0..bh {
+            let y0 = by << block_pow;
+            for bx in 0..bw {
+                let x0 = bx << block_pow;
+                let idx = (by * wsteps + bx) as usize;
+                let mut local = Stat::new();
+                for yy in 0..block_size {
+                    let y = y0 + yy;
+                    let base = (y * w + x0) as usize;
+                    for xx in 0..block_size as usize {
+                        local.accumulate(raw[base + xx]);
+                    }
+                }
+                stats[idx] = local;
+            }
+        }
+
+        // Sum of 8x8 pixels for fractional blocks (if exists) on the right edge
+        if w & mask != 0 {
+            for y in 0..hr {
+                let idx = (((y >> block_pow) + 1) * wsteps - 1) as usize;
+                for x in w - block_size..w {
+                    stats[idx].accumulate(px(x, y));
+                }
+            }
+        }
+
+        // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom edge
+        if h & mask != 0 {
+            let last_row = wsteps * (hsteps - 1);
+            for y in h - block_size..h {
+                for x in 0..wr {
+                    let idx = (last_row + (x >> block_pow)) as usize;
+                    stats[idx].accumulate(px(x, y));
+                }
+            }
+        }
+
+        // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom right corner
+        if w & mask != 0 && h & mask != 0 {
+            for y in h - block_size..h {
+                for x in w - block_size..w {
+                    stats[len - 1].accumulate(px(x, y));
+                }
+            }
+        }
+
+        // Take average from the sum calculated for each block
+        // If variance is low (<= 25), assume the block is white. Because there is a high chance
+        // that the block is outside the qr. Unless the block has top/left neighbors, in which
+        // case take average of them.
+        let wsteps = wsteps as usize;
+        let hsteps = hsteps as usize;
+        let block_area_pow = 2 * block_pow;
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..len {
+            stats[i].avg >>= block_area_pow;
+        }
+
+        // Calculates threshold for blocks
+        let half_grid = BLOCK_GRID_SIZE / 2;
+        let grid_area = BLOCK_GRID_SIZE * BLOCK_GRID_SIZE;
+        let (maxx, maxy) = (wsteps - half_grid, hsteps - half_grid);
+        let mut threshold = vec![0u8; wsteps * hsteps];
+
+        for y in 0..hsteps {
+            let row_off = y * wsteps;
+            for x in 0..wsteps {
+                let i = row_off + x;
+
+                // If y is near any boundary then copy the threshold above
+                if y > 0 && (y <= half_grid || y >= maxy) {
+                    threshold[i] = threshold[i - wsteps];
+                    continue;
+                }
+
+                // If x is near any boundary then copy the left threshold
+                if x > 0 && (x <= half_grid || x >= maxx) {
+                    threshold[i] = threshold[i - 1];
+                    continue;
+                }
+
+                let cx = std::cmp::max(x, half_grid);
+                let cy = std::cmp::max(y, half_grid);
+                let mut sum = 0usize;
+                for ny in cy - half_grid..=cy + half_grid {
+                    let ni = ny * wsteps + cx;
+                    for px_stat in &stats[ni - half_grid..=ni + half_grid] {
+                        sum += px_stat.avg;
+                    }
+                }
+
+                threshold[i] = (sum / grid_area) as u8;
+            }
+        }
+
+        // Initially mark all pixels as unvisited; will be used for flood fill later.
+        // Colour plane packs `color_size` bits per pixel; the matrix strides columns by it.
+        let mut buffer = BitMatrix::new(w, h, 1);
+        for by in 0..hsteps {
+            let y0 = (by << block_pow) as u32;
+            let y_end = std::cmp::min(y0 + block_size, h);
+            for bx in 0..wsteps {
+                let x0 = (bx << block_pow) as u32;
+                let x_end = std::cmp::min(x0 + block_size, w);
+                let t = threshold[by * wsteps + bx];
+
+                for y in y0..y_end {
+                    for x in x0..x_end {
+                        let mut color_byte = 0u64;
+                        color_byte = (color_byte << 1) | u64::from(px(x, y) > t);
+
+                        if color_byte != 0 {
+                            buffer.put(x, y, color_byte);
+                        }
+                    }
+                }
+            }
+        }
+
+        let px_cont = vec![u16::MAX; (w * h) as usize];
+        let contours = Vec::with_capacity(100);
+        Self { buffer, px_cont, contours, w, h, pass: 0 }
+    }
+
+    pub fn prepare_discard<P>(img: &image::ImageBuffer<P, Vec<u8>>) -> Self
     where
         P: ImgPixel<Subpixel = u8>,
     {

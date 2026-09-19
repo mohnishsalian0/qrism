@@ -418,7 +418,7 @@ mod symbol_locate_tests {
             let w = ver.width();
 
             let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
-            let img = BinaryImage::prepare(&qr.to_image(k as u32));
+            let img = BinaryImage::prepare(&qr.to_gray_image(k as u32));
 
             let q = 4.0; // quiet zone, modules
             let c = (3.5 + q) * k; // 3.5 modules in from the edge
@@ -462,7 +462,7 @@ mod symbol_locate_tests {
                 qr.set(*x, *y, Module::Format(nclr));
             }
 
-            let img = BinaryImage::prepare(&qr.to_image(k as u32));
+            let img = BinaryImage::prepare(&qr.to_gray_image(k as u32));
 
             let q = 4.0; // quiet zone, modules
             let c = (3.5 + q) * k; // 3.5 modules in from the edge
@@ -494,7 +494,7 @@ mod symbol_locate_tests {
             qr.set(x, y, Module::Format(nclr));
         }
 
-        let img = BinaryImage::prepare(&qr.to_image(k as u32));
+        let img = BinaryImage::prepare(&qr.to_gray_image(k as u32));
 
         let q = 4.0; // quiet zone, modules
         let c = (3.5 + q) * k; // 3.5 modules in from the edge
@@ -537,7 +537,7 @@ mod symbol_locate_integration_tests {
             .build()
             .unwrap();
 
-        let img = qr.to_image(10);
+        let img = qr.to_gray_image(10);
         let exp_anchors = [
             [Some(Point { x: 75, y: 75 }), Some(Point { x: 335, y: 75 })],
             [Some(Point { x: 75, y: 335 }), Some(Point { x: 305, y: 305 })],

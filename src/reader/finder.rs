@@ -287,7 +287,7 @@ mod finder_tests {
             .mask(mask)
             .build()
             .unwrap();
-        let img = qr.to_image(10);
+        let img = qr.to_gray_image(10);
 
         let centres = [[75, 75], [335, 75], [75, 335]];
         let mut bin_img = BinaryImage::prepare(&img);
@@ -415,7 +415,7 @@ mod group_finders_tests {
             .mask(mask)
             .build()
             .unwrap();
-        let img = qr.to_image(10);
+        let img = qr.to_gray_image(10);
 
         let centres = [(75, 75), (335, 75), (75, 335)];
 

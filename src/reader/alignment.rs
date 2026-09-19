@@ -452,7 +452,7 @@ mod alignment_pattern_tests {
             let n = ap_coords.len();
 
             let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
-            let mut img = BinaryImage::prepare(&qr.to_image(k as u32));
+            let mut img = BinaryImage::prepare(&qr.to_gray_image(k as u32));
 
             // Finder centres sit on module 3 and module w - 4
             let p = |x: f64, y: f64| Point { x: x.round() as i32, y: y.round() as i32 };
@@ -490,7 +490,7 @@ mod alignment_pattern_tests {
         let k = 3.0; // Pixels per module
 
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
-        let mut img = BinaryImage::prepare(&qr.to_image(k as u32));
+        let mut img = BinaryImage::prepare(&qr.to_gray_image(k as u32));
 
         // Finder centres for a version 1 symbol at 3 px per module with a 4 module quiet zone
         let finders = [Point { x: 23, y: 65 }, Point { x: 23, y: 23 }, Point { x: 65, y: 23 }];
@@ -554,7 +554,7 @@ mod alignment_pattern_tests {
         let centre_px = |m: f64| ((q + m + 0.5) * k).round() as i32;
 
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
-        let img = BinaryImage::prepare(&qr.to_image(k as u32));
+        let img = BinaryImage::prepare(&qr.to_gray_image(k as u32));
 
         // Finder centres sit on module 3 and module w - 4
         let w = ver.width() as f64;
@@ -589,7 +589,7 @@ mod alignment_pattern_tests {
         let centre_px = |m: f64| ((q + m + 0.5) * k).round() as i32;
 
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
-        let img = BinaryImage::prepare(&qr.to_image(k as u32));
+        let img = BinaryImage::prepare(&qr.to_gray_image(k as u32));
 
         // Finder centres sit on module 3 and module w - 4
         let w = ver.width() as f64;

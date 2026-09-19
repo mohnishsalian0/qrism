@@ -57,7 +57,7 @@ pub fn detect_hc_qr(img: &DynamicImage) -> DecodeResult {
     let sym_locs = locate_symbols(&mut gray_bin, groups);
 
     let rgb_img = img.to_rgb8();
-    let rgb_bin = Arc::new(BinaryImage::prepare(&rgb_img));
+    let rgb_bin = Arc::new(BinaryImage::prepare_discard(&rgb_img));
     let symbols = sym_locs.into_iter().map(|sl| Symbol::new(rgb_bin.clone(), sl)).collect::<_>();
 
     DecodeResult { symbols }
