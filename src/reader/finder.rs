@@ -11,15 +11,18 @@ use image::RgbImage;
 // Finder line
 //------------------------------------------------------------------------------
 
-// **   ******   **  <- Finder line
-// ^    ^        ^
-// left |        right
-//      stone
+// ***   *********   ***  <- Finder line
+// ^     ^       ^     ^
+// rl    |       |     rr
+//       sl      sr
+// rl = Ring left, rr = Ring right
+// sl = Stone left, sr = Stone right
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct DatumLine {
-    left: u32,
-    stone: u32,
-    right: u32,
+    rl: u32,
+    rr: u32,
+    sl: u32,
+    sr: u32,
     y: u32,
 }
 
@@ -49,28 +52,39 @@ impl LineScanner {
     }
 
     pub fn advance(&mut self, color: Color) -> Option<DatumLine> {
-        self.pos += 1;
+        self.advance_run(color, 1)
+    }
 
+    // Advances a whole run of pixels with the color instead of pixel-by-pixel
+    pub fn advance_run(&mut self, color: Color, len: u32) -> Option<DatumLine> {
         if self.prev.is_some() && self.prev == Some(color) {
-            self.buffer[5] += 1;
+            self.buffer[5] += len;
+            self.pos += len;
             return None;
         }
 
+        self.pos += 1;
         self.buffer.rotate_left(1);
         self.buffer[5] = 1;
         self.prev = Some(color);
         self.flips += 1;
 
-        if self.is_finder_line() {
+        let datum = if self.is_finder_line() {
             Some(DatumLine {
-                left: self.pos - 1 - self.buffer[..5].iter().sum::<u32>(),
-                stone: self.pos - 1 - self.buffer[2..5].iter().sum::<u32>(),
-                right: self.pos - 1 - self.buffer[4],
+                rl: self.pos - 1 - self.buffer[..5].iter().sum::<u32>(),
+                sl: self.pos - 1 - self.buffer[2..5].iter().sum::<u32>(),
+                sr: self.pos - 1 - self.buffer[3..5].iter().sum::<u32>(),
+                rr: self.pos - 2,
                 y: self.y,
             })
         } else {
             None
-        }
+        };
+
+        self.buffer[5] += len - 1;
+        self.pos += len - 1;
+
+        datum
     }
 
     // Validates whether last 5 run lengths are in the 1:1:3:1:1 ratio
@@ -114,9 +128,13 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
     while y < h {
         scanner.reset(y);
 
-        for x in 0..w {
-            let color = img.get(x, y).unwrap();
-            let datum = match scanner.advance(color) {
+        // Step by whole colour runs
+        let mut x = 0;
+        while x < w {
+            let (color, len) = img.run(x, y).unwrap();
+            x += len;
+
+            let datum = match scanner.advance_run(color, len) {
                 Some(d) => d,
                 None => continue,
             };
@@ -139,80 +157,109 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
     finders
 }
 
-// Checks multiple conditions to ensure the finder is valid
-// 1. Left and right datum points are connected
-// 2. The region wasn't already marked as candidate
-// 3. Ring and stone regions aren't connected
-// 4. Area of stone region is roughly 37.5% of ring region
-// 5. Crosscheck 1:1:3:1:1 pattern along Y axis
-// Finally it marks the regions are candidate and returns the centre
+// Verifies a finder candidate by walking the outer boundary of its stone and ring, which costs
+// O(perimeter) rather than O(area). Three properties of the walk shape the checks below:
+// 1. A seed must be the last pixel of a horizontal run, so `trace` starts on an outer boundary
+//    rather than a hole's, hence `w - 1` for the stone and `e` for the ring, not `s` and `r`.
+// 2. Only boundary pixels carry a contour id, so a point can be tested against a contour only if
+//    it is extreme along some axis (leftmost in its row, top/bottom-most in its column).
+// 3. A traced outline encloses its holes, so `ring.area()` is the whole 7x7 block, not the annulus.
 fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Finder> {
-    let (l, r, s, y) = (datum.left, datum.right, datum.stone, datum.y);
+    let (rl, sl, sr, rr, y) = (datum.rl, datum.sl, datum.sr, datum.rr, datum.y);
 
-    // If pixel has been visited, check if regions is already marked as finder
-    if img.get_region_id(s, y).is_some() {
-        let stone = img.get_region((s, y));
+    let sx = (sl + sr + 1).div_ceil(2);
+    let probe = (sx, y);
 
-        // Exit if stone is already made a candidate from previous iterations
-        if stone.is_finder {
-            return None;
-        }
+    // Both caps are estimated from this row's stone run, so they shift slightly row to row. A
+    // square stone of side n has a crack perimeter of 4n, so the 8x here is 2x the ideal, leaving
+    // room for the staircasing a thresholded edge adds; `max_dist` bounds how far the walk may
+    // stray from the centre, which catches a runaway blob long before the step cap does.
+    let max_width = (sr - sl) * 3;
+
+    // A finder spans several scan rows, so the rows after the first re-reach a stone already
+    // accepted. `w - 1` is the stone's rightmost pixel on this row, which the outer walk always
+    // touches, so its contour id is the memo. `get_contour_capped` returns None for a stone that
+    // bailed or that this row's caps reject; that is not an accept, so fall through and re-check.
+    if img.get_px_contour(sr - 1, y).is_some()
+        && img.get_contour_capped((sr - 1, y), probe, max_width).is_some_and(|st| st.is_finder)
+    {
+        return None;
     }
 
-    let sx = r - (s - l) * 5 / 4;
     let seed = Point { x: sx as i32, y: datum.y as i32 };
     let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
-    let max_run = (r - l) * 2; // Setting a loose upper limit on the run
+    let max_run = (rr - rl) * 2; // Setting a loose upper limit on the run
 
     // Verify 1:1:3:1:1 pattern along Y axis. Returns the top and bottom pts if valid
     let (t, b) = verify_finder_pattern(img, &seed, &pattern, max_run)?;
 
-    // Cheap reject before the expensive stone flood fill, run on the ~1 in 6 candidates that clear
-    // the vertical crosscheck but are mostly not finders. Confirms the 1:1:3:1:1 ratio along the main
-    // diagonal through the centre — a third independent axis a spurious candidate almost never
-    // satisfies. This cuts the number of stone fills (the single biggest cost in `locate_finders`)
-    // without touching the area-ratio confirmation that follows.
+    // Cheap reject before the stone trace, run on the ~1 in 6 candidates that clear the vertical
+    // crosscheck but are mostly not finders. Confirms the 1:1:3:1:1 ratio along the main diagonal
+    // through the centre — a third independent axis a spurious candidate almost never satisfies.
+    // This keeps the two traces below off candidates a pixel walk can already rule out.
     let centre = Point { x: sx as i32, y: ((t + b) / 2) as i32 };
     if !verify_finder_diagonal(img, &centre, max_run) {
         return None;
     }
 
-    // Cap both fills so a spurious candidate whose stone/ring bleeds into a large background blob
-    // is rejected without filling the whole blob. Both caps derive from row-stable quantities — the
-    // finder-width bound `max_run` (~2x the 7-module span, so `max_run²` comfortably exceeds a real
-    // stone even when it bleeds into a few data modules) and the stone area — so the "oversized"
-    // verdict is identical on every scan row crossing this finder, which the memoised sentinel needs.
-    let stone_cap = max_run.saturating_mul(max_run);
-    // let stone_cap = max_run * 2;
-    let stone = img.get_region_capped((s, y), stone_cap)?.clone();
-
-    // A valid ring is at most ~10x the stone area, else the area-ratio check below rejects it.
-    let ring_cap = stone.area.saturating_mul(10);
-    // let ring_cap = max_run * 4;
-    let ring = img.get_region_capped((r, y), ring_cap)?.clone();
-
-    // Check if left, top and bottom points lie within the ring
-    let lid = img.get_region_id(l, y)? as usize;
-    let tid = img.get_region_id(sx, t)? as usize;
-    let bid = img.get_region_id(sx, b)? as usize;
-    if lid != ring.id || tid != ring.id || bid != ring.id {
+    // Cap both walks so a candidate whose stone or ring bleeds into a large background blob is
+    // rejected after a few hundred steps rather than walking the blob's whole outline. A stone
+    // fused to its ring is caught separately, by `trace`: it has no outer boundary of its own, so
+    // the walk closes on the hole and the negative area is rejected there.
+    let stone = img.get_contour_capped((sr - 1, y), probe, max_width)?.clone();
+    let sc = stone.compactness();
+    if !(MIN_COMPACTNESS_THRESHOLD..MAX_COMPACTNESS_THRESHOLD).contains(&sc) {
         return None;
     }
 
-    // False if ring & stone are connected, or if ring to stone area is not roughly 37,5%
-    let ratio = stone.area * 100 / ring.area;
-    if stone.id == ring.id || ratio <= 10 || 70 <= ratio {
+    // A ring broken anywhere (one bleached or blurred module on its border) has no hole, so the
+    // walk dives through the gap and traces the inner edge as well as the outer. This doubles the
+    // perimeter
+    let ring_max_width = stone.perimeter().saturating_mul(RING_PERIMETER_MULT).div_ceil(4);
+    let ring = img.get_contour_capped((rr, y), probe, ring_max_width)?.clone();
+
+    // Compactness is only meaningful for a simple outline; a broken ring's doubled-back walk makes
+    // it large by construction, so the check applies to closed rings alone. `ring_max_dist` is what
+    // bounds a runaway blob in either case.
+    if ring.encloses {
+        let rc = ring.compactness();
+        if !(MIN_COMPACTNESS_THRESHOLD..MAX_RING_COMPACTNESS).contains(&rc) {
+            return None;
+        }
+    }
+
+    // A closed ring's outline encloses its hole, so this compares the full 7x7 block against the
+    // 3x3 stone: 49/9 ~= 5.4. A broken ring traces the annulus instead, so the same finder reads
+    // (49 - 25)/9 ~= 2.7, and is gated against that figure rather than rejected for it.
+    let ratio = ring.area() as f64 / stone.area() as f64;
+    let (min_ratio, max_ratio) = if ring.encloses {
+        (CLOSED_RING_MIN, CLOSED_RING_MAX)
+    } else {
+        (OPEN_RING_MIN, OPEN_RING_MAX)
+    };
+    if ratio <= min_ratio || max_ratio <= ratio {
         return None;
     }
 
-    img.get_region((r, y)).is_finder = true;
-    img.get_region((s, y)).is_finder = true;
+    // Concentricity test. The ring and stone centre should be reasonably near each other
+    let mod_size = stone.area() as f64 / 9.0;
+    let max_drift = mod_size * FINDER_CENTRE_DRIFT_TOLERANCE;
+    let rcentre = ring.centre()?;
+    let scentre = stone.centre()?;
+    if rcentre.dist_sq(&scentre) > max_drift.powi(2).round() as u32 {
+        return None;
+    }
+
+    // Mark via the traced ids rather than a pixel lookup: the walk labels only boundary pixels,
+    // so `s` and `r` are not guaranteed to resolve, and both ids are already in hand.
+    img.get_contours_mut()[stone.id as usize].is_finder = true;
+    img.get_contours_mut()[ring.id as usize].is_finder = true;
 
     // The stone is the central 3x3-module block, so its area is ~9 modules^2. This estimate only
     // feeds the loose scale gates in `group_finders`, so it needn't be exact.
-    let mod_size = (stone.area as f32 / 9.0).sqrt();
+    let mod_size = (stone.area() as f32 / 9.0).sqrt();
 
-    Some(Finder { c: stone.centre, mod_size })
+    Some(Finder { c: stone.centre()?, mod_size })
 }
 
 #[cfg(test)]
@@ -277,7 +324,6 @@ impl FinderGroup {
 pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
     // Store all possible combinations of finders
     let mut groups: Vec<FinderGroup> = Vec::new();
-    let right_angle = 90f64.to_radians();
 
     // Reused per vertex: the arms that clear the cheap scale gates below.
     let mut arms: Vec<(&Finder, u32)> = Vec::new();
@@ -322,26 +368,18 @@ pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
                     continue;
                 }
 
-                // Angle of c2-c1-c3. Gate on the cosine (no acos in the reject path): the accepted
-                // window [45, 135] degrees is exactly |cos| <= cos(45).
+                // Angle of c2-c1-c3. Gate on the cosine. The accepted window [45, 135].
                 let ab = ((f2.c.x - f1.c.x) as f64, (f2.c.y - f1.c.y) as f64);
                 let cb = ((f3.c.x - f1.c.x) as f64, (f3.c.y - f1.c.y) as f64);
                 let dot = ab.0 * cb.0 + ab.1 * cb.1;
+                let dot_sq = dot.powi(2);
                 let mag_sq = (d12 as f64) * (d13 as f64);
-                if dot * dot > COS_45_SQ * mag_sq {
+                let angle_score_sq = dot_sq / mag_sq;
+                if angle_score_sq > ANGLE_THRESHOLD {
                     continue;
                 }
 
-                // Survivor: compute the exact angle_score so the ranking (and thus the greedy
-                // selection in `locate_symbols`) is identical to the pre-refactor code. acos now
-                // runs only on survivors, not on every triple.
-                let angle = angle(&f2.c, &f1.c, &f3.c);
-                let angle_score = ((angle / right_angle) - 1.0).abs();
-                if angle_score > ANGLE_THRESHOLD {
-                    continue;
-                }
-
-                let score = symmetry_score + angle_score;
+                let score = symmetry_score + angle_score_sq.sqrt();
 
                 // Create and push group into groups
                 let group = FinderGroup { finders: [f3.c, f1.c, f2.c], score };
@@ -353,24 +391,6 @@ pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
     groups.sort_unstable_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
 
     groups
-}
-
-// Angle between AB & BC in radians
-fn angle(a: &Point, b: &Point, c: &Point) -> f64 {
-    let ab = ((a.x - b.x) as f64, (a.y - b.y) as f64);
-    let cb = ((c.x - b.x) as f64, (c.y - b.y) as f64);
-
-    let dot = ab.0 * cb.0 + ab.1 * cb.1;
-    let mag_ab = (ab.0.powi(2) + ab.1.powi(2)).sqrt();
-    let mag_cb = (cb.0.powi(2) + cb.1.powi(2)).sqrt();
-
-    if mag_ab <= f64::EPSILON || mag_cb <= f64::EPSILON {
-        return 0.0;
-    }
-
-    let cos_theta = (dot / (mag_ab * mag_cb)).clamp(-1.0, 1.0);
-
-    cos_theta.acos()
 }
 
 #[cfg(test)]
@@ -418,11 +438,8 @@ pub const MAX_FINDER_MODULES: u32 = 177;
 
 pub const SYMMETRY_THRESHOLD: f64 = 0.75;
 
+// cos(45 degrees)^2 = 0.5. The vertex-angle window is [45, 135].
 pub const ANGLE_THRESHOLD: f64 = 0.5;
-
-// cos(45 degrees)^2 = 0.5. The vertex-angle window [45, 135] degrees is exactly |cos| <= cos(45),
-// so a triple passes the angle gate iff dot^2 <= COS_45_SQ * |ab|^2 * |cb|^2.
-pub const COS_45_SQ: f64 = 0.5;
 
 // Two finders of the same symbol share a module size; reject an arm whose module size differs from
 // the vertex's by more than this ratio. Loose enough to never clip a real symbol.
@@ -432,3 +449,29 @@ pub const MOD_SIZE_RATIO: f32 = 2.0;
 // ~[14, 170]. These loosened bounds keep every real symbol while rejecting cross-symbol arm pairs.
 pub const MIN_CENTRE_SPAN_MODULES: f32 = 10.0;
 pub const MAX_CENTRE_SPAN_MODULES: f32 = 185.0;
+
+const MIN_COMPACTNESS_THRESHOLD: f64 = 1.0;
+const MAX_COMPACTNESS_THRESHOLD: f64 = 2.5;
+
+// A closed ring's outline runs ~2.3x the stone's perimeter; a broken one doubles back over the
+// annulus and runs ~3.8x. 8x clears both with room for a staircased edge -- `ring_max_dist` is what
+// actually bounds a runaway blob here, so this cap need not be tight.
+const RING_PERIMETER_MULT: u32 = 8;
+
+// Looser than the stone's: the ring is a thin annulus, so a staircased or blurred edge moves its
+// compactness far more than it moves a solid block's.
+const MAX_RING_COMPACTNESS: f64 = 3.5;
+
+// Ring-to-stone area ratio. A closed ring's outline encloses its hole (49/9 ~= 5.4); a broken one
+// traces the annulus instead ((49 - 25)/9 ~= 2.7). The upper closed bound sits well above the ideal
+// because blur fattens the ring's outline while eroding the stone, so the measured ratio drifts up:
+// a blurred symbol in the bench reads ~8.4. The gate's job is only to reject candidates whose ring
+// and stone are wildly mismatched in scale -- across the whole detection dataset removing it
+// entirely costs no precision, so a generous ceiling is free.
+const CLOSED_RING_MIN: f64 = 3.0;
+const CLOSED_RING_MAX: f64 = 10.0;
+const OPEN_RING_MIN: f64 = 1.0;
+const OPEN_RING_MAX: f64 = 4.0;
+
+// For ring and stone centre closeness
+const FINDER_CENTRE_DRIFT_TOLERANCE: f64 = 0.5;

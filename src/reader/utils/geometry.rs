@@ -5,6 +5,37 @@ use image::{Rgb, RgbImage};
 
 use crate::reader::binarize::BinaryImage;
 
+// Direction enum
+//------------------------------------------------------------------------------
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Direction {
+    Right,
+    Down,
+    Left,
+    Up,
+}
+
+impl Direction {
+    pub fn turn_right(&self) -> Self {
+        match self {
+            Self::Right => Self::Down,
+            Self::Down => Self::Left,
+            Self::Left => Self::Up,
+            Self::Up => Self::Right,
+        }
+    }
+
+    pub fn turn_left(&self) -> Self {
+        match self {
+            Self::Right => Self::Up,
+            Self::Down => Self::Right,
+            Self::Left => Self::Down,
+            Self::Up => Self::Left,
+        }
+    }
+}
+
 // Point
 //------------------------------------------------------------------------------
 
@@ -30,6 +61,15 @@ impl Point {
                 let ny = ((self.y - j) as u32).min(h - 1);
                 img.put_pixel(nx, ny, color);
             }
+        }
+    }
+
+    pub fn advance(&mut self, d: Direction) {
+        match d {
+            Direction::Right => self.x += 1,
+            Direction::Down => self.y += 1,
+            Direction::Left => self.x -= 1,
+            Direction::Up => self.y -= 1,
         }
     }
 }
@@ -185,52 +225,40 @@ impl<A: Axis> Iterator for BresenhamLine<A> {
     }
 }
 
-// Square spiral iterator for alignment centre & bottom right anchor search
+// Square spiral leg iterator for alignment centre & bottom right anchor search
 //------------------------------------------------------------------------------
 
-pub struct SquareSpiral {
-    start: Point,
-    cursor: Point,
-    run: i32,
-    run_len: i32,
-    dir: usize,
-    radius: i32,
+pub struct SquareSpiralLeg {
+    len: i32,
+    dx: i32,
+    dy: i32,
+    steps: i32,
+    max_steps: i32,
 }
 
-impl SquareSpiral {
-    // Directional increment for x & y: [right, up, left, down]
-    const DX: [i32; 4] = [1, 0, -1, 0];
-    const DY: [i32; 4] = [0, -1, 0, 1];
-
-    pub fn new(start: &Point, radius: i32) -> Self {
+impl SquareSpiralLeg {
+    pub fn new(radius: i32) -> Self {
         debug_assert!(radius >= 0);
 
-        Self { start: *start, cursor: *start, run: 0, run_len: 1, dir: 0, radius }
+        Self { len: 1, dx: -1, dy: 0, steps: 0, max_steps: (2 * radius + 1).pow(2) }
     }
 }
 
-impl Iterator for SquareSpiral {
-    type Item = Point;
+impl Iterator for SquareSpiralLeg {
+    type Item = (i32, i32, i32);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let reach = (self.cursor.x - self.start.x).abs().max((self.cursor.y - self.start.y).abs());
-        if reach > self.radius {
+        let res = (self.len, self.dx, self.dy);
+
+        self.steps += self.len;
+        if self.steps > self.max_steps {
             return None;
         }
 
-        let res = self.cursor;
-
-        self.cursor.x += Self::DX[self.dir];
-        self.cursor.y += Self::DY[self.dir];
-        self.run += 1;
-
         // Cycle direction
-        if self.run == self.run_len {
-            self.run = 0;
-            self.dir = (self.dir + 1) & 3;
-            if self.dir & 1 == 0 {
-                self.run_len += 1;
-            }
+        (self.dx, self.dy) = (-self.dy, self.dx);
+        if self.dy == 0 {
+            self.len += 1;
         }
 
         Some(res)
@@ -239,60 +267,90 @@ impl Iterator for SquareSpiral {
 
 #[cfg(test)]
 mod square_spiral_tests {
-    use super::{Point, SquareSpiral};
     use std::collections::HashSet;
 
-    fn walk(start: Point, radius: i32) -> Vec<Point> {
-        SquareSpiral::new(&start, radius).collect()
+    use super::SquareSpiralLeg;
+
+    fn walk(radius: i32) -> Vec<(i32, i32, i32)> {
+        SquareSpiralLeg::new(radius).collect()
     }
 
-    fn reach(start: &Point, pt: &Point) -> i32 {
-        (pt.x - start.x).abs().max((pt.y - start.y).abs())
+    // Replays the legs the way `pinpoint_alignment_centre` does: start at the origin, step first,
+    // then look at where the cursor landed. The origin itself is never yielded.
+    fn trace(radius: i32) -> Vec<(i32, i32)> {
+        let (mut cx, mut cy) = (0, 0);
+        let mut pts = Vec::new();
+        for (leg, dx, dy) in SquareSpiralLeg::new(radius) {
+            for _ in 0..leg {
+                cx += dx;
+                cy += dy;
+                pts.push((cx, cy));
+            }
+        }
+        pts
     }
 
     #[test]
     fn test_radius_zero_yields_only_start() {
-        let start = Point { x: 7, y: -3 };
-        assert_eq!(walk(start, 0), vec![start]);
+        assert_eq!(walk(0), vec![(1, -1, 0)]);
     }
 
     #[test]
     fn test_first_point_is_start() {
-        let start = Point { x: -12, y: 40 };
-        assert_eq!(SquareSpiral::new(&start, 5).next(), Some(start));
+        assert_eq!(SquareSpiralLeg::new(5).next(), Some((1, -1, 0)));
     }
 
     #[test]
-    fn test_covers_square_exactly_once() {
-        let start = Point { x: 100, y: 250 };
+    fn test_radius_one_leg_sequence() {
+        let legs = walk(1);
+        assert_eq!(legs, vec![(1, -1, 0), (1, 0, -1), (2, 1, 0), (2, 0, 1), (3, -1, 0)]);
+    }
 
-        for radius in 0..=6 {
-            let pts = walk(start, radius);
-            let uniq: HashSet<Point> = pts.iter().copied().collect();
-            let exp: HashSet<Point> = (-radius..=radius)
-                .flat_map(|dy| (-radius..=radius).map(move |dx| (dx, dy)))
-                .map(|(dx, dy)| Point { x: start.x + dx, y: start.y + dy })
-                .collect();
-            let side = (2 * radius + 1) as usize;
+    #[test]
+    fn test_leg_lengths_grow_in_pairs() {
+        let lens: Vec<i32> = walk(4).iter().map(|l| l.0).collect();
+        assert_eq!(lens, vec![1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9]);
+    }
 
-            assert_eq!(pts.len(), side * side, "Radius = {radius}");
-            assert_eq!(uniq.len(), pts.len(), "Radius = {radius}");
-            assert_eq!(uniq, exp, "Radius = {radius}");
+    #[test]
+    fn test_directions_cycle_left_up_right_down() {
+        let dirs: Vec<(i32, i32)> = walk(4).iter().map(|l| (l.1, l.2)).collect();
+        let cycle = [(-1, 0), (0, -1), (1, 0), (0, 1)];
+        for (i, d) in dirs.iter().enumerate() {
+            assert_eq!(*d, cycle[i % 4], "leg {i} turned the wrong way");
         }
     }
 
     #[test]
-    fn test_visits_inner_rings_first() {
-        let start = Point { x: -5, y: 8 };
-        let rings: Vec<i32> = walk(start, 6).iter().map(|p| reach(&start, p)).collect();
-
-        assert!(rings.windows(2).all(|w| w[0] <= w[1]));
+    fn test_total_steps_fill_bounding_square() {
+        for radius in 0..=6 {
+            let steps: i32 = walk(radius).iter().map(|l| l.0).sum();
+            assert_eq!(steps, (2 * radius + 1).pow(2), "radius {radius} walked the wrong length");
+        }
     }
 
     #[test]
-    fn test_steps_are_contiguous() {
-        let pts = walk(Point { x: 0, y: 0 }, 5);
+    fn test_spiral_covers_neighbourhood_exactly_once() {
+        for radius in 1..=5 {
+            let pts = trace(radius);
 
-        assert!(pts.windows(2).all(|w| (w[1].x - w[0].x).abs() + (w[1].y - w[0].y).abs() == 1));
+            let unique: HashSet<(i32, i32)> = pts.iter().copied().collect();
+            assert_eq!(unique.len(), pts.len(), "radius {radius} revisited a cell");
+            assert!(!unique.contains(&(0, 0)), "radius {radius} stepped back onto the seed");
+
+            // Every cell within the radius, bar the seed, must be visited. The spiral overshoots
+            // its bounding square by exactly one cell -- the consumer bound checks it away.
+            let inside = |&(x, y): &(i32, i32)| x.abs() <= radius && y.abs() <= radius;
+            let covered = unique.iter().filter(|p| inside(p)).count() as i32;
+            assert_eq!(covered, (2 * radius + 1).pow(2) - 1, "radius {radius} left a gap");
+            assert_eq!(unique.iter().filter(|p| !inside(p)).count(), 1);
+        }
+    }
+
+    #[test]
+    fn test_every_leg_steps_one_cell_along_an_axis() {
+        for (_, dx, dy) in walk(3) {
+            assert_eq!(dx.abs() + dy.abs(), 1, "({dx}, {dy}) is not a unit axis step");
+        }
     }
 }

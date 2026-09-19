@@ -2,7 +2,7 @@ use geometry::Point;
 
 use super::binarize::BinaryImage;
 
-pub mod accumulate;
+pub mod contour;
 pub mod frame;
 pub mod geometry;
 pub mod homography;

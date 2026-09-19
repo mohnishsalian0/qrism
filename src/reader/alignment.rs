@@ -1,12 +1,10 @@
-use std::collections::HashSet;
-
 use super::{
     binarize::BinaryImage,
     utils::{frame::LocalFrame, geometry::Point},
 };
 use crate::{
     metadata::Color,
-    reader::utils::{geometry::SquareSpiral, homography::Homography},
+    reader::utils::{geometry::SquareSpiralLeg, homography::Homography},
     Version,
 };
 
@@ -51,43 +49,45 @@ pub(super) fn locate_br_anchor(
     let mut dst = [c1, c2, &seed, c0].map(|p| (p.x as f64, p.y as f64));
     let h = Homography::compute(src, dst);
 
-    let mut best_br_anchor = seed;
+    let mut best_br_anchor = (seed.x, seed.y);
     let mut best_score = if let Ok(h) = h { quiet_zone_score(img, ver, &h) } else { 0 };
-    let mut best_dist_sq = c1.dist_sq(&seed);
+    let mut best_dist_sq = (c1.x - seed.x).pow(2) + (c1.y - seed.y).pow(2);
 
     // Spiral outward
     let mod_size = ff.mod_size();
-    let radius = (mod_size * BR_ANCHOR_SEARCH_RADIUS).round() as i32;
+    let reach = (mod_size * BR_ANCHOR_SEARCH_RADIUS).round() as i32;
 
-    for cursor in SquareSpiral::new(&seed, radius) {
-        // Drop a cursor that has spiralled off the image before looking it up
-        if img.contains(&cursor) {
-            dst[2] = (cursor.x as f64, cursor.y as f64);
-            let Ok(h) = Homography::compute(src, dst) else { continue };
-            let score = quiet_zone_score(img, ver, &h);
-            let dist_sq = c1.dist_sq(&cursor);
-            if score > best_score || (score == best_score && dist_sq < best_dist_sq) {
-                best_br_anchor = cursor;
-                best_score = score;
-                best_dist_sq = dist_sq;
+    let (l, r) = (seed.x - reach, seed.x + reach);
+    let (t, b) = (seed.y - reach, seed.y + reach);
+    for cx in l..=r {
+        for cy in t..=b {
+            // Drop a cursor that has spiralled off the image before looking it up
+            if img.contains(cx, cy) {
+                dst[2] = (cx as f64, cy as f64);
+                let Ok(h) = Homography::compute(src, dst) else { continue };
+                let score = quiet_zone_score(img, ver, &h);
+                let dist_sq = (c1.x - cx).pow(2) + (c1.y - cy).pow(2);
+                if score > best_score || (score == best_score && dist_sq < best_dist_sq) {
+                    best_br_anchor = (cx, cy);
+                    best_score = score;
+                    best_dist_sq = dist_sq;
+                }
             }
         }
     }
-    best_br_anchor
+    Point { x: best_br_anchor.0, y: best_br_anchor.1 }
 }
 
 fn quiet_zone_score(img: &BinaryImage, ver: Version, h: &Homography) -> u32 {
     let w = ver.width();
-    let mut white_score = 0;
+    let mut white_score = 0u32;
 
     // Bottom edge + bottom right corner point
     let my = w as f64 + 0.5;
     for mx in 0..w + 1 {
         let Ok(px) = h.map(mx as f64 + 0.5, my) else { continue };
         let Some(clr) = img.get_at_point(&px) else { continue };
-        if clr == Color::White {
-            white_score += 1;
-        };
+        white_score += (clr == Color::White) as u32;
     }
 
     // Right edge
@@ -95,9 +95,7 @@ fn quiet_zone_score(img: &BinaryImage, ver: Version, h: &Homography) -> u32 {
     for my in 0..w {
         let Ok(px) = h.map(mx, my as f64 + 0.5) else { continue };
         let Some(clr) = img.get_at_point(&px) else { continue };
-        if clr == Color::White {
-            white_score += 1;
-        };
+        white_score += (clr == Color::White) as u32;
     }
 
     white_score
@@ -139,9 +137,12 @@ pub(super) fn alignment_coords(ver: Version) -> impl Iterator<Item = (i32, i32)>
 // over the whole symbol rather than measurements taken at the cell being searched. On a strongly
 // warped symbol the module footprint in the far corner will not match that average.
 //
-// The set of regions already tried is likewise shared by every cell, so each stone in the symbol
-// can be claimed only once. A cell whose spiral reaches a stone another cell has already taken
-// finds nothing and is left `None`.
+// Each stone in the symbol can likewise be claimed only once, so a cell whose spiral reaches a
+// stone another cell has already taken passes over it, and is left `None` if it finds nothing
+// else. A claim is recorded on the contour itself, stamped with the pass number `next_pass` hands
+// out here. Contours outlive a single symbol -- a second symbol in the same image sees every
+// outline traced for the first -- and a stamp only ever matches the call that wrote it, so claims
+// made for an earlier symbol read as stale and leave those stones free to be claimed again.
 pub(super) fn locate_alignment_centres(
     img: &mut BinaryImage,
     ver: Version,
@@ -158,22 +159,15 @@ pub(super) fn locate_alignment_centres(
 
     let mod_size = ff.mod_size();
     let search_span = (mod_size * ALIGNMENT_SEARCH_RADIUS).round() as i32;
-    let mod_area = ff.mod_area();
-    let mut visited_regs: HashSet<usize> = HashSet::new();
+    let pass = img.next_pass();
 
     for r in 0..n {
         for c in 0..n {
             if centres[r][c].is_none() {
                 let seed = provisional_alignment(r, c, ver, ff, centres);
 
-                let exact_centre = pinpoint_alignment_centre(
-                    img,
-                    &mut visited_regs,
-                    seed,
-                    mod_size,
-                    search_span,
-                    mod_area,
-                );
+                let exact_centre =
+                    pinpoint_alignment_centre(img, seed, mod_size, search_span, pass);
 
                 centres[r][c] = exact_centre;
             }
@@ -215,38 +209,45 @@ fn provisional_alignment(
 // Locates the centre of the alignment pattern nearest `seed`, or `None` if the spiral runs out
 // to `search_span` without finding one.
 //
-// The search walks a square spiral outward from `seed`. At each black pixel it flood-fills the
-// region underneath and tests it as a candidate centre stone, by sweeping the white ring that
+// The search walks a square spiral outward from `seed`. At each black pixel it traces contour of
+// the region within and tests it as a candidate centre stone, by tracing the white ring that
 // encircles it -- see `verify_alignment_centre`.
 //
-// The upper bound on the stone's area is enforced by the fill rather than by a comparison:
-// `get_region_capped` abandons a fill that grows past `max_area` and returns `None`, so a `None`
-// there means the blob was too big to be a stone, not that anything went wrong.
-//
-// `visited_regs` holds the ids of regions already tried, whether they passed or failed. It is
-// shared across every cell of the grid, so each stone can be claimed only once: a cell whose
-// spiral reaches a stone that another cell has already taken passes over it and keeps searching.
+// A stone is claimed by stamping its contour with `pass`, whether it went on to verify or not, and
+// a stone already carrying this pass is passed over. `pass` is the same for every cell of the grid,
+// so each stone can be claimed only once: a cell whose spiral reaches a stone that another cell has
+// already taken keeps searching. Stamps left by an earlier symbol carry a different pass and never
+// match -- see `locate_alignment_centres`.
 fn pinpoint_alignment_centre(
     img: &mut BinaryImage,
-    visited_regs: &mut HashSet<usize>,
     seed: Point,
     mod_size: f64,
     radius: i32,
-    mod_area: f64,
+    pass: u32,
 ) -> Option<Point> {
-    let max_area = (mod_area * STONE_AREA_TOLERANCE).round() as u32;
+    let max_width = (mod_size * ALIGNMENT_TRACE_SLACK).round() as u32;
+    let (mut cx, mut cy) = (seed.x, seed.y);
+    let ssl = SquareSpiralLeg::new(radius);
 
-    for cursor in SquareSpiral::new(&seed, radius) {
-        // Drop a cursor that has spiralled off the image before looking it up
-        if img.contains(&cursor) && img.get_at_point(&cursor) == Some(Color::Black) {
-            if let Some(stone) = img.get_region_capped((cursor.x as u32, cursor.y as u32), max_area)
-            {
-                let (stone_id, stone_centre) = (stone.id, stone.centre);
+    for (leg, dx, dy) in ssl {
+        for _ in 0..leg {
+            cx += dx;
+            cy += dy;
+            // Drop a cursor that has spiralled off the image before looking it up
+            if img.contains(cx, cy) {
+                let (x, y) = (cx as u32, cy as u32);
+                if img.buffer.get(x, y) == 0 && (x + 1 == img.w || img.buffer.get(x + 1, y) != 0) {
+                    if let Some(stone) = img.get_contour_capped((x, y), (x, y), max_width) {
+                        let Some(stone_centre) = stone.centre() else {
+                            continue;
+                        };
 
-                if !visited_regs.contains(&stone_id) {
-                    visited_regs.insert(stone_id);
-                    if verify_alignment_centre(img, &stone_centre, mod_size, mod_area) {
-                        return Some(stone_centre);
+                        if stone.visited_in != pass {
+                            stone.visited_in = pass;
+                            if verify_alignment_centre(img, &stone_centre, mod_size) {
+                                return Some(stone_centre);
+                            }
+                        }
                     }
                 }
             }
@@ -256,43 +257,58 @@ fn pinpoint_alignment_centre(
 }
 
 // Sweeps the white ring encircling a candidate centre stone and reports whether it reads as
-// the middle band of an alignment pattern.
-//
-// The area is measured against the stone's own area rather than the symbol-wide module estimate,
-// which keeps the gate local: the white ring covers 8 modules to the stone's 1 whatever the scale or
-// warp is at this corner. And a closed white ring shares its centroid with what it encloses, so the
-// two centres must very nearly agree.
-fn verify_alignment_centre(
-    img: &mut BinaryImage,
-    stone_centre: &Point,
-    mod_size: f64,
-    mod_area: f64,
-) -> bool {
+// the middle band of an alignment pattern. And a closed white ring shares its centroid with
+// what it encloses, so the two centres must very nearly agree.
+
+fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &Point, mod_size: f64) -> bool {
+    debug_assert!(img.contains(stone_centre.x, stone_centre.y));
+
+    let w = img.w;
     let mut step = 0;
-    let max_steps = (mod_size * 2.0).round() as u32;
-    let mut seed = *stone_centre;
-    while img.get_at_point(&seed) == Some(Color::Black) {
-        if step > max_steps {
+    let max_steps = (mod_size * 3.0).round() as u32;
+    let (mut x, y) = (stone_centre.x as u32, stone_centre.y as u32);
+    let mut prev = img.buffer.get(x, y);
+    if prev != 0 {
+        return false;
+    }
+    let mut flips = 0;
+    while step <= max_steps && flips < 2 {
+        x += 1;
+        step += 1;
+        if x == w {
             return false;
         }
-        seed.x += 1;
-        step += 1;
+
+        let cur = img.buffer.get(x, y);
+        if prev != cur {
+            flips += 1;
+        }
+        prev = cur;
     }
 
-    if img.get_at_point(&seed) != Some(Color::White) {
+    if flips < 2 {
         return false;
     }
 
-    debug_assert!(seed.x >= 0);
+    x -= 1;
+    if img.get(x, y) != Some(Color::White) {
+        return false;
+    }
 
-    let (x, y) = (seed.x as u32, seed.y as u32);
-    let area_cap = (mod_area * RING_MODS * RING_AREA_TOLERANCE).round() as u32;
-    let Some(ring) = img.get_region_capped((x, y), area_cap) else {
+    let max_width = (mod_size * 3.0 * ALIGNMENT_TRACE_SLACK).round() as u32;
+    let Some(ring) =
+        img.get_contour_capped((x, y), (stone_centre.x as u32, stone_centre.y as u32), max_width)
+    else {
         return false;
     };
 
-    let max_drift = mod_size * CENTRE_DRIFT_TOLERANCE;
-    stone_centre.dist_sq(&ring.centre) as f64 <= max_drift * max_drift
+    if !ring.contains(stone_centre) {
+        return false;
+    }
+
+    // Concentricity test. The ring and stone centre should be reasonably near each other
+    let max_drift = mod_size * ALIGNMENT_CENTRE_DRIFT_TOLERANCE;
+    stone_centre.dist_sq(&ring.centre().unwrap()) as f64 <= max_drift * max_drift
 }
 
 pub(super) fn infer_alignment_centres(ver: Version, ff: &LocalFrame, centres: &mut Anchors) {
@@ -304,7 +320,7 @@ pub(super) fn infer_alignment_centres(ver: Version, ff: &LocalFrame, centres: &m
                 continue;
             }
             if let Some((xn, xsn, yn, ysn)) = nearest_pair(r, c, ver, centres) {
-                centres[r][c] = Some(line_intersection(xn, xsn, yn, ysn));
+                centres[r][c] = line_intersection(xn, xsn, yn, ysn);
             }
             if centres[r][c].is_none() {
                 centres[r][c] = Some(ff.map(aps[c] as f64 - 3.0, aps[r] as f64 - 3.0));
@@ -381,7 +397,7 @@ fn nearest_pair(
 }
 
 // Intersection point of line p1 -> p2 and line p3 -> p4
-fn line_intersection(p1: Point, p2: Point, p3: Point, p4: Point) -> Point {
+fn line_intersection(p1: Point, p2: Point, p3: Point, p4: Point) -> Option<Point> {
     let (x1, y1) = (f64::from(p1.x), f64::from(p1.y));
     let (x2, y2) = (f64::from(p2.x), f64::from(p2.y));
     let (x3, y3) = (f64::from(p3.x), f64::from(p3.y));
@@ -395,14 +411,16 @@ fn line_intersection(p1: Point, p2: Point, p3: Point, p4: Point) -> Point {
     let denom = dx1 * dy2 - dy1 * dx2;
 
     // Parallel / collinear
-    debug_assert!(denom.abs() > 1e-9);
+    if denom.abs() > 1e-9 {
+        return None;
+    }
 
     let t = ((x3 - x1) * dy2 - (y3 - y1) * dx2) / denom;
 
     let x = (x1 + t * dx1).round() as i32;
     let y = (y1 + t * dy1).round() as i32;
 
-    Point { x, y }
+    Some(Point { x, y })
 }
 
 #[cfg(test)]
@@ -554,7 +572,7 @@ mod alignment_pattern_tests {
         // nearest-to-TL tie break settles those ties on the inward edge of that plateau, so the
         // anchor lands a few pixels short of the calculated point.
         assert_eq!(Point { x: far, y: far }, Point { x: 215, y: 215 });
-        assert_eq!(br, Point { x: 213, y: 212 });
+        assert_eq!(br, Point { x: 212, y: 213 });
     }
 
     #[test]
@@ -669,14 +687,10 @@ mod alignment_pattern_tests {
 // Global constants
 //------------------------------------------------------------------------------
 
-const STONE_AREA_TOLERANCE: f64 = 2.0;
-
-const RING_MODS: f64 = 8.0;
-
-const RING_AREA_TOLERANCE: f64 = 2.0;
-
-const CENTRE_DRIFT_TOLERANCE: f64 = 0.5;
+const ALIGNMENT_CENTRE_DRIFT_TOLERANCE: f64 = 0.5;
 
 const ALIGNMENT_SEARCH_RADIUS: f64 = 4.0;
 
 const BR_ANCHOR_SEARCH_RADIUS: f64 = 0.5;
+
+const ALIGNMENT_TRACE_SLACK: f64 = 3.0;
