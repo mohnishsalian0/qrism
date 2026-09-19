@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     metadata::Color,
-    reader::utils::{geometry::SquareSpiral, homography::Homography},
+    reader::utils::{geometry::SquareSpiralLeg, homography::Homography},
     Version,
 };
 
@@ -226,22 +226,28 @@ fn pinpoint_alignment_centre(
     pass: u32,
 ) -> Option<Point> {
     let max_width = (mod_size * ALIGNMENT_TRACE_SLACK).round() as u32;
+    let (mut cx, mut cy) = (seed.x, seed.y);
+    let ssl = SquareSpiralLeg::new(radius);
 
-    for cursor in SquareSpiral::new(&seed, radius) {
-        // Drop a cursor that has spiralled off the image before looking it up
-        let clr = img.get_bounded(cursor.x, cursor.y);
-        let right_clr = img.get_bounded(cursor.x + 1, cursor.y);
-        if clr == Some(Color::Black) && right_clr != Some(Color::Black) {
-            let (x, y) = (cursor.x as u32, cursor.y as u32);
-            if let Some(stone) = img.get_contour_capped((x, y), (x, y), max_width) {
-                let Some(stone_centre) = stone.centre() else {
-                    continue;
-                };
+    for (leg, dx, dy) in ssl {
+        for _ in 0..leg {
+            cx += dx;
+            cy += dy;
+            // Drop a cursor that has spiralled off the image before looking it up
+            if img.contains(cx, cy) {
+                let (x, y) = (cx as u32, cy as u32);
+                if img.buffer.get(x, y) == 0 && (x + 1 == img.w || img.buffer.get(x + 1, y) != 0) {
+                    if let Some(stone) = img.get_contour_capped((x, y), (x, y), max_width) {
+                        let Some(stone_centre) = stone.centre() else {
+                            continue;
+                        };
 
-                if stone.visited_in != pass {
-                    stone.visited_in = pass;
-                    if verify_alignment_centre(img, &stone_centre, mod_size) {
-                        return Some(stone_centre);
+                        if stone.visited_in != pass {
+                            stone.visited_in = pass;
+                            if verify_alignment_centre(img, &stone_centre, mod_size) {
+                                return Some(stone_centre);
+                            }
+                        }
                     }
                 }
             }

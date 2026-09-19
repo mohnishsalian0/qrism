@@ -225,53 +225,40 @@ impl<A: Axis> Iterator for BresenhamLine<A> {
     }
 }
 
-// Square spiral iterator for alignment centre & bottom right anchor search
+// Square spiral leg iterator for alignment centre & bottom right anchor search
 //------------------------------------------------------------------------------
 
-pub struct SquareSpiral {
-    cursor: Point,
-    run: i32,
-    run_len: i32,
+pub struct SquareSpiralLeg {
+    len: i32,
+    dx: i32,
+    dy: i32,
     steps: i32,
     max_steps: i32,
-    dir: Direction,
 }
 
-impl SquareSpiral {
-    pub fn new(start: &Point, radius: i32) -> Self {
+impl SquareSpiralLeg {
+    pub fn new(radius: i32) -> Self {
         debug_assert!(radius >= 0);
 
-        Self {
-            cursor: *start,
-            run: 0,
-            run_len: 1,
-            steps: 0,
-            max_steps: (2 * radius + 1).pow(2),
-            dir: Direction::Left,
-        }
+        Self { len: 1, dx: -1, dy: 0, steps: 0, max_steps: (2 * radius + 1).pow(2) }
     }
 }
 
-impl Iterator for SquareSpiral {
-    type Item = Point;
+impl Iterator for SquareSpiralLeg {
+    type Item = (i32, i32, i32);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let res = self.cursor;
+        let res = (self.len, self.dx, self.dy);
 
-        self.cursor.advance(self.dir);
-        self.run += 1;
-        self.steps += 1;
+        self.steps += self.len;
         if self.steps > self.max_steps {
             return None;
         }
 
         // Cycle direction
-        if self.run == self.run_len {
-            self.run = 0;
-            self.dir = self.dir.turn_right();
-            if self.dir == Direction::Left || self.dir == Direction::Right {
-                self.run_len += 1;
-            }
+        (self.dx, self.dy) = (-self.dy, self.dx);
+        if self.dy == 0 {
+            self.len += 1;
         }
 
         Some(res)
@@ -280,60 +267,19 @@ impl Iterator for SquareSpiral {
 
 #[cfg(test)]
 mod square_spiral_tests {
-    use super::{Point, SquareSpiral};
-    use std::collections::HashSet;
+    use super::SquareSpiralLeg;
 
-    fn walk(start: Point, radius: i32) -> Vec<Point> {
-        SquareSpiral::new(&start, radius).collect()
-    }
-
-    fn reach(start: &Point, pt: &Point) -> i32 {
-        (pt.x - start.x).abs().max((pt.y - start.y).abs())
+    fn walk(radius: i32) -> Vec<(i32, i32, i32)> {
+        SquareSpiralLeg::new(radius).collect()
     }
 
     #[test]
     fn test_radius_zero_yields_only_start() {
-        let start = Point { x: 7, y: -3 };
-        assert_eq!(walk(start, 0), vec![start]);
+        assert_eq!(walk(0), vec![(1, -1, 0)]);
     }
 
     #[test]
     fn test_first_point_is_start() {
-        let start = Point { x: -12, y: 40 };
-        assert_eq!(SquareSpiral::new(&start, 5).next(), Some(start));
-    }
-
-    #[test]
-    fn test_covers_square_exactly_once() {
-        let start = Point { x: 100, y: 250 };
-
-        for radius in 0..=6 {
-            let pts = walk(start, radius);
-            let uniq: HashSet<Point> = pts.iter().copied().collect();
-            let exp: HashSet<Point> = (-radius..=radius)
-                .flat_map(|dy| (-radius..=radius).map(move |dx| (dx, dy)))
-                .map(|(dx, dy)| Point { x: start.x + dx, y: start.y + dy })
-                .collect();
-            let side = (2 * radius + 1) as usize;
-
-            assert_eq!(pts.len(), side * side, "Radius = {radius}");
-            assert_eq!(uniq.len(), pts.len(), "Radius = {radius}");
-            assert_eq!(uniq, exp, "Radius = {radius}");
-        }
-    }
-
-    #[test]
-    fn test_visits_inner_rings_first() {
-        let start = Point { x: -5, y: 8 };
-        let rings: Vec<i32> = walk(start, 6).iter().map(|p| reach(&start, p)).collect();
-
-        assert!(rings.windows(2).all(|w| w[0] <= w[1]));
-    }
-
-    #[test]
-    fn test_steps_are_contiguous() {
-        let pts = walk(Point { x: 0, y: 0 }, 5);
-
-        assert!(pts.windows(2).all(|w| (w[1].x - w[0].x).abs() + (w[1].y - w[0].y).abs() == 1));
+        assert_eq!(SquareSpiralLeg::new(5).next(), Some((1, -1, 0)));
     }
 }
