@@ -228,16 +228,6 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
         }
     }
 
-    // All three points are extreme pixels of the ring — leftmost in row y, top and bottom-most in
-    // column sx — so each lies on the walked outline and carries its id. An interior point would
-    // read None here, which is why `r`, the ring's inner edge, cannot be used for this.
-    let lid = img.get_px_contour(rl, y)?;
-    let tid = img.get_px_contour(sx, t)?;
-    let bid = img.get_px_contour(sx, b)?;
-    if lid != ring.id || tid != ring.id || bid != ring.id {
-        return None;
-    }
-
     // A closed ring's outline encloses its hole, so this compares the full 7x7 block against the
     // 3x3 stone: 49/9 ~= 5.4. A broken ring traces the annulus instead, so the same finder reads
     // (49 - 25)/9 ~= 2.7, and is gated against that figure rather than rejected for it.
@@ -254,8 +244,8 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
     // Concentricity test. The ring and stone centre should be reasonably near each other
     let mod_size = stone.area() as f64 / 9.0;
     let max_drift = mod_size * FINDER_CENTRE_DRIFT_TOLERANCE;
-    let rcentre = ring.centre().unwrap();
-    let scentre = stone.centre().unwrap();
+    let rcentre = ring.centre()?;
+    let scentre = stone.centre()?;
     if rcentre.dist_sq(&scentre) > max_drift.powi(2).round() as u32 {
         return None;
     }

@@ -267,10 +267,27 @@ impl Iterator for SquareSpiralLeg {
 
 #[cfg(test)]
 mod square_spiral_tests {
+    use std::collections::HashSet;
+
     use super::SquareSpiralLeg;
 
     fn walk(radius: i32) -> Vec<(i32, i32, i32)> {
         SquareSpiralLeg::new(radius).collect()
+    }
+
+    // Replays the legs the way `pinpoint_alignment_centre` does: start at the origin, step first,
+    // then look at where the cursor landed. The origin itself is never yielded.
+    fn trace(radius: i32) -> Vec<(i32, i32)> {
+        let (mut cx, mut cy) = (0, 0);
+        let mut pts = Vec::new();
+        for (leg, dx, dy) in SquareSpiralLeg::new(radius) {
+            for _ in 0..leg {
+                cx += dx;
+                cy += dy;
+                pts.push((cx, cy));
+            }
+        }
+        pts
     }
 
     #[test]
@@ -281,5 +298,59 @@ mod square_spiral_tests {
     #[test]
     fn test_first_point_is_start() {
         assert_eq!(SquareSpiralLeg::new(5).next(), Some((1, -1, 0)));
+    }
+
+    #[test]
+    fn test_radius_one_leg_sequence() {
+        let legs = walk(1);
+        assert_eq!(legs, vec![(1, -1, 0), (1, 0, -1), (2, 1, 0), (2, 0, 1), (3, -1, 0)]);
+    }
+
+    #[test]
+    fn test_leg_lengths_grow_in_pairs() {
+        let lens: Vec<i32> = walk(4).iter().map(|l| l.0).collect();
+        assert_eq!(lens, vec![1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9]);
+    }
+
+    #[test]
+    fn test_directions_cycle_left_up_right_down() {
+        let dirs: Vec<(i32, i32)> = walk(4).iter().map(|l| (l.1, l.2)).collect();
+        let cycle = [(-1, 0), (0, -1), (1, 0), (0, 1)];
+        for (i, d) in dirs.iter().enumerate() {
+            assert_eq!(*d, cycle[i % 4], "leg {i} turned the wrong way");
+        }
+    }
+
+    #[test]
+    fn test_total_steps_fill_bounding_square() {
+        for radius in 0..=6 {
+            let steps: i32 = walk(radius).iter().map(|l| l.0).sum();
+            assert_eq!(steps, (2 * radius + 1).pow(2), "radius {radius} walked the wrong length");
+        }
+    }
+
+    #[test]
+    fn test_spiral_covers_neighbourhood_exactly_once() {
+        for radius in 1..=5 {
+            let pts = trace(radius);
+
+            let unique: HashSet<(i32, i32)> = pts.iter().copied().collect();
+            assert_eq!(unique.len(), pts.len(), "radius {radius} revisited a cell");
+            assert!(!unique.contains(&(0, 0)), "radius {radius} stepped back onto the seed");
+
+            // Every cell within the radius, bar the seed, must be visited. The spiral overshoots
+            // its bounding square by exactly one cell -- the consumer bound checks it away.
+            let inside = |&(x, y): &(i32, i32)| x.abs() <= radius && y.abs() <= radius;
+            let covered = unique.iter().filter(|p| inside(p)).count() as i32;
+            assert_eq!(covered, (2 * radius + 1).pow(2) - 1, "radius {radius} left a gap");
+            assert_eq!(unique.iter().filter(|p| !inside(p)).count(), 1);
+        }
+    }
+
+    #[test]
+    fn test_every_leg_steps_one_cell_along_an_axis() {
+        for (_, dx, dy) in walk(3) {
+            assert_eq!(dx.abs() + dy.abs(), 1, "({dx}, {dy}) is not a unit axis step");
+        }
     }
 }
