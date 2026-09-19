@@ -334,7 +334,6 @@ impl FinderGroup {
 pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
     // Store all possible combinations of finders
     let mut groups: Vec<FinderGroup> = Vec::new();
-    let right_angle = 90f64.to_radians();
 
     // Reused per vertex: the arms that clear the cheap scale gates below.
     let mut arms: Vec<(&Finder, u32)> = Vec::new();
@@ -379,26 +378,18 @@ pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
                     continue;
                 }
 
-                // Angle of c2-c1-c3. Gate on the cosine (no acos in the reject path): the accepted
-                // window [45, 135] degrees is exactly |cos| <= cos(45).
+                // Angle of c2-c1-c3. Gate on the cosine. The accepted window [45, 135].
                 let ab = ((f2.c.x - f1.c.x) as f64, (f2.c.y - f1.c.y) as f64);
                 let cb = ((f3.c.x - f1.c.x) as f64, (f3.c.y - f1.c.y) as f64);
                 let dot = ab.0 * cb.0 + ab.1 * cb.1;
+                let dot_sq = dot.powi(2);
                 let mag_sq = (d12 as f64) * (d13 as f64);
-                if dot * dot > COS_45_SQ * mag_sq {
+                let angle_score_sq = dot_sq / mag_sq;
+                if angle_score_sq > ANGLE_THRESHOLD {
                     continue;
                 }
 
-                // Survivor: compute the exact angle_score so the ranking (and thus the greedy
-                // selection in `locate_symbols`) is identical to the pre-refactor code. acos now
-                // runs only on survivors, not on every triple.
-                let angle = angle(&f2.c, &f1.c, &f3.c);
-                let angle_score = ((angle / right_angle) - 1.0).abs();
-                if angle_score > ANGLE_THRESHOLD {
-                    continue;
-                }
-
-                let score = symmetry_score + angle_score;
+                let score = symmetry_score + angle_score_sq.sqrt();
 
                 // Create and push group into groups
                 let group = FinderGroup { finders: [f3.c, f1.c, f2.c], score };
@@ -410,24 +401,6 @@ pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
     groups.sort_unstable_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
 
     groups
-}
-
-// Angle between AB & BC in radians
-fn angle(a: &Point, b: &Point, c: &Point) -> f64 {
-    let ab = ((a.x - b.x) as f64, (a.y - b.y) as f64);
-    let cb = ((c.x - b.x) as f64, (c.y - b.y) as f64);
-
-    let dot = ab.0 * cb.0 + ab.1 * cb.1;
-    let mag_ab = (ab.0.powi(2) + ab.1.powi(2)).sqrt();
-    let mag_cb = (cb.0.powi(2) + cb.1.powi(2)).sqrt();
-
-    if mag_ab <= f64::EPSILON || mag_cb <= f64::EPSILON {
-        return 0.0;
-    }
-
-    let cos_theta = (dot / (mag_ab * mag_cb)).clamp(-1.0, 1.0);
-
-    cos_theta.acos()
 }
 
 #[cfg(test)]
@@ -475,11 +448,8 @@ pub const MAX_FINDER_MODULES: u32 = 177;
 
 pub const SYMMETRY_THRESHOLD: f64 = 0.75;
 
+// cos(45 degrees)^2 = 0.5. The vertex-angle window is [45, 135].
 pub const ANGLE_THRESHOLD: f64 = 0.5;
-
-// cos(45 degrees)^2 = 0.5. The vertex-angle window [45, 135] degrees is exactly |cos| <= cos(45),
-// so a triple passes the angle gate iff dot^2 <= COS_45_SQ * |ab|^2 * |cb|^2.
-pub const COS_45_SQ: f64 = 0.5;
 
 // Two finders of the same symbol share a module size; reject an arm whose module size differs from
 // the vertex's by more than this ratio. Loose enough to never clip a real symbol.
