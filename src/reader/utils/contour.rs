@@ -134,8 +134,7 @@ pub fn trace(
     };
 
     let max_perimeter = max_width * 4;
-    let clr_bits =
-        img.contains(seed.x, seed.y).then(|| img.buffer.get(seed.x as u32, seed.y as u32))?;
+    let clr_bit = img.get_bit_bounded(seed.x, seed.y)?;
 
     // Start on the crack down the seed pixel's right edge, heading down. Travelling down with the
     // blob on the right (the -x side) is the invariant the whole walk maintains.
@@ -144,7 +143,7 @@ pub fn trace(
 
     // Pixel neighboring the boundary should not be the same color
     debug_assert!(
-        !img.matches_bits(start.x, start.y, clr_bits),
+        !img.matches_bit(start.x, start.y, clr_bit),
         "Seed must be the last pixel of its horizontal run"
     );
 
@@ -177,7 +176,7 @@ pub fn trace(
 
         // Where to head next, and the blob pixel that crack runs along. Both come off the flanks of
         // the crack straight ahead, which `next_step` reads for itself.
-        (dir, walked_in) = next_step(img, dir, clr_bits, walked_in, &cursor);
+        (dir, walked_in) = next_step(img, dir, clr_bit, walked_in, &cursor);
 
         if cursor == start && dir == start_dir {
             contour.bailed = false;
@@ -204,14 +203,14 @@ pub fn trace(
 fn next_step(
     img: &BinaryImage,
     dir: Direction,
-    blob_bits: u64,
+    blob_bit: bool,
     blob_px: (i32, i32),
     cursor: &Point,
 ) -> (Direction, (i32, i32)) {
     let (ahead_left, ahead_right) = flanks(cursor, dir);
-    if !img.matches_bits(ahead_right.0, ahead_right.1, blob_bits) {
+    if !img.matches_bit(ahead_right.0, ahead_right.1, blob_bit) {
         (dir.turn_right(), blob_px)
-    } else if !img.matches_bits(ahead_left.0, ahead_left.1, blob_bits) {
+    } else if !img.matches_bit(ahead_left.0, ahead_left.1, blob_bit) {
         (dir, ahead_right)
     } else {
         (dir.turn_left(), ahead_left)
@@ -247,7 +246,7 @@ fn store(reuse: Option<u16>, contour: Contour, contours: &mut Vec<Contour>) -> &
 mod contour_tests {
     use super::*;
     use crate::reader::binarize::BinaryImage;
-    use image::RgbImage;
+    use image::GrayImage;
 
     // Builds a binary image from an ASCII sketch, '#' dark and '.' light, and traces the blob
     // containing the '#' at `seed`, which the caller picks on the blob's right edge.
@@ -266,14 +265,14 @@ mod contour_tests {
     fn sketch(rows: &[&str]) -> BinaryImage {
         let h = rows.len() as u32;
         let w = rows[0].len() as u32;
-        let mut img = RgbImage::new(w, h);
+        let mut img = GrayImage::new(w, h);
         for (y, row) in rows.iter().enumerate() {
             for (x, c) in row.chars().enumerate() {
                 let v = if c == '#' { 0u8 } else { 255u8 };
-                img.put_pixel(x as u32, y as u32, image::Rgb([v, v, v]));
+                img.put_pixel(x as u32, y as u32, image::Luma([v]));
             }
         }
-        BinaryImage::global_thresholding(img)
+        BinaryImage::prepare(&img)
     }
 
     #[test]

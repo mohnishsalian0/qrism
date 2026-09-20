@@ -1,5 +1,3 @@
-use crate::metadata::Color;
-
 use super::{
     binarize::BinaryImage,
     utils::{geometry::Point, matches_finder_ratio, verify_finder_diagonal, verify_finder_pattern},
@@ -32,7 +30,7 @@ struct DatumLine {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct LineScanner {
     pub buffer: [u32; 6], // Run length of each transition
-    prev: Option<Color>,  // Last observed color
+    prev: Option<bool>,   // Last observed color. true = white, false = black
     flips: u32,           // Count of color changes
     pos: u32,             // Current position
     y: u32,
@@ -51,13 +49,14 @@ impl LineScanner {
         self.y = y;
     }
 
-    pub fn advance(&mut self, color: Color) -> Option<DatumLine> {
+    pub fn advance(&mut self, color: bool) -> Option<DatumLine> {
         self.advance_run(color, 1)
     }
 
-    // Advances a whole run of pixels with the color instead of pixel-by-pixel
-    pub fn advance_run(&mut self, color: Color, len: u32) -> Option<DatumLine> {
-        if self.prev.is_some() && self.prev == Some(color) {
+    // Advances a whole run of pixels with the color instead of pixel-by-pixel.
+    // true = white, false = black
+    pub fn advance_run(&mut self, color: bool, len: u32) -> Option<DatumLine> {
+        if self.prev == Some(color) {
             self.buffer[5] += len;
             self.pos += len;
             return None;
@@ -145,7 +144,7 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
         }
 
         // Handles an edge case where the QR is located at the right edge of the image
-        if let Some(datum) = scanner.advance(Color::White) {
+        if let Some(datum) = scanner.advance(true) {
             if let Some(centre) = verify_and_mark_finder(img, &datum) {
                 finders.push(centre);
             }

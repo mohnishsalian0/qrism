@@ -52,7 +52,7 @@ impl Stat {
 
 #[derive(Debug)]
 pub struct BinaryImage {
-    pub buffer: BitMatrix,
+    buffer: BitMatrix,
     px_cont: Vec<u16>,      // Contour each boundary pixel belongs to
     contours: Vec<Contour>, // Visited contours, index is id
     pub w: u32,
@@ -152,8 +152,7 @@ impl BinaryImage {
 
         // Calculates threshold for blocks
         let half_grid = BLOCK_GRID_SIZE / 2;
-        let grid_area = BLOCK_GRID_SIZE * BLOCK_GRID_SIZE;
-        let (maxx, maxy) = (wsteps - half_grid, hsteps - half_grid);
+        let (maxx, maxy) = (wsteps.saturating_sub(half_grid), hsteps.saturating_sub(half_grid));
         let mut threshold = vec![0u8; wsteps * hsteps];
 
         for y in 0..hsteps {
@@ -173,22 +172,27 @@ impl BinaryImage {
                     continue;
                 }
 
+                // The window is clamped to the grid so an image spanning fewer than
+                // BLOCK_GRID_SIZE blocks on an axis averages what blocks it has instead of
+                // indexing past `stats`. For a grid of BLOCK_GRID_SIZE or more the copy
+                // branches above keep the full window in range, so this clamps nothing.
                 let cx = std::cmp::max(x, half_grid);
                 let cy = std::cmp::max(y, half_grid);
+                let (x0, x1) = (cx.saturating_sub(half_grid), (cx + half_grid).min(wsteps - 1));
+                let (y0, y1) = (cy.saturating_sub(half_grid), (cy + half_grid).min(hsteps - 1));
                 let mut sum = 0usize;
-                for ny in cy - half_grid..=cy + half_grid {
-                    let ni = ny * wsteps + cx;
-                    for px_stat in &stats[ni - half_grid..=ni + half_grid] {
+                for ny in y0..=y1 {
+                    let ni = ny * wsteps;
+                    for px_stat in &stats[ni + x0..=ni + x1] {
                         sum += px_stat.avg;
                     }
                 }
 
-                threshold[i] = (sum / grid_area) as u8;
+                let count = (x1 - x0 + 1) * (y1 - y0 + 1);
+                threshold[i] = (sum / count) as u8;
             }
         }
 
-        // Initially mark all pixels as unvisited; will be used for flood fill later.
-        // Colour plane packs `color_size` bits per pixel; the matrix strides columns by it.
         let mut buffer = BitMatrix::new(w, h, 1);
         for by in 0..hsteps {
             let y0 = (by << block_pow) as u32;
@@ -200,8 +204,7 @@ impl BinaryImage {
 
                 for y in y0..y_end {
                     for x in x0..x_end {
-                        let mut color_byte = 0u64;
-                        color_byte = (color_byte << 1) | u64::from(px(x, y) > t);
+                        let color_byte = u64::from(px(x, y) > t);
 
                         if color_byte != 0 {
                             buffer.put(x, y, color_byte);
@@ -331,7 +334,7 @@ impl BinaryImage {
         // Calculates threshold for blocks
         let half_grid = BLOCK_GRID_SIZE / 2;
         let grid_area = BLOCK_GRID_SIZE * BLOCK_GRID_SIZE;
-        let (maxx, maxy) = (wsteps - half_grid, hsteps - half_grid);
+        let (maxx, maxy) = (wsteps.saturating_sub(half_grid), hsteps.saturating_sub(half_grid));
         let mut threshold = vec![[0u8; 4]; wsteps * hsteps];
 
         for y in 0..hsteps {
@@ -577,7 +580,7 @@ impl BinaryImage {
         let wsteps = wsteps as usize;
         let hsteps = hsteps as usize;
         let half_grid = BLOCK_GRID_SIZE / 2;
-        let (maxx, maxy) = (wsteps - half_grid, hsteps - half_grid);
+        let (maxx, maxy) = (wsteps.saturating_sub(half_grid), hsteps.saturating_sub(half_grid));
         let mut threshold = vec![[0u8; 4]; wsteps * hsteps];
 
         for y in 0..hsteps {
@@ -660,37 +663,37 @@ impl BinaryImage {
         })
     }
 
-    // Colour at `(x, y)` plus the length of the run of that colour reaching to the row's right
-    // edge. Lets a row scan step by whole runs; see `BitMatrix::run`.
-    pub fn run(&self, x: u32, y: u32) -> Option<(Color, u32)> {
+    pub fn get_bit(&self, x: u32, y: u32) -> Option<bool> {
         if x >= self.w || y >= self.h {
             return None;
         }
-        let (bits, len) = self.buffer.run(x, y);
-        let color = if self.buffer.elem_bits() == 1 {
-            Color::from(bits != 0)
-        } else {
-            bits.try_into().ok()?
-        };
-        Some((color, len))
+        let bit = self.buffer.get_bit(x, y);
+        Some(bit)
     }
 
-    pub fn get_bounded(&self, x: i32, y: i32) -> Option<Color> {
+    // Colour at `(x, y)` plus the length of the run of that colour reaching to the row's right
+    // edge. Lets a row scan step by whole runs; see `BitMatrix::run`.
+    pub fn run(&self, x: u32, y: u32) -> Option<(bool, u32)> {
+        if x >= self.w || y >= self.h {
+            return None;
+        }
+        let (bit, len) = self.buffer.run(x, y);
+        Some((bit, len))
+    }
+
+    // Bit at `(x, y)`, for callers that have already bounds-checked the coordinate.
+    #[inline]
+    pub(super) fn get_bit_unbounded(&self, x: u32, y: u32) -> bool {
+        self.buffer.get_bit(x, y)
+    }
+
+    pub fn get_bit_bounded(&self, x: i32, y: i32) -> Option<bool> {
         if x < 0 || y < 0 {
             return None;
         }
 
         let (x, y) = (x as u32, y as u32);
-        if self.w <= x || self.h <= y {
-            return None;
-        }
-
-        let bits = self.buffer.get(x, y);
-        Some(if self.buffer.elem_bits() == 1 {
-            Color::from(bits != 0)
-        } else {
-            bits.try_into().ok()?
-        })
+        self.get_bit(x, y)
     }
 
     pub fn get_at_point(&self, pt: &Point) -> Option<Color> {
@@ -701,6 +704,12 @@ impl BinaryImage {
         } else {
             bits.try_into().ok()?
         })
+    }
+
+    pub fn get_bit_at_point(&self, pt: &Point) -> Option<bool> {
+        let (x, y) = self.wrap_coords(pt.x, pt.y)?;
+        let bit = self.buffer.get_bit(x, y);
+        Some(bit)
     }
 
     fn wrap_coords(&self, x: i32, y: i32) -> Option<(u32, u32)> {
@@ -721,12 +730,12 @@ impl BinaryImage {
         0 <= x && (x as u32) < self.w && 0 <= y && (y as u32) < self.h
     }
 
-    pub fn matches_bits(&self, x: i32, y: i32, bits: u64) -> bool {
+    pub fn matches_bit(&self, x: i32, y: i32, bit: bool) -> bool {
         if x < 0 || y < 0 {
             return false;
         }
         let (x, y) = (x as u32, y as u32);
-        x < self.w && y < self.h && self.buffer.get(x, y) == bits
+        x < self.w && y < self.h && self.buffer.get_bit(x, y) == bit
     }
 
     pub fn get_px_contour(&self, x: u32, y: u32) -> Option<u16> {
@@ -779,6 +788,173 @@ impl BinaryImage {
         }
         img.save(path)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod bit_accessor_tests {
+    use super::{BinaryImage, BitMatrix, Color, Contour, Point, UNLABELED};
+
+    fn sketch(rows: &[&str]) -> BinaryImage {
+        let h = rows.len() as u32;
+        let w = rows[0].len() as u32;
+        let mut buffer = BitMatrix::new(w, h, 1);
+        for (y, row) in rows.iter().enumerate() {
+            assert_eq!(row.len() as u32, w, "sketch rows must all be the same width");
+            for (x, c) in row.chars().enumerate() {
+                let light = match c {
+                    '.' => true,
+                    '#' => false,
+                    other => panic!("sketch takes '.' and '#', got {other:?}"),
+                };
+                buffer.put(x as u32, y as u32, light as u64);
+            }
+        }
+        let px_cont = vec![UNLABELED; (w * h) as usize];
+        let contours: Vec<Contour> = Vec::new();
+        BinaryImage { buffer, px_cont, contours, w, h, pass: 0 }
+    }
+
+    const ROWS: [&str; 4] = [
+        "..###...", //
+        "#..##..#", //
+        "########", //
+        ".......#", //
+    ];
+
+    fn light(x: u32, y: u32) -> bool {
+        ROWS[y as usize].as_bytes()[x as usize] == b'.'
+    }
+
+    #[test]
+    fn test_bit_is_set_for_light_pixels() {
+        let img = sketch(&ROWS);
+        for y in 0..img.h {
+            for x in 0..img.w {
+                let expected = light(x, y);
+                assert_eq!(img.get_bit(x, y), Some(expected), "bit at ({x}, {y})");
+                assert_eq!(
+                    img.get(x, y),
+                    Some(if expected { Color::White } else { Color::Black }),
+                    "colour at ({x}, {y})"
+                );
+                // The bit accessors and the colour accessors must never disagree.
+                let pt = Point { x: x as i32, y: y as i32 };
+                assert_eq!(
+                    img.get_bit_at_point(&pt),
+                    Some(img.get_at_point(&pt) == Some(Color::White)),
+                    "get_bit_at_point disagrees with get_at_point at ({x}, {y})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_get_bit_rejects_out_of_bounds() {
+        let img = sketch(&ROWS);
+        assert_eq!(img.get_bit(img.w, 0), None, "one past the right edge");
+        assert_eq!(img.get_bit(0, img.h), None, "one past the bottom edge");
+        assert_eq!(img.get_bit(img.w - 1, img.h - 1), Some(false), "the last pixel is in bounds");
+    }
+
+    #[test]
+    fn test_get_bit_unbounded_agrees_with_get_bit() {
+        let img = sketch(&ROWS);
+        for y in 0..img.h {
+            for x in 0..img.w {
+                assert_eq!(img.get_bit_unbounded(x, y), img.get_bit(x, y).unwrap(), "({x}, {y})");
+            }
+        }
+    }
+
+    #[test]
+    fn test_get_bit_bounded_rejects_negatives() {
+        let img = sketch(&ROWS);
+        let (w, h) = (img.w as i32, img.h as i32);
+
+        assert_eq!(img.get_bit_bounded(-1, 0), None);
+        assert_eq!(img.get_bit_bounded(0, -1), None);
+        assert_eq!(img.get_bit_bounded(-1, -1), None);
+        assert_eq!(img.get_bit_bounded(w, 0), None);
+        assert_eq!(img.get_bit_bounded(0, h), None);
+
+        assert_eq!(img.get_bit_bounded(0, 0), Some(true));
+        assert_eq!(img.get_bit_bounded(w - 1, h - 1), Some(false));
+    }
+
+    #[test]
+    fn test_get_bit_at_point_wraps_negatives() {
+        let img = sketch(&ROWS);
+        let (w, h) = (img.w as i32, img.h as i32);
+        let at = |x, y| img.get_bit_at_point(&Point { x, y });
+
+        assert_eq!(at(-1, -1), img.get_bit(img.w - 1, img.h - 1), "(-1, -1) is the last pixel");
+        assert_eq!(at(-1, -1), Some(false), "and that pixel is dark");
+        assert_eq!(at(-w, -h), img.get_bit(0, 0), "(-w, -h) is the first pixel");
+        assert_eq!(at(-w, -h), Some(true));
+        assert_eq!(at(-3, 0), img.get_bit(img.w - 3, 0), "wraps per axis, independently");
+
+        // One step past the wrap window on either side is out of bounds.
+        assert_eq!(at(-w - 1, 0), None);
+        assert_eq!(at(0, -h - 1), None);
+        assert_eq!(at(w, 0), None);
+        assert_eq!(at(0, h), None);
+    }
+
+    #[test]
+    fn test_signed_accessors_disagree_on_negatives() {
+        let img = sketch(&ROWS);
+        assert_eq!(img.get_bit_bounded(-1, -1), None);
+        assert_eq!(img.get_bit_at_point(&Point { x: -1, y: -1 }), Some(false));
+    }
+
+    #[test]
+    fn test_matches_bit() {
+        let img = sketch(&ROWS);
+        let (w, h) = (img.w as i32, img.h as i32);
+
+        assert!(img.matches_bit(0, 0, true), "(0, 0) is light");
+        assert!(!img.matches_bit(0, 0, false));
+        assert!(img.matches_bit(0, 1, false), "(0, 1) is dark");
+        assert!(!img.matches_bit(0, 1, true));
+
+        for (x, y) in [(-1, 0), (0, -1), (-1, -1), (w, 0), (0, h), (w, h)] {
+            assert!(!img.matches_bit(x, y, true), "({x}, {y}) is outside and must not match true");
+            assert!(
+                !img.matches_bit(x, y, false),
+                "({x}, {y}) is outside and must not match false"
+            );
+        }
+    }
+
+    #[test]
+    fn test_run_matches_naive_scan() {
+        let img = sketch(&ROWS);
+        for y in 0..img.h {
+            for x in 0..img.w {
+                let (bit, len) = img.run(x, y).unwrap();
+                assert_eq!(bit, img.get_bit(x, y).unwrap(), "run bit at ({x}, {y})");
+
+                let mut naive = 0;
+                while x + naive < img.w && img.get_bit(x + naive, y) == Some(bit) {
+                    naive += 1;
+                }
+                assert_eq!(len, naive, "run length at ({x}, {y})");
+            }
+        }
+    }
+
+    #[test]
+    fn test_run_lengths_and_bounds() {
+        let img = sketch(&ROWS);
+        assert_eq!(img.run(0, 0), Some((true, 2)), "two light pixels, then a flip");
+        assert_eq!(img.run(2, 0), Some((false, 3)), "the three dark pixels");
+        assert_eq!(img.run(5, 0), Some((true, 3)), "clamped at the row edge");
+        assert_eq!(img.run(0, 2), Some((false, 8)), "a fully dark row is one run");
+        assert_eq!(img.run(0, 3), Some((true, 7)), "stops at the dark last pixel");
+
+        assert_eq!(img.run(img.w, 0), None, "out of bounds");
+        assert_eq!(img.run(0, img.h), None);
     }
 }
 

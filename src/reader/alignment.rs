@@ -3,7 +3,6 @@ use super::{
     utils::{frame::LocalFrame, geometry::Point},
 };
 use crate::{
-    metadata::Color,
     reader::utils::{geometry::SquareSpiralLeg, homography::Homography},
     Version,
 };
@@ -86,16 +85,16 @@ fn quiet_zone_score(img: &BinaryImage, ver: Version, h: &Homography) -> u32 {
     let my = w as f64 + 0.5;
     for mx in 0..w + 1 {
         let Ok(px) = h.map(mx as f64 + 0.5, my) else { continue };
-        let Some(clr) = img.get_at_point(&px) else { continue };
-        white_score += (clr == Color::White) as u32;
+        let Some(bit) = img.get_bit_at_point(&px) else { continue };
+        white_score += bit as u32;
     }
 
     // Right edge
     let mx = w as f64 + 0.5;
     for my in 0..w {
         let Ok(px) = h.map(mx, my as f64 + 0.5) else { continue };
-        let Some(clr) = img.get_at_point(&px) else { continue };
-        white_score += (clr == Color::White) as u32;
+        let Some(bit) = img.get_bit_at_point(&px) else { continue };
+        white_score += bit as u32;
     }
 
     white_score
@@ -236,7 +235,9 @@ fn pinpoint_alignment_centre(
             // Drop a cursor that has spiralled off the image before looking it up
             if img.contains(cx, cy) {
                 let (x, y) = (cx as u32, cy as u32);
-                if img.buffer.get(x, y) == 0 && (x + 1 == img.w || img.buffer.get(x + 1, y) != 0) {
+                if !img.get_bit_unbounded(x, y)
+                    && (x + 1 == img.w || img.get_bit_unbounded(x + 1, y))
+                {
                     if let Some(stone) = img.get_contour_capped((x, y), (x, y), max_width) {
                         let Some(stone_centre) = stone.centre() else {
                             continue;
@@ -267,8 +268,8 @@ fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &Point, mod_size
     let mut step = 0;
     let max_steps = (mod_size * 3.0).round() as u32;
     let (mut x, y) = (stone_centre.x as u32, stone_centre.y as u32);
-    let mut prev = img.buffer.get(x, y);
-    if prev != 0 {
+    let mut prev = img.get_bit_unbounded(x, y);
+    if prev {
         return false;
     }
     let mut flips = 0;
@@ -279,7 +280,7 @@ fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &Point, mod_size
             return false;
         }
 
-        let cur = img.buffer.get(x, y);
+        let cur = img.get_bit_unbounded(x, y);
         if prev != cur {
             flips += 1;
         }
@@ -291,7 +292,7 @@ fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &Point, mod_size
     }
 
     x -= 1;
-    if img.get(x, y) != Some(Color::White) {
+    if img.get_bit(x, y) != Some(true) {
         return false;
     }
 

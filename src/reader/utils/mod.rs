@@ -25,14 +25,14 @@ pub fn verify_finder_pattern(
     // Count upward
     let mut pos = *seed;
     let mut flips = pat_len / 2;
-    let mut initial = img.get_at_point(seed).unwrap();
+    let mut initial = img.get_bit_at_point(seed).unwrap();
     while run_len[flips] <= max_run {
         pos.y -= 1;
         if pos.y < 0 {
             break;
         }
 
-        let color = img.get_at_point(&pos).unwrap();
+        let color = img.get_bit_at_point(&pos).unwrap();
         if initial != color {
             if flips == 0 {
                 break;
@@ -47,14 +47,14 @@ pub fn verify_finder_pattern(
     // Count downward
     let mut pos = *seed;
     let mut flips = pat_len / 2;
-    let mut initial = img.get_at_point(seed).unwrap();
+    let mut initial = img.get_bit_at_point(seed).unwrap();
     while run_len[flips] <= max_run {
         pos.y += 1;
         if img.h == pos.y as u32 {
             break;
         }
 
-        let color = img.get_at_point(&pos).unwrap();
+        let color = img.get_bit_at_point(&pos).unwrap();
         if initial != color {
             if flips == pat_len - 1 {
                 break;
@@ -80,7 +80,7 @@ pub fn verify_finder_pattern(
 pub fn verify_finder_diagonal(img: &BinaryImage, center: &Point, max_run: u32) -> bool {
     let mut run_len = [0u32; 5];
     run_len[2] = 1;
-    let seed_color = match img.get_at_point(center) {
+    let seed_color = match img.get_bit_at_point(center) {
         Some(c) => c,
         None => return false,
     };
@@ -96,7 +96,7 @@ pub fn verify_finder_diagonal(img: &BinaryImage, center: &Point, max_run: u32) -
         if pos.x < 0 || pos.y < 0 {
             break;
         }
-        let color = img.get_at_point(&pos).unwrap();
+        let color = img.get_bit_at_point(&pos).unwrap();
         if initial != color {
             if flips == 0 {
                 break;
@@ -117,7 +117,7 @@ pub fn verify_finder_diagonal(img: &BinaryImage, center: &Point, max_run: u32) -
         if pos.x >= w || pos.y >= h {
             break;
         }
-        let color = img.get_at_point(&pos).unwrap();
+        let color = img.get_bit_at_point(&pos).unwrap();
         if initial != color {
             if flips == 4 {
                 break;

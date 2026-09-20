@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     ec::rectify_info,
-    metadata::{Color, VERSION_ERROR_BIT_LEN, VERSION_ERROR_CAPACITY, VERSION_INFOS},
+    metadata::{VERSION_ERROR_BIT_LEN, VERSION_ERROR_CAPACITY, VERSION_INFOS},
     reader::alignment::{anchors_from_finders, locate_br_anchor},
     utils::{QRError, QRResult},
     Version,
@@ -319,11 +319,11 @@ where
 {
     let mut flips = 0;
     let mut buffer = Vec::with_capacity(100);
-    let mut last = img.get_at_point(from).unwrap();
+    let mut last = img.get_bit_at_point(from).unwrap();
     let line = BresenhamLine::<A>::new(from, to);
 
     for p in line {
-        let color = img.get_at_point(&p).unwrap();
+        let color = img.get_bit_at_point(&p).unwrap();
 
         if color != last {
             flips += 1;
@@ -356,21 +356,19 @@ fn timing_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> u32
 where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
-    let mut transitions = [0; 3];
-    let mut last = img.get_at_point(from).unwrap() as u8;
+    let mut transitions = 0;
+    let mut last = img.get_bit_at_point(from).unwrap() as u8;
     let line = BresenhamLine::<A>::new(from, to);
 
     for p in line {
-        let color = img.get_at_point(&p).unwrap() as u8;
-        for (i, t) in transitions.iter_mut().enumerate() {
-            if color >> i != last >> i {
-                *t += 1;
-                last ^= 1 << i;
-            }
+        let clr_bit = img.get_bit_at_point(&p).unwrap() as u8;
+        if clr_bit != last {
+            transitions += 1;
+            last = clr_bit;
         }
     }
 
-    *transitions.iter().min().unwrap()
+    transitions
 }
 
 fn estimate_mod_count(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {
@@ -388,9 +386,8 @@ fn read_version_info(img: &BinaryImage, fr: LocalFrame) -> Option<(u32, u32)> {
     for x in (-3..3).rev() {
         for y in 5..8 {
             let pt = fr.map(x as f64, y as f64);
-            let clr = img.get_at_point(&pt)?;
-            let bit = (clr != Color::White) as u32;
-            vinfo = (vinfo << 1) | bit;
+            let bit = img.get_bit_at_point(&pt)?;
+            vinfo = (vinfo << 1) | !bit as u32;
         }
     }
 
@@ -623,7 +620,6 @@ impl SymbolLocation {
 
     fn cell_fitness(&self, img: &BinaryImage, x: i32, y: i32) -> i32 {
         const OFFSETS: [f64; 3] = [0.3, 0.5, 0.7];
-        let white = Color::White;
         let mut score = 0;
         let Ok(tile) = self.tile_at(x as usize, y as usize) else { return 0 };
 
@@ -633,8 +629,8 @@ impl SymbolLocation {
                     Ok(v) => v,
                     Err(_) => return 0,
                 };
-                if let Some(color) = img.get_at_point(&pt) {
-                    if color == white {
+                if let Some(bit) = img.get_bit_at_point(&pt) {
+                    if bit {
                         score -= 1;
                     } else {
                         score += 1;
