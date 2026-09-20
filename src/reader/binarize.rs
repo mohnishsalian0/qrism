@@ -1,4 +1,4 @@
-use image::{GrayImage, Pixel as ImgPixel, RgbImage};
+use image::{GrayImage, Pixel as ImgPixel};
 
 use crate::metadata::Color;
 use crate::reader::utils::contour::{trace, Contour};
@@ -11,6 +11,9 @@ use std::path::Path;
 
 #[cfg(test)]
 use image::ImageResult;
+
+#[cfg(test)]
+use image::RgbImage;
 
 // Region
 //------------------------------------------------------------------------------
@@ -99,8 +102,6 @@ impl BinaryImage {
                 let mut local = Stat::new();
                 for y in y0..y0 + block_size {
                     let base = y * w + x0;
-                    // for xx in base..base + block_size as usize {
-                    //     local.accumulate(raw[xx]);
                     for &px in &raw[base..base + block_size] {
                         local.accumulate(px);
                     }

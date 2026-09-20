@@ -411,7 +411,7 @@ impl BitMatrix {
     }
 
     pub fn capacity(&self) -> usize {
-        (self.w * self.h) as usize
+        (self.w * self.h * self.elem_bits) as usize
     }
 
     pub fn elem_bits(&self) -> u32 {
@@ -525,6 +525,11 @@ impl BitMatrix {
     pub fn push_bits(&mut self, bits: u64, n: usize) {
         debug_assert!(self.len + n <= self.capacity(), "Bit matrix capacity overflow");
         debug_assert!(n <= 64, "Bit length is over 64");
+        debug_assert!(n == 64 || bits >> n == 0);
+
+        if n == 0 {
+            return;
+        }
 
         let idx = self.len >> 6;
         let off = self.len & 63;
@@ -900,6 +905,162 @@ mod bit_matrix_tests {
         assert_eq!(bm.run(5, 0), (false, 1));
         assert_eq!(bm.run(6, 0), (true, 2), "clamped at the row edge, not run into row 1");
         assert_eq!(bm.run(w - 1, 0), (true, 1), "last element of the row");
+    }
+
+    // `push_bits` fills the matrix as one sequential bitstream, LSB first: the nth bit pushed
+    // lands at flat element n, which for `elem_bits == 1` is the element at (n % w, n / w).
+    // Callers must push bits whose value fits in `n`, into a matrix nothing has `put` into.
+
+    #[test]
+    fn test_push_bits_one_at_a_time_matches_put() {
+        let (w, h) = (13u32, 5u32);
+        let pattern = |x: u32, y: u32| ((x * 7 + y * 3) % 5 == 0) as u64;
+
+        let mut pushed = BitMatrix::new(w, h, 1);
+        for y in 0..h {
+            for x in 0..w {
+                pushed.push_bits(pattern(x, y), 1);
+            }
+        }
+
+        let mut put = BitMatrix::new(w, h, 1);
+        for y in 0..h {
+            for x in 0..w {
+                put.put(x, y, pattern(x, y));
+            }
+        }
+
+        assert_eq!(pushed.data(), put.data(), "raster-order pushes must equal the same puts");
+    }
+
+    #[test]
+    fn test_push_bits_word_aligned_chunks() {
+        let mut bm = BitMatrix::new(128, 1, 1);
+        bm.push_bits(0xDEAD_BEEF_0123_4567, 64);
+        bm.push_bits(0x0FED_CBA9_8765_4321, 64);
+        assert_eq!(bm.data(), [0xDEAD_BEEF_0123_4567, 0x0FED_CBA9_8765_4321].as_slice());
+    }
+
+    #[test]
+    fn test_push_bits_straddles_word_boundary() {
+        let lo = 0x0000_00AB_CDEF_1234 & ((1u64 << 40) - 1);
+        let hi = 0x0000_0056_789A_BCDE & ((1u64 << 40) - 1);
+
+        let mut bm = BitMatrix::new(80, 1, 1);
+        bm.push_bits(lo, 40);
+        bm.push_bits(hi, 40);
+
+        // Word 0 takes `lo` plus the low 24 bits of `hi`; word 1 takes `hi`'s remaining 16.
+        assert_eq!(bm.data()[0], lo | (hi << 40), "low word");
+        assert_eq!(bm.data()[1], hi >> 24, "carry into the next word");
+    }
+
+    #[test]
+    fn test_push_bits_matches_naive_stream() {
+        // Mixed chunk lengths, including ones that straddle words, checked bit for bit.
+        for &(w, h) in &[(1u32, 1u32), (7, 3), (63, 2), (64, 2), (65, 2), (100, 4), (128, 3)] {
+            let total = (w * h) as usize;
+            let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+            let mut rng = || {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                seed
+            };
+
+            let mut bm = BitMatrix::new(w, h, 1);
+            let mut expect: Vec<bool> = Vec::with_capacity(total);
+
+            while expect.len() < total {
+                let n = ((rng() % 64) as usize + 1).min(total - expect.len());
+                let mask = if n == 64 { u64::MAX } else { (1u64 << n) - 1 };
+                let bits = rng() & mask;
+                bm.push_bits(bits, n);
+                for i in 0..n {
+                    expect.push((bits >> i) & 1 == 1);
+                }
+            }
+
+            for (i, &want) in expect.iter().enumerate() {
+                let (x, y) = (i as u32 % w, i as u32 / w);
+                assert_eq!(bm.get_bit(x, y), want, "bit {i} at ({x}, {y}) in {w}x{h}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_push_bits_row_major_fill_matches_put() {
+        // The shape `BinaryImage::prepare` uses: per row, whole 64-bit chunks then a short tail.
+        // Widths either side of a word boundary put the tail in every alignment.
+        for &w in &[1u32, 63, 64, 65, 100, 127, 128, 200] {
+            let h = 5u32;
+            let pattern = |x: u32, y: u32| ((x ^ y).count_ones() % 2) as u64;
+
+            let mut pushed = BitMatrix::new(w, h, 1);
+            for y in 0..h {
+                let mut x = 0;
+                while x < w {
+                    let n = std::cmp::min(64, w - x);
+                    let mut word = 0u64;
+                    for i in 0..n {
+                        word |= pattern(x + i, y) << i;
+                    }
+                    pushed.push_bits(word, n as usize);
+                    x += n;
+                }
+            }
+
+            let mut put = BitMatrix::new(w, h, 1);
+            for y in 0..h {
+                for x in 0..w {
+                    put.put(x, y, pattern(x, y));
+                }
+            }
+
+            assert_eq!(pushed.data(), put.data(), "w={w}");
+        }
+    }
+
+    #[test]
+    fn test_push_bits_fills_exact_capacity() {
+        // 70 bits: the last word is partial, and the padding above it must stay zero.
+        let (w, h) = (10u32, 7u32);
+        let mut bm = BitMatrix::new(w, h, 1);
+        for _ in 0..(w * h) {
+            bm.push_bits(1, 1);
+        }
+
+        for y in 0..h {
+            for x in 0..w {
+                assert!(bm.get_bit(x, y), "({x}, {y}) should be set");
+            }
+        }
+        assert_eq!(bm.data().len(), 2);
+        assert_eq!(bm.data()[0], u64::MAX);
+        assert_eq!(bm.data()[1], (1u64 << 6) - 1, "only the 6 live bits of the last word");
+    }
+
+    #[test]
+    fn test_push_bits_zero_length_is_a_noop() {
+        let mut bm = BitMatrix::new(64, 2, 1);
+        bm.push_bits(0b1011, 4);
+        let before = bm.data().to_vec();
+
+        bm.push_bits(0, 0);
+        assert_eq!(bm.data(), before.as_slice(), "a zero-length push must change nothing");
+
+        bm.push_bits(1, 1);
+        assert!(bm.get_bit(4, 0), "the next push must still land at bit 4");
+    }
+
+    #[test]
+    // The guard is a `debug_assert!`, so release builds compile it out and never panic.
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "Bit matrix capacity overflow")]
+    fn test_push_bits_past_capacity_panics() {
+        let mut bm = BitMatrix::new(8, 1, 1);
+        bm.push_bits(0xFF, 8);
+        bm.push_bits(1, 1);
     }
 }
 
