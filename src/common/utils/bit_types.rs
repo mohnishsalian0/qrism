@@ -386,6 +386,7 @@ impl BitArray {
 #[derive(Debug, Clone)]
 pub struct BitMatrix {
     data: Vec<u64>,
+    len: usize,
     w: u32,
     h: u32,
     elem_bits: u32,
@@ -398,7 +399,7 @@ impl BitMatrix {
         debug_assert!(64 % elem_bits == 0, "elem_bits must be a factor of 64: {elem_bits}");
         let cap = ((w * h * elem_bits + 63) >> 6) as usize;
         let mask = if elem_bits == 64 { u64::MAX } else { (1u64 << elem_bits) - 1 };
-        Self { data: vec![0u64; cap], w, h, elem_bits, mask }
+        Self { data: vec![0u64; cap], len: 0, w, h, elem_bits, mask }
     }
 
     pub fn width(&self) -> u32 {
@@ -407,6 +408,10 @@ impl BitMatrix {
 
     pub fn height(&self) -> u32 {
         self.h
+    }
+
+    pub fn capacity(&self) -> usize {
+        (self.w * self.h) as usize
     }
 
     pub fn elem_bits(&self) -> u32 {
@@ -514,6 +519,23 @@ impl BitMatrix {
 
         // `elem_bits` divides 64, so the element sits wholly within word `idx`.
         self.data[idx] = (self.data[idx] & !(self.mask << off)) | (bits << off);
+    }
+
+    // Push bits of length n to the end
+    pub fn push_bits(&mut self, bits: u64, n: usize) {
+        debug_assert!(self.len + n <= self.capacity(), "Bit matrix capacity overflow");
+        debug_assert!(n <= 64, "Bit length is over 64");
+
+        let idx = self.len >> 6;
+        let off = self.len & 63;
+
+        self.data[idx] |= bits << off;
+
+        if off + n > 64 {
+            self.data[idx + 1] |= bits >> (64 - off);
+        }
+
+        self.len += n;
     }
 
     fn elem_pos(&self, x: u32, y: u32) -> (usize, u32) {

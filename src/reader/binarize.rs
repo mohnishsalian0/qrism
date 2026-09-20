@@ -208,24 +208,38 @@ impl BinaryImage {
             }
         }
 
+        let mut trow = vec![0u8; w];
         let mut buffer = BitMatrix::new(w as u32, h as u32, 1);
         for by in 0..hsteps {
-            let y0 = by << block_pow;
-            let y_end = std::cmp::min(y0 + block_size, h);
-            for bx in 0..wsteps {
+            for (bx, &t) in threshold[by * wsteps..(by + 1) * wsteps].iter().enumerate() {
                 let x0 = bx << block_pow;
                 let x_end = std::cmp::min(x0 + block_size, w);
-                let t = threshold[by * wsteps + bx];
+                trow[x0..x_end].fill(t);
+            }
 
-                for y in y0..y_end {
-                    let base = y * w;
-                    for (dx, &px) in raw[base + x0..base + x_end].iter().enumerate() {
-                        let color_byte = u64::from(px > t);
+            let y0 = by << block_pow;
+            let y_end = std::cmp::min(y0 + block_size, h);
+            for y in y0..y_end {
+                let row = &raw[y * w..y * w + w];
 
-                        if color_byte != 0 {
-                            buffer.put((x0 + dx) as u32, y as u32, color_byte);
-                        }
+                let mut x = 0;
+                while x + 64 <= w {
+                    let px: &[u8; 64] = &row[x..x + 64].try_into().unwrap();
+                    let th: &[u8; 64] = &trow[x..x + 64].try_into().unwrap();
+                    let mut word = 0u64;
+                    for i in 0..64 {
+                        word |= u64::from(px[i] > th[i]) << i;
                     }
+                    buffer.push_bits(word, 64);
+                    x += 64;
+                }
+
+                if x < w {
+                    let mut word = 0u64;
+                    for (i, (&px, &th)) in row[x..].iter().zip(&trow[x..]).enumerate() {
+                        word |= u64::from(px > th) << i;
+                    }
+                    buffer.push_bits(word, w - x);
                 }
             }
         }
