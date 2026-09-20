@@ -1,4 +1,4 @@
-use image::{GenericImageView, GrayImage, Pixel as ImgPixel, RgbImage};
+use image::{GrayImage, Pixel as ImgPixel, RgbImage};
 
 use crate::metadata::Color;
 use crate::reader::utils::contour::{trace, Contour};
@@ -75,8 +75,6 @@ impl BinaryImage {
         let (w, h) = img.dimensions();
         let (w, h) = (w as usize, h as usize);
         let raw: &[u8] = img.as_raw();
-        //FIXME:
-        // let px = |x: usize, y: usize| raw[y * w + x];
         let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
         let block_size = 1usize << block_pow;
         let mask = (1 << block_pow) - 1;
@@ -113,35 +111,48 @@ impl BinaryImage {
 
         // Sum of 8x8 pixels for fractional blocks (if exists) on the right edge
         if w & mask != 0 {
-            for y in 0..hr {
-                let idx = ((y >> block_pow) + 1) * wsteps - 1;
-                let base = y * w;
-                for &px in &raw[base + w - block_size..base + w] {
-                    stats[idx].accumulate(px);
+            let x0 = w - block_size;
+            for by in 0..bh {
+                let idx = (by + 1) * wsteps - 1;
+                let mut local = Stat::new();
+                for y in (by << block_pow)..((by + 1) << block_pow) {
+                    let base = y * w + x0;
+                    for &px in &raw[base..base + block_size] {
+                        local.accumulate(px);
+                    }
                 }
+                stats[idx] = local;
             }
         }
 
         // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom edge
         if h & mask != 0 {
             let last_row = wsteps * (hsteps - 1);
-            for y in h - block_size..h {
-                let base = y * w;
-                for (x, &px) in raw[base..base + wr].iter().enumerate() {
-                    let idx = (last_row + (x >> block_pow)) as usize;
-                    stats[idx].accumulate(px);
+            let y0 = h - block_size;
+            for bx in 0..bw {
+                let x0 = bx << block_pow;
+                let mut local = Stat::new();
+                for y in y0..h {
+                    let base = y * w + x0;
+                    for &px in &raw[base..base + block_size] {
+                        local.accumulate(px);
+                    }
                 }
+                stats[last_row + bx] = local;
             }
         }
 
         // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom right corner
         if w & mask != 0 && h & mask != 0 {
-            for y in h - block_size..h {
-                let base = y * w;
-                for &px in &raw[base + w - block_size..base + w] {
-                    stats[len - 1].accumulate(px);
+            let (x0, y0) = (w - block_size, h - block_size);
+            let mut local = Stat::new();
+            for y in y0..h {
+                let base = y * w + x0;
+                for &px in &raw[base..base + block_size] {
+                    local.accumulate(px);
                 }
             }
+            stats[len - 1] = local;
         }
 
         // Take average from the sum calculated for each block
@@ -400,250 +411,6 @@ impl BinaryImage {
                             buffer.put(x, y, color_byte);
                         }
                     }
-                }
-            }
-        }
-
-        let px_cont = vec![u16::MAX; (w * h) as usize];
-        let contours = Vec::with_capacity(100);
-        Self { buffer, px_cont, contours, w, h, pass: 0 }
-    }
-
-    /// Performs absolute/naive binarization
-    pub fn global_thresholding(img: RgbImage) -> Self {
-        let (w, h) = img.dimensions();
-        // Colour plane packs 4 bits per pixel; the matrix strides columns by it.
-        let mut buffer = BitMatrix::new(w, h, 4);
-
-        for (x, y, p) in img.enumerate_pixels() {
-            let r = (p[0] > 127) as u8;
-            let g = (p[1] > 127) as u8;
-            let b = (p[2] > 127) as u8;
-            let color_byte = (r << 2 | g << 1 | b) as u64;
-            buffer.put(x, y, color_byte);
-        }
-
-        let px_cont = vec![u16::MAX; (w * h) as usize];
-        let contours = Vec::with_capacity(100);
-        Self { buffer, px_cont, contours, w, h, pass: 0 }
-    }
-}
-
-// Otsu binarizing
-//------------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy)]
-struct Histogram {
-    h: [u32; 256],
-    total: u32,
-    min: u8,
-    max: u8,
-    is_block: bool,
-}
-
-impl Histogram {
-    pub fn new(is_block: bool) -> Self {
-        Histogram { h: [0; 256], total: 0, min: u8::MAX, max: u8::MIN, is_block }
-    }
-
-    pub fn accumulate(&mut self, val: u8) {
-        self.h[val as usize] += 1;
-        self.total += 1;
-        self.min = self.min.min(val);
-        self.max = self.max.max(val);
-    }
-
-    // Computes Otsu threshold
-    fn threshold(&self) -> u8 {
-        let dlen = 256.0;
-        let min = self.min as usize;
-        let max = self.max as usize;
-
-        // Compute sum of normalized intensities
-        let mut sum = 0.0;
-        for i in min..=max {
-            let f = i as f64 / dlen;
-            sum += f * self.h[i] as f64;
-        }
-
-        let mut sumb = 0.0;
-        let mut wb = 0; // Count of background pixels
-        let mut max_variance = 0.0;
-        let mut best_mb = 0.0; // Best background mean
-        let mut best_mf = 0.0; // Best foreground mean
-
-        for i in min..max {
-            wb += self.h[i];
-            let wf = self.total - wb;
-
-            let f = i as f64 / dlen;
-            sumb += f * self.h[i] as f64;
-
-            let mb = sumb / (wb as f64);
-            let mf = (sum - sumb) / (wf as f64);
-
-            let var_between = (wb as f64) * (wf as f64) * (mb - mf).powi(2);
-
-            if var_between > max_variance {
-                max_variance = var_between;
-                best_mb = mb;
-                best_mf = mf;
-            }
-        }
-
-        // FIXME:
-        // if !self.is_block && max >= min && max - min <= 60 {
-        //     let avg = (max + min) / 2;
-        //     if avg > 127 {
-        //         return 0;
-        //     }
-        //     return 255;
-        // }
-
-        // Final threshold is average of both means, scaled back to 0..255
-        let threshold_f = (best_mb + best_mf) / 2.0;
-
-        (threshold_f * dlen).round() as u8
-    }
-}
-
-impl BinaryImage {
-    pub fn otsu<I>(img: &I) -> Self
-    where
-        I: GenericImageView,
-        I::Pixel: ImgPixel<Subpixel = u8>,
-    {
-        let (w, h) = img.dimensions();
-        let chan_count = I::Pixel::CHANNEL_COUNT as usize;
-        let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
-        let block_size = 1 << block_pow;
-        let mask = (1 << block_pow) - 1;
-
-        let wsteps = (w + mask) >> block_pow;
-        let hsteps = (h + mask) >> block_pow;
-        let len = (wsteps * hsteps) as usize;
-
-        let mut histogram = vec![[Histogram::new(true); 4]; len];
-
-        // Calculate sum of 8x8 pixels for each block
-        // Skip last few pixels which form fractional blocks. The last block will be computed later
-        // Round w and h to skips these pixels
-        let (wr, hr) = (w & !mask, h & !mask);
-        for y in 0..hr {
-            let row_off = (y >> block_pow) * wsteps;
-            for x in 0..wr {
-                let idx = (row_off + (x >> block_pow)) as usize;
-
-                let px = img.get_pixel(x, y);
-                for (i, &val) in px.channels().iter().enumerate() {
-                    histogram[idx][i].accumulate(val);
-                }
-            }
-        }
-
-        // Sum of 8x8 pixels for fractional blocks (if exists) on the right edge
-        if w & mask != 0 {
-            for y in 0..hr {
-                let idx = (((y >> block_pow) + 1) * wsteps - 1) as usize;
-                for x in w - block_size..w {
-                    let px = img.get_pixel(x, y);
-                    for (i, &val) in px.channels().iter().enumerate() {
-                        histogram[idx][i].accumulate(val);
-                    }
-                }
-            }
-        }
-
-        // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom edge
-        if h & mask != 0 {
-            let last_row = wsteps * (hsteps - 1);
-            for y in h - block_size..h {
-                for x in 0..wr {
-                    let idx = (last_row + (x >> block_pow)) as usize;
-
-                    let px = img.get_pixel(x, y);
-                    for (i, &val) in px.channels().iter().enumerate() {
-                        histogram[idx][i].accumulate(val);
-                    }
-                }
-            }
-        }
-
-        // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom right corner
-        if w & mask != 0 && h & mask != 0 {
-            for y in h - block_size..h {
-                for x in w - block_size..w {
-                    let px = img.get_pixel(x, y);
-                    for (i, &val) in px.channels().iter().enumerate() {
-                        histogram[len - 1][i].accumulate(val);
-                    }
-                }
-            }
-        }
-
-        // Calculates threshold for blocks
-        let wsteps = wsteps as usize;
-        let hsteps = hsteps as usize;
-        let half_grid = BLOCK_GRID_SIZE / 2;
-        let (maxx, maxy) = (wsteps.saturating_sub(half_grid), hsteps.saturating_sub(half_grid));
-        let mut threshold = vec![[0u8; 4]; wsteps * hsteps];
-
-        for y in 0..hsteps {
-            let row_off = y * wsteps;
-            for x in 0..wsteps {
-                let i = row_off + x;
-
-                // If y is near any boundary then copy the threshold above
-                if y > 0 && (y <= half_grid || y >= maxy) {
-                    threshold[i] = threshold[i - wsteps];
-                    continue;
-                }
-
-                // If x is near any boundary then copy the left threshold
-                if x > 0 && (x <= half_grid || x >= maxx) {
-                    threshold[i] = threshold[i - 1];
-                    continue;
-                }
-
-                let cx = std::cmp::max(x, half_grid);
-                let cy = std::cmp::max(y, half_grid);
-                let mut grid_hist = [Histogram::new(false); 4];
-                for ny in cy - half_grid..=cy + half_grid {
-                    let ni = ny * wsteps + cx;
-                    for px_stat in &histogram[ni - half_grid..=ni + half_grid] {
-                        for (i, chan_hist) in px_stat.iter().take(chan_count).enumerate() {
-                            let block_thresh = chan_hist.threshold();
-                            grid_hist[i].accumulate(block_thresh);
-                        }
-                    }
-                }
-
-                for (c, t) in threshold[i].iter_mut().take(chan_count).enumerate() {
-                    let grid_thresh = grid_hist[c].threshold();
-                    *t = grid_thresh;
-                }
-            }
-        }
-
-        // Initially mark all pixels as unvisited; will be used for flood fill later.
-        // Colour plane packs `color_size` bits per pixel; the matrix strides columns by it.
-        let color_size = chan_count.next_power_of_two() as u32;
-        let mut buffer = BitMatrix::new(w, h, color_size);
-        for y in 0..h {
-            let thresh_row_off = (y as usize >> block_pow) * wsteps;
-            for x in 0..w {
-                let p = img.get_pixel(x, y);
-
-                let xsteps = x as usize >> block_pow;
-                let thresh_idx = thresh_row_off + xsteps;
-
-                let mut color_byte = 0u64;
-                for (i, &val) in p.channels().iter().enumerate() {
-                    color_byte = (color_byte << 1) | u64::from(val > threshold[thresh_idx][i]);
-                }
-
-                if color_byte != 0 {
-                    buffer.put(x, y, color_byte);
                 }
             }
         }
