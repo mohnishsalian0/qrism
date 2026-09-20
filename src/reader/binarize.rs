@@ -73,15 +73,17 @@ impl BinaryImage {
     // threshold is 0 in which case the pixel should be false/black
     pub fn prepare(img: &GrayImage) -> Self {
         let (w, h) = img.dimensions();
+        let (w, h) = (w as usize, h as usize);
         let raw: &[u8] = img.as_raw();
-        let px = |x: u32, y: u32| raw[(y * w + x) as usize];
+        //FIXME:
+        // let px = |x: usize, y: usize| raw[y * w + x];
         let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
-        let block_size = 1 << block_pow;
+        let block_size = 1usize << block_pow;
         let mask = (1 << block_pow) - 1;
 
         let wsteps = (w + mask) >> block_pow;
         let hsteps = (h + mask) >> block_pow;
-        let len = (wsteps * hsteps) as usize;
+        let len = wsteps * hsteps;
 
         let mut stats = vec![Stat::new(); len];
 
@@ -95,13 +97,14 @@ impl BinaryImage {
             let y0 = by << block_pow;
             for bx in 0..bw {
                 let x0 = bx << block_pow;
-                let idx = (by * wsteps + bx) as usize;
+                let idx = by * wsteps + bx;
                 let mut local = Stat::new();
-                for yy in 0..block_size {
-                    let y = y0 + yy;
-                    let base = (y * w + x0) as usize;
-                    for xx in 0..block_size as usize {
-                        local.accumulate(raw[base + xx]);
+                for y in y0..y0 + block_size {
+                    let base = y * w + x0;
+                    // for xx in base..base + block_size as usize {
+                    //     local.accumulate(raw[xx]);
+                    for &px in &raw[base..base + block_size] {
+                        local.accumulate(px);
                     }
                 }
                 stats[idx] = local;
@@ -111,9 +114,10 @@ impl BinaryImage {
         // Sum of 8x8 pixels for fractional blocks (if exists) on the right edge
         if w & mask != 0 {
             for y in 0..hr {
-                let idx = (((y >> block_pow) + 1) * wsteps - 1) as usize;
-                for x in w - block_size..w {
-                    stats[idx].accumulate(px(x, y));
+                let idx = ((y >> block_pow) + 1) * wsteps - 1;
+                let base = y * w;
+                for &px in &raw[base + w - block_size..base + w] {
+                    stats[idx].accumulate(px);
                 }
             }
         }
@@ -122,9 +126,10 @@ impl BinaryImage {
         if h & mask != 0 {
             let last_row = wsteps * (hsteps - 1);
             for y in h - block_size..h {
-                for x in 0..wr {
+                let base = y * w;
+                for (x, &px) in raw[base..base + wr].iter().enumerate() {
                     let idx = (last_row + (x >> block_pow)) as usize;
-                    stats[idx].accumulate(px(x, y));
+                    stats[idx].accumulate(px);
                 }
             }
         }
@@ -132,8 +137,9 @@ impl BinaryImage {
         // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom right corner
         if w & mask != 0 && h & mask != 0 {
             for y in h - block_size..h {
-                for x in w - block_size..w {
-                    stats[len - 1].accumulate(px(x, y));
+                let base = y * w;
+                for &px in &raw[base + w - block_size..base + w] {
+                    stats[len - 1].accumulate(px);
                 }
             }
         }
@@ -142,8 +148,6 @@ impl BinaryImage {
         // If variance is low (<= 25), assume the block is white. Because there is a high chance
         // that the block is outside the qr. Unless the block has top/left neighbors, in which
         // case take average of them.
-        let wsteps = wsteps as usize;
-        let hsteps = hsteps as usize;
         let block_area_pow = 2 * block_pow;
         #[allow(clippy::needless_range_loop)]
         for i in 0..len {
@@ -193,30 +197,31 @@ impl BinaryImage {
             }
         }
 
-        let mut buffer = BitMatrix::new(w, h, 1);
+        let mut buffer = BitMatrix::new(w as u32, h as u32, 1);
         for by in 0..hsteps {
-            let y0 = (by << block_pow) as u32;
+            let y0 = by << block_pow;
             let y_end = std::cmp::min(y0 + block_size, h);
             for bx in 0..wsteps {
-                let x0 = (bx << block_pow) as u32;
+                let x0 = bx << block_pow;
                 let x_end = std::cmp::min(x0 + block_size, w);
                 let t = threshold[by * wsteps + bx];
 
                 for y in y0..y_end {
-                    for x in x0..x_end {
-                        let color_byte = u64::from(px(x, y) > t);
+                    let base = y * w;
+                    for (dx, &px) in raw[base + x0..base + x_end].iter().enumerate() {
+                        let color_byte = u64::from(px > t);
 
                         if color_byte != 0 {
-                            buffer.put(x, y, color_byte);
+                            buffer.put((x0 + dx) as u32, y as u32, color_byte);
                         }
                     }
                 }
             }
         }
 
-        let px_cont = vec![u16::MAX; (w * h) as usize];
+        let px_cont = vec![u16::MAX; w * h];
         let contours = Vec::with_capacity(100);
-        Self { buffer, px_cont, contours, w, h, pass: 0 }
+        Self { buffer, px_cont, contours, w: w as u32, h: h as u32, pass: 0 }
     }
 
     pub fn prepare_discard<P>(img: &image::ImageBuffer<P, Vec<u8>>) -> Self
