@@ -428,7 +428,7 @@ fn line_intersection(p1: Point, p2: Point, p3: Point, p4: Point) -> Option<Point
 mod alignment_pattern_tests {
     use super::{
         anchors_from_finders, infer_alignment_centres, line_intersection, locate_alignment_centres,
-        locate_br_anchor, provisional_alignment, Anchors, MAX_ALIGN_CELLS,
+        locate_br_anchor, nearest_pair, provisional_alignment, Anchors, MAX_ALIGN_CELLS,
     };
     use crate::metadata::Version;
     use crate::reader::binarize::BinaryImage;
@@ -785,6 +785,128 @@ mod alignment_pattern_tests {
         let (col_near, col_far) = (p(60, 54), p(60, 78)); // Same column as the target
 
         assert_eq!(line_intersection(row_near, row_far, col_near, col_far), Some(p(60, 30)));
+    }
+
+    // The centre stored in cell (row, col) of a test grid. Each cell carries a distinct point,
+    // so a returned centre names the cell it was taken from.
+    fn cell(row: usize, col: usize) -> Point {
+        Point { x: col as i32 * 10, y: row as i32 * 10 }
+    }
+
+    // Every cell of the whole `MAX_ALIGN_CELLS` square filled, the version's own grid included.
+    // Cells outside the version's grid are filled too -- `nearest_pair` must not reach them.
+    fn filled_grid() -> Anchors {
+        let mut centres: Anchors = [[None; MAX_ALIGN_CELLS]; MAX_ALIGN_CELLS];
+        for (r, row) in centres.iter_mut().enumerate() {
+            for (c, centre) in row.iter_mut().enumerate() {
+                *centre = Some(cell(r, c));
+            }
+        }
+        centres
+    }
+
+    #[test]
+    fn test_nearest_pair_picks_nearest_on_each_axis() {
+        let ver = Version::Normal(21); // 5x5 alignment grid
+        assert_eq!(ver.alignment_pattern().len(), 5);
+
+        let centres = filled_grid();
+
+        // Target sits in the middle, so both axes have neighbours on either side. Equidistant
+        // candidates are settled by the zigzag's leading direction -- left before right, above
+        // before below -- so the nearer of each pair is the one at the lower index.
+        let (xn, xsn, yn, ysn) = nearest_pair(2, 2, ver, &centres).unwrap();
+
+        assert_eq!(xn, cell(2, 1), "Nearest along the row");
+        assert_eq!(xsn, cell(2, 3), "Second nearest along the row");
+        assert_eq!(yn, cell(1, 2), "Nearest along the column");
+        assert_eq!(ysn, cell(3, 2), "Second nearest along the column");
+    }
+
+    #[test]
+    fn test_nearest_pair_skips_finder_cells() {
+        let ver = Version::Normal(21); // 5x5 alignment grid
+        let centres = filled_grid();
+
+        // The row of a top edge cell opens on the TL finder at (0, 0). That cell holds a finder
+        // centre, not an alignment centre, so the sweep passes it and reaches further right.
+        let (xn, xsn, yn, ysn) = nearest_pair(0, 1, ver, &centres).unwrap();
+        assert_eq!((xn, xsn), (cell(0, 2), cell(0, 3)), "(0, 0) is a finder");
+        assert_eq!((yn, ysn), (cell(1, 1), cell(2, 1)));
+
+        // Same along a column, where the sweep opens on the TL finder going up
+        let (xn, xsn, yn, ysn) = nearest_pair(1, 0, ver, &centres).unwrap();
+        assert_eq!((xn, xsn), (cell(1, 1), cell(1, 2)));
+        assert_eq!((yn, ysn), (cell(2, 0), cell(3, 0)), "(0, 0) is a finder");
+    }
+
+    #[test]
+    fn test_nearest_pair_reaches_past_unlocated_cells() {
+        let ver = Version::Normal(21); // 5x5 alignment grid
+        let mut centres = filled_grid();
+
+        // Knock out both immediate neighbours along the row, and the one above along the column
+        centres[2][1] = None;
+        centres[2][3] = None;
+        centres[1][2] = None;
+
+        let (xn, xsn, yn, ysn) = nearest_pair(2, 2, ver, &centres).unwrap();
+
+        assert_eq!((xn, xsn), (cell(2, 0), cell(2, 4)), "Row falls back to distance 2");
+        // Down at distance 1 beats up at distance 2
+        assert_eq!((yn, ysn), (cell(3, 2), cell(0, 2)));
+    }
+
+    #[test]
+    fn test_nearest_pair_ignores_cells_outside_the_version_grid() {
+        let ver = Version::Normal(7); // 3x3 alignment grid
+        assert_eq!(ver.alignment_pattern().len(), 3);
+
+        let centres = filled_grid(); // Cells 3..7 are filled but out of this version's grid
+
+        let (xn, xsn, yn, ysn) = nearest_pair(1, 1, ver, &centres).unwrap();
+        assert_eq!((xn, xsn), (cell(1, 0), cell(1, 2)));
+        assert_eq!((yn, ysn), (cell(0, 1), cell(2, 1)));
+
+        // Cell (2, 2) has (2, 1) to its left, the BL finder at (2, 0) beyond that, and nothing
+        // to its right within the 3x3 grid -- the filled cells at (2, 3) onward are out of reach
+        assert_eq!(nearest_pair(2, 2, ver, &centres), None);
+    }
+
+    #[test]
+    fn test_nearest_pair_needs_two_centres_on_both_axes() {
+        // A 2x2 grid is all finders but for cell (1, 1), which has no company on either axis
+        let ver = Version::Normal(2);
+        assert_eq!(ver.alignment_pattern().len(), 2);
+        assert_eq!(nearest_pair(1, 1, ver, &filled_grid()), None);
+
+        let ver = Version::Normal(21); // 5x5 alignment grid
+
+        // Row is one centre short
+        let mut centres = filled_grid();
+        for c in [0, 1, 3] {
+            centres[2][c] = None;
+        }
+        assert_eq!(nearest_pair(2, 2, ver, &centres), None, "Only (2, 4) left in the row");
+
+        // Row has its pair, column is one centre short
+        let mut centres = filled_grid();
+        for r in [0, 3, 4] {
+            centres[r][2] = None;
+        }
+        assert_eq!(nearest_pair(2, 2, ver, &centres), None, "Only (1, 2) left in the column");
+
+        // Nothing located at all
+        let centres: Anchors = [[None; MAX_ALIGN_CELLS]; MAX_ALIGN_CELLS];
+        assert_eq!(nearest_pair(2, 2, ver, &centres), None);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "assertion `left != right` failed")]
+    fn test_nearest_pair_rejects_versions_without_alignment_patterns() {
+        // Version 1 carries no alignment coordinates, so there is no grid to sweep
+        nearest_pair(0, 0, Version::Normal(1), &filled_grid());
     }
 }
 
