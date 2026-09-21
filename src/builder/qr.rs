@@ -911,24 +911,35 @@ impl QR {
         let total_sz = qz_sz + qr_sz + qz_sz;
 
         let mut canvas = GrayImage::new(total_sz, total_sz);
-        for i in 0..total_sz {
-            for j in 0..total_sz {
-                if i < qz_sz || i >= qz_sz + qr_sz || j < qz_sz || j >= qz_sz + qr_sz {
-                    canvas.put_pixel(j, i, Luma([255]));
+        for y in 0..total_sz {
+            // Quiet zone
+            if y < qz_sz || y >= qz_sz + qr_sz {
+                for x in 0..total_sz {
+                    canvas.put_pixel(x, y, Luma([255]));
+                }
+                continue;
+            }
+
+            let qy = ((y - qz_sz) / module_sz) as i32;
+
+            for x in 0..total_sz {
+                // Quiet zone
+                if x < qz_sz || x >= qz_sz + qr_sz {
+                    canvas.put_pixel(x, y, Luma([255]));
                     continue;
                 }
-                let r = (i - qz_sz) / module_sz;
-                let c = (j - qz_sz) / module_sz;
 
-                let clr = match self.get(r as i32, c as i32) {
+                let qx = ((x - qz_sz) / module_sz) as i32;
+
+                let clr = match self.get(qx, qy) {
                     Module::Func(c) | Module::Format(c) | Module::Version(c) | Module::Data(c) => c,
-                    Module::Empty => panic!("Empty module found at: {r} {c}"),
+                    Module::Empty => panic!("Empty module found at: {x} {y}"),
                 };
 
                 let pixel =
                     if clr != Color::White { Luma([(clr as u8) * 35]) } else { Luma([255]) };
 
-                canvas.put_pixel(j, i, pixel);
+                canvas.put_pixel(x, y, pixel);
             }
         }
 
@@ -950,7 +961,7 @@ impl QR {
                 continue;
             }
 
-            let qy = (y - qz_sz) / module_sz;
+            let qy = ((y - qz_sz) / module_sz) as i32;
 
             for x in 0..total_sz {
                 // Quiet zone
@@ -959,9 +970,9 @@ impl QR {
                     continue;
                 }
 
-                let qx = (x - qz_sz) / module_sz;
+                let qx = ((x - qz_sz) / module_sz) as i32;
 
-                let clr = match self.get(qx as i32, qy as i32) {
+                let clr = match self.get(qx, qy) {
                     Module::Func(c) | Module::Format(c) | Module::Version(c) | Module::Data(c) => c,
                     Module::Empty => panic!("Empty module found at: {x} {y}"),
                 };

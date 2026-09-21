@@ -1,5 +1,3 @@
-use crate::metadata::Color;
-
 use super::{
     binarize::BinaryImage,
     utils::{geometry::Point, matches_finder_ratio, verify_finder_diagonal, verify_finder_pattern},
@@ -32,7 +30,7 @@ struct DatumLine {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct LineScanner {
     pub buffer: [u32; 6], // Run length of each transition
-    prev: Option<Color>,  // Last observed color
+    prev: Option<bool>,   // Last observed color. true = white, false = black
     flips: u32,           // Count of color changes
     pos: u32,             // Current position
     y: u32,
@@ -51,13 +49,14 @@ impl LineScanner {
         self.y = y;
     }
 
-    pub fn advance(&mut self, color: Color) -> Option<DatumLine> {
+    pub fn advance(&mut self, color: bool) -> Option<DatumLine> {
         self.advance_run(color, 1)
     }
 
-    // Advances a whole run of pixels with the color instead of pixel-by-pixel
-    pub fn advance_run(&mut self, color: Color, len: u32) -> Option<DatumLine> {
-        if self.prev.is_some() && self.prev == Some(color) {
+    // Advances a whole run of pixels with the color instead of pixel-by-pixel.
+    // true = white, false = black
+    pub fn advance_run(&mut self, color: bool, len: u32) -> Option<DatumLine> {
+        if self.prev == Some(color) {
             self.buffer[5] += len;
             self.pos += len;
             return None;
@@ -145,7 +144,7 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
         }
 
         // Handles an edge case where the QR is located at the right edge of the image
-        if let Some(datum) = scanner.advance(Color::White) {
+        if let Some(datum) = scanner.advance(true) {
             if let Some(centre) = verify_and_mark_finder(img, &datum) {
                 finders.push(centre);
             }
@@ -287,7 +286,7 @@ mod finder_tests {
             .mask(mask)
             .build()
             .unwrap();
-        let img = qr.to_image(10);
+        let img = qr.to_gray_image(10);
 
         let centres = [[75, 75], [335, 75], [75, 335]];
         let mut bin_img = BinaryImage::prepare(&img);
@@ -336,8 +335,8 @@ pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
         let m = f1.mod_size;
         // Finder centre-to-centre distance is (symbol_side - 7) modules, symbol_side in [21, 177],
         // so a valid span is ~[14, 170] modules; the loose bounds below never clip a real symbol.
-        let min_d = (MIN_CENTRE_SPAN_MODULES * m) as f64;
-        let max_d = (MAX_CENTRE_SPAN_MODULES * m) as f64;
+        let min_d = (MIN_CENTRE_SPAN_MODULES * m * MIN_CENTRE_SPAN_FACTOR) as f64;
+        let max_d = (MAX_CENTRE_SPAN_MODULES * m * MAX_CENTRE_SPAN_FACTOR) as f64;
         let (min_d_sq, max_d_sq) = ((min_d * min_d) as u32, (max_d * max_d) as u32);
         for (i2, f2) in finders.iter().enumerate() {
             if i2 == i1 {
@@ -415,7 +414,7 @@ mod group_finders_tests {
             .mask(mask)
             .build()
             .unwrap();
-        let img = qr.to_image(10);
+        let img = qr.to_gray_image(10);
 
         let centres = [(75, 75), (335, 75), (75, 335)];
 
@@ -448,7 +447,9 @@ pub const MOD_SIZE_RATIO: f32 = 2.0;
 // Finder centre-to-centre distance spans (symbol_side - 7) modules; symbol_side in [21, 177] gives
 // ~[14, 170]. These loosened bounds keep every real symbol while rejecting cross-symbol arm pairs.
 pub const MIN_CENTRE_SPAN_MODULES: f32 = 10.0;
+pub const MIN_CENTRE_SPAN_FACTOR: f32 = 0.95;
 pub const MAX_CENTRE_SPAN_MODULES: f32 = 185.0;
+pub const MAX_CENTRE_SPAN_FACTOR: f32 = 1.05;
 
 const MIN_COMPACTNESS_THRESHOLD: f64 = 1.0;
 const MAX_COMPACTNESS_THRESHOLD: f64 = 2.5;
