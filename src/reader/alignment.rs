@@ -412,7 +412,7 @@ fn line_intersection(p1: Point, p2: Point, p3: Point, p4: Point) -> Option<Point
     let denom = dx1 * dy2 - dy1 * dx2;
 
     // Parallel / collinear
-    if denom.abs() > 1e-9 {
+    if denom.abs() < 1e-9 {
         return None;
     }
 
@@ -427,8 +427,8 @@ fn line_intersection(p1: Point, p2: Point, p3: Point, p4: Point) -> Option<Point
 #[cfg(test)]
 mod alignment_pattern_tests {
     use super::{
-        anchors_from_finders, infer_alignment_centres, locate_alignment_centres, locate_br_anchor,
-        provisional_alignment, Anchors, MAX_ALIGN_CELLS,
+        anchors_from_finders, infer_alignment_centres, line_intersection, locate_alignment_centres,
+        locate_br_anchor, provisional_alignment, Anchors, MAX_ALIGN_CELLS,
     };
     use crate::metadata::Version;
     use crate::reader::binarize::BinaryImage;
@@ -682,6 +682,109 @@ mod alignment_pattern_tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_line_intersection_perpendicular() {
+        let p = |x, y| Point { x, y };
+
+        // Horizontal line y = 0 crossed by the vertical line x = 4
+        let res = line_intersection(p(0, 0), p(10, 0), p(4, -5), p(4, 5));
+        assert_eq!(res, Some(p(4, 0)));
+
+        // The two diagonals of a square meet at its centre
+        let res = line_intersection(p(0, 0), p(10, 10), p(0, 10), p(10, 0));
+        assert_eq!(res, Some(p(5, 5)));
+    }
+
+    #[test]
+    fn test_line_intersection_is_order_independent() {
+        let p = |x, y| Point { x, y };
+        let (a, b, c, d) = (p(-6, -2), p(6, 10), p(-6, 10), p(6, -2));
+
+        let expected = Some(p(0, 4));
+        assert_eq!(line_intersection(a, b, c, d), expected);
+        assert_eq!(line_intersection(b, a, c, d), expected, "First line reversed");
+        assert_eq!(line_intersection(a, b, d, c), expected, "Second line reversed");
+        assert_eq!(line_intersection(c, d, a, b), expected, "Lines swapped");
+    }
+
+    #[test]
+    fn test_line_intersection_extends_beyond_endpoints() {
+        let p = |x, y| Point { x, y };
+
+        // The lines are infinite, so the meeting point need not lie on either segment
+        let res = line_intersection(p(0, 0), p(1, 1), p(10, 0), p(10, 1));
+        assert_eq!(res, Some(p(10, 10)));
+
+        // Meeting point behind the start of the first segment
+        let res = line_intersection(p(0, 0), p(1, 1), p(-4, 0), p(-4, 1));
+        assert_eq!(res, Some(p(-4, -4)));
+    }
+
+    #[test]
+    fn test_line_intersection_parallel_and_collinear() {
+        let p = |x, y| Point { x, y };
+
+        // Parallel horizontals
+        assert_eq!(line_intersection(p(0, 0), p(10, 0), p(0, 5), p(10, 5)), None);
+
+        // Parallel diagonals
+        assert_eq!(line_intersection(p(0, 0), p(10, 10), p(3, 0), p(13, 10)), None);
+
+        // Collinear, overlapping
+        assert_eq!(line_intersection(p(0, 0), p(10, 0), p(2, 0), p(5, 0)), None);
+
+        // Collinear, disjoint
+        assert_eq!(line_intersection(p(0, 0), p(4, 4), p(10, 10), p(20, 20)), None);
+    }
+
+    #[test]
+    fn test_line_intersection_degenerate_lines() {
+        let p = |x, y| Point { x, y };
+
+        // A line given by a single repeated point has no direction
+        assert_eq!(line_intersection(p(3, 3), p(3, 3), p(0, 0), p(10, 10)), None);
+        assert_eq!(line_intersection(p(0, 0), p(10, 10), p(7, 1), p(7, 1)), None);
+        assert_eq!(line_intersection(p(3, 3), p(3, 3), p(7, 1), p(7, 1)), None);
+    }
+
+    #[test]
+    fn test_line_intersection_rounds_to_nearest_pixel() {
+        let p = |x, y| Point { x, y };
+
+        // Exact meeting point is (1, 0.5) -- halves round away from zero
+        assert_eq!(line_intersection(p(0, 0), p(2, 1), p(1, -5), p(1, 5)), Some(p(1, 1)));
+
+        // Exact meeting point is (1, -0.5)
+        assert_eq!(line_intersection(p(0, 0), p(2, -1), p(1, -5), p(1, 5)), Some(p(1, -1)));
+
+        // Exact meeting point is (1, 0.25), which rounds down
+        assert_eq!(line_intersection(p(0, 0), p(4, 1), p(1, -5), p(1, 5)), Some(p(1, 0)));
+    }
+
+    #[test]
+    fn test_line_intersection_near_parallel() {
+        let p = |x, y| Point { x, y };
+
+        // Equal slopes over a long span never meet, however close the endpoints are
+        let res = line_intersection(p(0, 0), p(1000, 1000), p(0, 1), p(1000, 1001));
+        assert_eq!(res, None, "Same slope, offset by one -- parallel");
+
+        // Slopes differing by the least integer endpoints allow still cross, out at the far end
+        let res = line_intersection(p(0, 0), p(1000, 1000), p(0, 1), p(1000, 1000));
+        assert_eq!(res, Some(p(1000, 1000)));
+    }
+
+    #[test]
+    fn test_line_intersection_on_alignment_grid() {
+        // Four located centres of an alignment grid: the row through (r, c) and the column
+        // through it should meet at the missing centre, (60, 30)
+        let p = |x, y| Point { x, y };
+        let (row_near, row_far) = (p(30, 30), p(6, 30)); // Same row as the target
+        let (col_near, col_far) = (p(60, 54), p(60, 78)); // Same column as the target
+
+        assert_eq!(line_intersection(row_near, row_far, col_near, col_far), Some(p(60, 30)));
     }
 }
 

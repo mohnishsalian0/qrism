@@ -78,8 +78,8 @@ impl BinaryImage {
         let (w, h) = img.dimensions();
         let (w, h) = (w as usize, h as usize);
         let raw: &[u8] = img.as_raw();
-        let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
-        let block_size = 1usize << block_pow;
+        let block_pow = 4;
+        let block_size = (1usize << block_pow).min(w).min(h);
         let mask = (1 << block_pow) - 1;
 
         let wsteps = (w + mask) >> block_pow;
@@ -163,7 +163,22 @@ impl BinaryImage {
         let block_area_pow = 2 * block_pow;
         #[allow(clippy::needless_range_loop)]
         for i in 0..len {
-            stats[i].avg >>= block_area_pow;
+            if stats[i].max - stats[i].min <= 25 {
+                stats[i].avg = (stats[i].min as usize) / 2;
+                if i > wsteps && i % wsteps > 0 {
+                    // Average of neighbors 2 * (x-1, y), (x, y-1), (x-1, y-1)
+                    let left = stats[i - 1].avg;
+                    let top = stats[i - wsteps].avg;
+                    let top_left = stats[i - wsteps - 1].avg;
+                    let ng_avg = (2 * left + top + top_left) / 4;
+                    if stats[i].min < ng_avg as u8 {
+                        stats[i].avg = ng_avg;
+                    }
+                }
+            } else {
+                // Convert block sum to average (divide by 64)
+                stats[i].avg >>= block_area_pow;
+            }
         }
 
         // Calculates threshold for blocks

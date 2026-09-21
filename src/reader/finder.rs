@@ -335,8 +335,8 @@ pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
         let m = f1.mod_size;
         // Finder centre-to-centre distance is (symbol_side - 7) modules, symbol_side in [21, 177],
         // so a valid span is ~[14, 170] modules; the loose bounds below never clip a real symbol.
-        let min_d = (MIN_CENTRE_SPAN_MODULES * m) as f64;
-        let max_d = (MAX_CENTRE_SPAN_MODULES * m) as f64;
+        let min_d = (MIN_CENTRE_SPAN_MODULES * m * MIN_CENTRE_SPAN_FACTOR) as f64;
+        let max_d = (MAX_CENTRE_SPAN_MODULES * m * MAX_CENTRE_SPAN_FACTOR) as f64;
         let (min_d_sq, max_d_sq) = ((min_d * min_d) as u32, (max_d * max_d) as u32);
         for (i2, f2) in finders.iter().enumerate() {
             if i2 == i1 {
@@ -447,7 +447,9 @@ pub const MOD_SIZE_RATIO: f32 = 2.0;
 // Finder centre-to-centre distance spans (symbol_side - 7) modules; symbol_side in [21, 177] gives
 // ~[14, 170]. These loosened bounds keep every real symbol while rejecting cross-symbol arm pairs.
 pub const MIN_CENTRE_SPAN_MODULES: f32 = 10.0;
+pub const MIN_CENTRE_SPAN_FACTOR: f32 = 0.95;
 pub const MAX_CENTRE_SPAN_MODULES: f32 = 185.0;
+pub const MAX_CENTRE_SPAN_FACTOR: f32 = 1.05;
 
 const MIN_COMPACTNESS_THRESHOLD: f64 = 1.0;
 const MAX_COMPACTNESS_THRESHOLD: f64 = 2.5;
