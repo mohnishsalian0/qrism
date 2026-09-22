@@ -186,7 +186,11 @@ fn print_confusion(name: &str, s: &Score) {
 // Grid decode
 //------------------------------------------------------------------------------
 
-fn decode_grid(grid: usize, rgb: &[Vec<[f64; 3]>], f: impl Fn([f64; 3]) -> Color) -> Vec<Vec<Color>> {
+fn decode_grid(
+    grid: usize,
+    rgb: &[Vec<[f64; 3]>],
+    f: impl Fn([f64; 3]) -> Color,
+) -> Vec<Vec<Color>> {
     let mut pred = vec![vec![Color::White; grid]; grid];
     for (gy, row) in pred.iter_mut().enumerate() {
         for (gx, cell) in row.iter_mut().enumerate() {
@@ -238,24 +242,33 @@ fn analyze(case: &Case) {
             return;
         }
     };
-    if sym.ver.width() != grid {
+    let sym_ver = sym.version();
+    if sym_ver.width() != grid {
         println!(
             "  localization returned v{} (grid {}), expected v{} (grid {}) — skipping",
-            *sym.ver,
-            sym.ver.width(),
+            *sym_ver,
+            sym_ver.width(),
             *case.ver,
             grid,
         );
         return;
     }
-    let h = sym.homography();
     let photo: RgbImage = dynimg.to_rgb8();
 
-    // Shared RGB sample per module (identical input to every pipeline).
+    // Shared RGB sample per module (identical input to every pipeline). Each module is
+    // projected through the homography of the tile owning it, so the samples carry the same
+    // local perspective correction the normal decode path uses.
     let mut rgb = vec![vec![[0.0f64; 3]; grid]; grid];
-    for gy in 0..grid {
-        for gx in 0..grid {
-            rgb[gy][gx] = sample_module_rgb(h, &photo, gx as i32, gy as i32);
+    for (gy, rgb_row) in rgb.iter_mut().enumerate() {
+        for (gx, rgb_item) in rgb_row.iter_mut().enumerate() {
+            let tile = match sym.tile_at(gx, gy) {
+                Ok(t) => t,
+                Err(e) => {
+                    println!("  no tile for module ({gx}, {gy}): {e:?} — skipping");
+                    return;
+                }
+            };
+            *rgb_item = sample_module_rgb(tile, &photo, gx as i32, gy as i32);
         }
     }
 

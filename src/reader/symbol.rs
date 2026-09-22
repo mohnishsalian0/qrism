@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use super::{binarize::BinaryImage, locate::SymbolLocation};
+#[cfg(test)]
+use super::tile::Tile;
 use crate::{
     codec::decode as codec_decode,
     ec::{rectify_info, Block},
@@ -9,7 +11,7 @@ use crate::{
         FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK,
     },
     utils::{BitArray, BitStream, EncRegionIter, QRError, QRResult},
-    ECLevel, MaskPattern,
+    ECLevel, MaskPattern, Version,
 };
 
 // Symbol
@@ -73,6 +75,18 @@ impl Symbol {
     #[inline]
     pub fn outline(&self) -> QRResult<[(f64, f64); 4]> {
         self.loc.outline()
+    }
+
+    #[inline]
+    pub fn version(&self) -> Version {
+        self.loc.ver
+    }
+
+    // The tile owning module (x, y), carrying the homography fitted to that patch of the symbol.
+    #[cfg(test)]
+    #[inline]
+    pub(super) fn tile_at(&self, x: usize, y: usize) -> QRResult<&Tile> {
+        self.loc.tile_at(x, y)
     }
 }
 

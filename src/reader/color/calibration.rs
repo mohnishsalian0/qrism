@@ -10,7 +10,7 @@
 use image::RgbImage;
 
 use crate::metadata::Color;
-use crate::reader::utils::homography::Homography;
+use crate::reader::tile::Tile;
 use crate::Version;
 
 /// Grouped RGB samples: for each palette colour (indexed by colour bits 0..8), the
@@ -73,16 +73,16 @@ pub(crate) fn sample_groups(
 //------------------------------------------------------------------------------
 
 /// Robustly samples a module's colour: projects a 3x3 grid over the central ~30% of the
-/// module through the homography and takes the per-channel median, rejecting edge/bleed
-/// pixels and specular outliers.
-pub(crate) fn sample_module_rgb(h: &Homography, img: &RgbImage, gx: i32, gy: i32) -> [f64; 3] {
+/// module through the homography of the tile owning that module and takes the per-channel
+/// median, rejecting edge/bleed pixels and specular outliers.
+pub(crate) fn sample_module_rgb(tile: &Tile, img: &RgbImage, gx: i32, gy: i32) -> [f64; 3] {
     const OFFS: [f64; 3] = [0.35, 0.5, 0.65];
     let (w, ht) = img.dimensions();
     let (mut rs, mut gs, mut bs) =
         (Vec::with_capacity(9), Vec::with_capacity(9), Vec::with_capacity(9));
     for &oy in &OFFS {
         for &ox in &OFFS {
-            if let Ok(pt) = h.map(gx as f64 + ox, gy as f64 + oy) {
+            if let Ok(pt) = tile.map(gx as f64 + ox, gy as f64 + oy) {
                 let x = pt.x.clamp(0, w as i32 - 1) as u32;
                 let y = pt.y.clamp(0, ht as i32 - 1) as u32;
                 let p = img.get_pixel(x, y);

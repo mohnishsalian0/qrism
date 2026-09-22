@@ -1,4 +1,4 @@
-use image::{GrayImage, Pixel as ImgPixel};
+use image::{GrayImage, Pixel as ImgPixel, RgbImage};
 
 use crate::metadata::Color;
 use crate::reader::utils::contour::{trace, Contour};
@@ -12,8 +12,79 @@ use std::path::Path;
 #[cfg(test)]
 use image::ImageResult;
 
+// Grayscale projection
+//------------------------------------------------------------------------------
+
+// Projects RGB to grayscale by taking the darkest channel, for the pass that *locates* a
+// colour symbol.
+//
+// Rec.601 luma (`to_luma8`) weights the channels 0.299/0.587/0.114, so it ranks the palette
+// by how much green a colour carries: yellow lands at 226 and cyan at 179, both within noise
+// of white's 255. Any function pattern drawn in those colours dissolves into the quiet zone,
+// and the 1:1:3:1:1 finder scan never sees a transition.
+//
+// Every palette colour but white has at least one channel off, so `min(r, g, b)` is 0 for all
+// seven of them and 255 for white. The colour symbol therefore collapses into exactly the
+// black/white geometry the locator was written for: a green-ringed finder with a magenta
+// stone becomes a black ring around a black stone, and a yellow alignment pattern becomes a
+// black one. Illumination only scales the channels, so the white/non-white split survives a
+// colour cast that would swamp a fixed luma threshold.
+pub fn min_channel(img: &RgbImage) -> GrayImage {
+    let (w, h) = img.dimensions();
+    let mut out = GrayImage::new(w, h);
+    for (px, dst) in img.as_raw().chunks_exact(3).zip(out.iter_mut()) {
+        *dst = px[0].min(px[1]).min(px[2]);
+    }
+    out
+}
+
 #[cfg(test)]
-use image::RgbImage;
+mod min_channel_tests {
+    use super::min_channel;
+    use crate::metadata::Color;
+    use image::{Rgb, RgbImage};
+
+    const PALETTE: [Color; 8] = [
+        Color::Black,
+        Color::Red,
+        Color::Green,
+        Color::Blue,
+        Color::Yellow,
+        Color::Magenta,
+        Color::Cyan,
+        Color::White,
+    ];
+
+    #[test]
+    fn test_white_is_the_only_light_palette_colour() {
+        let mut img = RgbImage::new(PALETTE.len() as u32, 1);
+        for (x, &c) in PALETTE.iter().enumerate() {
+            img.put_pixel(x as u32, 0, c.into());
+        }
+
+        let gray = min_channel(&img);
+        for (x, &c) in PALETTE.iter().enumerate() {
+            let v = gray.get_pixel(x as u32, 0)[0];
+            let expected = if c == Color::White { 255 } else { 0 };
+            assert_eq!(v, expected, "{c:?} projected to {v}");
+        }
+    }
+
+    #[test]
+    fn test_projection_is_the_per_pixel_channel_minimum() {
+        // Off-palette pixels: printed colour, a warm-lit white and a mid gray.
+        let px = [Rgb([238, 221, 60]), Rgb([252, 248, 214]), Rgb([128, 128, 128])];
+        let mut img = RgbImage::new(px.len() as u32, 1);
+        for (x, &p) in px.iter().enumerate() {
+            img.put_pixel(x as u32, 0, p);
+        }
+
+        let gray = min_channel(&img);
+        for (x, &Rgb([r, g, b])) in px.iter().enumerate() {
+            assert_eq!(gray.get_pixel(x as u32, 0)[0], r.min(g).min(b));
+        }
+    }
+}
 
 // Region
 //------------------------------------------------------------------------------
@@ -79,6 +150,7 @@ impl BinaryImage {
         let (w, h) = (w as usize, h as usize);
         let raw: &[u8] = img.as_raw();
         let block_pow = 4;
+        // let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
         let block_size = (1usize << block_pow).min(w).min(h);
         let mask = (1 << block_pow) - 1;
 
