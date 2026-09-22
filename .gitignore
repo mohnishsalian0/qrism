@@ -5,6 +5,7 @@ Cargo.lock
 .DS_Store
 /runs
 .pdf
+/benches/dataset/high_capacity/hiq
 
 
 # Added by cargo
