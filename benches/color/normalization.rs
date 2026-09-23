@@ -13,7 +13,7 @@ pub(crate) mod black_white;
 pub(crate) mod intensity;
 pub(crate) mod max_channel;
 
-use crate::reader::color::calibration::GroupedSamples;
+use crate::calibration::GroupedSamples;
 
 /// A per-channel transform of a module's sampled RGB, learned per image.
 pub(crate) trait Normalizer {

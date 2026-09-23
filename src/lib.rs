@@ -148,7 +148,7 @@ pub mod reader;
 
 pub use builder::QRBuilder;
 pub use common::mask::MaskPattern;
-pub use common::metadata::{ECLevel, Version};
+pub use common::metadata::{Color, ECLevel, Version};
 pub(crate) use common::*;
 pub use reader::*;
 

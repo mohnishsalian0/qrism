@@ -11,7 +11,7 @@
 //! near-zero channel by a near-zero max would otherwise manufacture spurious "on" channels.
 
 use super::Normalizer;
-use crate::reader::color::calibration::GroupedSamples;
+use crate::calibration::GroupedSamples;
 
 /// Brightness-neutralizing normalizer parameterised by a per-channel midpoint, below which
 /// (on every channel) a module is treated as black.

@@ -6,8 +6,8 @@
 //! reference is fit from the White colour group.
 
 use super::Normalizer;
-use crate::metadata::Color;
-use crate::reader::color::calibration::{median_rgb, GroupedSamples};
+use qrism::Color;
+use crate::calibration::{median_rgb, GroupedSamples};
 
 /// Intensity normalizer parameterised by the per-channel paper-white reference.
 pub(crate) struct Intensity {

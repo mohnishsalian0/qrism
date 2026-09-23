@@ -9,8 +9,8 @@
 //! over the OFF medians.
 
 use super::{bits_to_color, Thresholder};
-use crate::metadata::Color;
-use crate::reader::color::calibration::{median_f, GroupedSamples};
+use qrism::Color;
+use crate::calibration::{median_f, GroupedSamples};
 
 /// Per-channel adaptive threshold on the recovered indicator; a channel is ON when
 /// `recovered_k < thresh_k`.

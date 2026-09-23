@@ -49,5 +49,10 @@ name = "decoding"
 harness = false
 required-features = ["benchmark"]
 
+[[bench]]
+name = "color"
+harness = false
+required-features = ["benchmark"]
+
 [features]
 benchmark = []

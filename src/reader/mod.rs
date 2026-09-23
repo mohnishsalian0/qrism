@@ -1,7 +1,5 @@
 mod alignment;
 pub mod binarize;
-#[cfg(test)]
-mod color;
 mod finder;
 mod locate;
 pub mod symbol;

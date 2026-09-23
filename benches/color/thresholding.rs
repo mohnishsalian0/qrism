@@ -11,12 +11,12 @@
 //! whole recovered grid rather than a single module. Recovery strategies that classify
 //! directly (euclid-measured) bypass this phase entirely.
 //!
-//! [`ChannelRecovery`]: crate::reader::color::recovery::ChannelRecovery
+//! [`ChannelRecovery`]: crate::recovery::ChannelRecovery
 
 pub(crate) mod adaptive;
 pub(crate) mod local;
 
-use crate::metadata::Color;
+use qrism::Color;
 
 /// Maps a grid of recovered per-channel indicators to a grid of decoded colours.
 pub(crate) trait Thresholder {

@@ -7,8 +7,8 @@
 //! channels (`w_c <= k_c`) fall back to a passthrough so a missing group can't divide by zero.
 
 use super::Normalizer;
-use crate::metadata::Color;
-use crate::reader::color::calibration::{median_rgb, GroupedSamples};
+use qrism::Color;
+use crate::calibration::{median_rgb, GroupedSamples};
 
 /// Per-channel affine normalizer parameterised by the black and white references.
 pub(crate) struct BlackWhite {

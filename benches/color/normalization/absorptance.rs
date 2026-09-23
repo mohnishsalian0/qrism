@@ -9,8 +9,8 @@
 //! light tints (`-log10(r) ~= (1-r)/ln10`) and diverge for dark, saturated colours.
 
 use super::Normalizer;
-use crate::metadata::Color;
-use crate::reader::color::calibration::{median_rgb, GroupedSamples};
+use qrism::Color;
+use crate::calibration::{median_rgb, GroupedSamples};
 
 /// Absorptance normalizer parameterised by the per-channel paper-white reference.
 pub(crate) struct Absorptance {

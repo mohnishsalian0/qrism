@@ -7,8 +7,8 @@
 //! recovery is benchmarked against.
 
 use super::DirectRecovery;
-use crate::metadata::Color;
-use crate::reader::color::calibration::{median_rgb, GroupedSamples};
+use qrism::Color;
+use crate::calibration::{median_rgb, GroupedSamples};
 
 /// Nearest-palette classifier parameterised by the measured per-colour palette.
 pub(crate) struct EuclidMeasured {

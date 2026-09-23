@@ -20,11 +20,11 @@
 //!     recovered *darkening* indicator or optical density (low = on). Matches the polarity
 //!     the sibling [`adaptive`] thresholder uses when composed after per-colorant recovery.
 //!
-//! [`BinaryImage::prepare`]: crate::reader::binarize::BinaryImage::prepare
-//! [`adaptive`]: crate::reader::color::thresholding::adaptive
+//! [`BinaryImage::prepare`]: https://docs.rs/qrism (qrism::reader::binarize)
+//! [`adaptive`]: crate::thresholding::adaptive
 
 use super::{bits_to_color, Thresholder};
-use crate::metadata::Color;
+use qrism::Color;
 
 /// Number of blocks the shorter grid dimension is divided into (mirrors `prepare`).
 const BLOCK_COUNT: f64 = 20.0;

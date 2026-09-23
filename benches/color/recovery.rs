@@ -3,7 +3,7 @@
 //! Recovers the encoded signal from the normalized module value. Two shapes, because the
 //! strategies decide differently:
 //!   - [`ChannelRecovery`] (per-colorant) separates the signal into per-channel indicators
-//!     that still need a [`crate::reader::color::thresholding`] step to become a `Color`.
+//!     that still need a [`crate::thresholding`] step to become a `Color`.
 //!   - [`DirectRecovery`] (euclid-measured) classifies straight to a `Color`, self-
 //!     thresholding, so it skips the thresholding phase.
 //!
@@ -12,8 +12,8 @@
 pub(crate) mod euclid_measured;
 pub(crate) mod per_colorant;
 
-use crate::metadata::Color;
-use crate::reader::color::calibration::GroupedSamples;
+use qrism::Color;
+use crate::calibration::GroupedSamples;
 
 /// Recovery that yields per-channel indicators requiring downstream thresholding.
 pub(crate) trait ChannelRecovery {

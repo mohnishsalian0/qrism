@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
 use super::{binarize::BinaryImage, locate::SymbolLocation};
-#[cfg(test)]
-use super::tile::Tile;
 use crate::{
     codec::decode as codec_decode,
     ec::{rectify_info, Block},
@@ -82,11 +80,16 @@ impl Symbol {
         self.loc.ver
     }
 
-    // The tile owning module (x, y), carrying the homography fitted to that patch of the symbol.
-    #[cfg(test)]
-    #[inline]
-    pub(super) fn tile_at(&self, x: usize, y: usize) -> QRResult<&Tile> {
-        self.loc.tile_at(x, y)
+    /// Projects a point given in module coordinates to its subpixel position in the source
+    /// image, through the homography of the tile owning module `(x, y)`. `None` when the
+    /// localizer left no tile there, or the mapping is degenerate.
+    ///
+    /// Exposed for the colour benchmark, which samples raw RGB per module rather than going
+    /// through the binarized read path. `Tile` itself stays crate-private.
+    #[cfg(feature = "benchmark")]
+    pub fn exact_map(&self, x: usize, y: usize, dx: f64, dy: f64) -> Option<(f64, f64)> {
+        let tile = self.loc.tile_at(x, y).ok()?;
+        tile.exact_map(x as f64 + dx, y as f64 + dy).ok()
     }
 }
 

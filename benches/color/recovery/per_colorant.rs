@@ -13,7 +13,7 @@
 //! stage turns `j` into channel bits.
 
 use super::ChannelRecovery;
-use crate::reader::color::calibration::GroupedSamples;
+use crate::calibration::GroupedSamples;
 
 /// Per-colorant recovery parameterised by the inverse interference matrix.
 pub(crate) struct PerColorant {
