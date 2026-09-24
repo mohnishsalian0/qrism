@@ -6,7 +6,7 @@ pub mod symbol;
 mod tile;
 mod utils;
 
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use finder::{group_finders, locate_finders, FinderGroup};
 
@@ -14,6 +14,8 @@ use binarize::BinaryImage;
 use image::DynamicImage;
 use locate::SymbolLocation;
 use symbol::Symbol;
+
+use crate::reader::finder::Finder;
 
 // Decode result
 //------------------------------------------------------------------------------
@@ -38,7 +40,7 @@ pub fn detect_qr(img: &DynamicImage) -> DecodeResult {
     let finders = locate_finders(&mut img);
     let groups = group_finders(&finders);
 
-    let sym_locs = locate_symbols(&mut img, groups);
+    let sym_locs = locate_symbols(&mut img, finders, groups);
 
     let img = Arc::new(img);
     let symbols = sym_locs.into_iter().map(|sl| Symbol::new(img.clone(), sl)).collect::<_>();
@@ -54,7 +56,7 @@ pub fn detect_hc_qr(img: &DynamicImage) -> DecodeResult {
     let finders = locate_finders(&mut gray_bin);
     let groups = group_finders(&finders);
 
-    let sym_locs = locate_symbols(&mut gray_bin, groups);
+    let sym_locs = locate_symbols(&mut gray_bin, finders, groups);
 
     let rgb_img = img.to_rgb8();
     let rgb_bin = Arc::new(BinaryImage::prepare_discard(&rgb_img));
@@ -63,17 +65,21 @@ pub fn detect_hc_qr(img: &DynamicImage) -> DecodeResult {
     DecodeResult { symbols }
 }
 
-fn locate_symbols(img: &mut BinaryImage, groups: Vec<FinderGroup>) -> Vec<SymbolLocation> {
-    let mut is_grouped = HashSet::new();
+fn locate_symbols(
+    img: &mut BinaryImage,
+    finders: Vec<Finder>,
+    groups: Vec<FinderGroup>,
+) -> Vec<SymbolLocation> {
+    let mut is_grouped = vec![false; finders.len()];
     let mut sym_locs = Vec::with_capacity(100);
     for mut g in groups {
-        if g.finders.iter().any(|f| is_grouped.contains(f)) {
+        if g.ids.iter().any(|&fid| is_grouped[fid]) {
             continue;
         }
 
-        if let Some(sl) = SymbolLocation::locate(img, &mut g) {
+        if let Some(sl) = SymbolLocation::locate(img, &finders, &mut g) {
             sym_locs.push(sl);
-            is_grouped.extend(g.finders);
+            g.ids.iter().for_each(|&fid| is_grouped[fid] = true);
         }
     }
     sym_locs
@@ -85,7 +91,7 @@ mod reader_tests {
     use crate::{
         builder::QRBuilder,
         metadata::{ECLevel, Version},
-        reader::{detect_hc_qr, detect_qr},
+        reader::{detect_hc_qr, detect_qr, utils::geometry::Point},
         MaskPattern,
     };
 
@@ -164,13 +170,13 @@ mod reader_tests {
 
         let finders = locate_finders(&mut bin_img);
         dbg!(finders.len());
-        finders.iter().for_each(|f| f.c.highlight(&mut img, image::Rgb([255, 0, 0])));
+        finders.iter().for_each(|f| Point::from(&f.c).highlight(&mut img, image::Rgb([255, 0, 0])));
 
         let groups = group_finders(&finders);
         dbg!(groups.len());
-        groups.iter().for_each(|g| g.highlight(&mut img));
+        groups.iter().for_each(|g| g.highlight(&mut img, &finders));
 
-        let sym_locs = locate_symbols(&mut bin_img, groups);
+        let sym_locs = locate_symbols(&mut bin_img, finders, groups);
         dbg!(sym_locs.len());
         sym_locs.iter().for_each(|sl| sl.highlight(&mut img));
 

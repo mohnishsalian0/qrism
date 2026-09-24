@@ -1,6 +1,9 @@
 use super::{
     binarize::BinaryImage,
-    utils::{frame::LocalFrame, geometry::Point},
+    utils::{
+        frame::LocalFrame,
+        geometry::{Point, PointF},
+    },
 };
 use crate::{
     reader::utils::{geometry::SquareSpiralLeg, homography::Homography},
@@ -13,11 +16,11 @@ pub(super) const MAX_ALIGN_CELLS: usize = 7;
 // Image-space centre of every cell of the alignment grid, indexed [row][col], `None` where the
 // cell went unlocated. The three cells coinciding with finders carry the finder centre, not an
 // alignment centre. Cells beyond the symbol's own grid size stay `None`.
-pub(super) type Anchors = [[Option<Point>; MAX_ALIGN_CELLS]; MAX_ALIGN_CELLS];
+pub(super) type Anchors = [[Option<PointF>; MAX_ALIGN_CELLS]; MAX_ALIGN_CELLS];
 
 // Seeds the alignment grid with the three cells the finders occupy. Every version has these
 // three, whatever its alignment grid looks like -- v1's 2x2 grid included.
-pub(super) fn anchors_from_finders(ver: Version, finders: &[Point; 3]) -> Anchors {
+pub(super) fn anchors_from_finders(ver: Version, finders: &[PointF; 3]) -> Anchors {
     let mut centres: Anchors = [[None; MAX_ALIGN_CELLS]; MAX_ALIGN_CELLS];
     let [c0, c1, c2] = finders;
     let last = ver.alignment_pattern().len().max(2) - 1; // v1's grid is 2x2
@@ -34,9 +37,9 @@ pub(super) fn anchors_from_finders(ver: Version, finders: &[Point; 3]) -> Anchor
 pub(super) fn locate_br_anchor(
     img: &BinaryImage,
     ver: Version,
-    finders: &[Point; 3],
+    finders: &[PointF; 3],
     ff: &LocalFrame,
-) -> Point {
+) -> PointF {
     debug_assert!(ver.alignment_pattern().is_empty(), "QR shouldn't have any alignment pattern");
 
     let w = ver.width() as f64;
@@ -44,37 +47,37 @@ pub(super) fn locate_br_anchor(
     let src: [(f64, f64); 4] = [(3.5, 3.5), (w - 3.5, 3.5), (w - 3.5, w - 3.5), (3.5, w - 3.5)];
 
     let [c0, c1, c2] = finders;
-    let seed = ff.map(span, span);
-    let mut dst = [c1, c2, &seed, c0].map(|p| (p.x as f64, p.y as f64));
+    let seed = ff.exact_map(span, span);
+    let mut dst = [c1, c2, &seed, c0].map(|p| (p.x, p.y));
     let h = Homography::compute(src, dst);
 
     let mut best_br_anchor = (seed.x, seed.y);
     let mut best_score = if let Ok(h) = h { quiet_zone_score(img, ver, &h) } else { 0 };
-    let mut best_dist_sq = (c1.x - seed.x).pow(2) + (c1.y - seed.y).pow(2);
+    let mut best_dist_sq = (c1.x - seed.x).powi(2) + (c1.y - seed.y).powi(2);
 
-    // Spiral outward
     let mod_size = ff.mod_size();
     let reach = (mod_size * BR_ANCHOR_SEARCH_RADIUS).round() as i32;
 
-    let (l, r) = (seed.x - reach, seed.x + reach);
-    let (t, b) = (seed.y - reach, seed.y + reach);
+    let seedr = (seed.x.round() as i32, seed.y.round() as i32);
+    let (l, r) = (seedr.0 - reach, seedr.0 + reach);
+    let (t, b) = (seedr.1 - reach, seedr.1 + reach);
     for cx in l..=r {
         for cy in t..=b {
-            // Drop a cursor that has spiralled off the image before looking it up
             if img.contains(cx, cy) {
-                dst[2] = (cx as f64, cy as f64);
+                let (cx, cy) = (cx as f64, cy as f64);
+                dst[2] = (cx, cy);
                 let Ok(h) = Homography::compute(src, dst) else { continue };
                 let score = quiet_zone_score(img, ver, &h);
-                let dist_sq = (c1.x - cx).pow(2) + (c1.y - cy).pow(2);
+                let dist_sq = ((c1.x - cx).powi(2) + (c1.y - cy).powi(2)) as f64;
                 if score > best_score || (score == best_score && dist_sq < best_dist_sq) {
-                    best_br_anchor = (cx, cy);
+                    best_br_anchor = dst[2];
                     best_score = score;
                     best_dist_sq = dist_sq;
                 }
             }
         }
     }
-    Point { x: best_br_anchor.0, y: best_br_anchor.1 }
+    PointF { x: best_br_anchor.0, y: best_br_anchor.1 }
 }
 
 fn quiet_zone_score(img: &BinaryImage, ver: Version, h: &Homography) -> u32 {
@@ -166,7 +169,7 @@ pub(super) fn locate_alignment_centres(
                 let seed = provisional_alignment(r, c, ver, ff, centres);
 
                 let exact_centre =
-                    pinpoint_alignment_centre(img, seed, mod_size, search_span, pass);
+                    pinpoint_alignment_centre(img, Point::from(&seed), mod_size, search_span, pass);
 
                 centres[r][c] = exact_centre;
             }
@@ -182,7 +185,7 @@ fn provisional_alignment(
     ver: Version,
     ff: &LocalFrame, // Finders frame
     centres: &Anchors,
-) -> Point {
+) -> PointF {
     debug_assert!(centres[row][col].is_none(), "Cell ({row}, {col}) is already located");
     let n = ver.alignment_pattern().len();
 
@@ -197,12 +200,12 @@ fn provisional_alignment(
         if let (Some(left), Some(top_left), Some(top)) =
             (centres[row][col - 1], centres[row - 1][col - 1], centres[row - 1][col])
         {
-            return Point { x: left.x + top.x - top_left.x, y: left.y + top.y - top_left.y };
+            return PointF { x: left.x + top.x - top_left.x, y: left.y + top.y - top_left.y };
         }
     }
 
     let aps = ver.alignment_pattern();
-    ff.map(aps[col] as f64 - 3.0, aps[row] as f64 - 3.0)
+    ff.exact_map(aps[col] as f64 - 3.0, aps[row] as f64 - 3.0)
 }
 
 // Locates the centre of the alignment pattern nearest `seed`, or `None` if the spiral runs out
@@ -223,7 +226,7 @@ fn pinpoint_alignment_centre(
     mod_size: f64,
     radius: i32,
     pass: u32,
-) -> Option<Point> {
+) -> Option<PointF> {
     let max_width = (mod_size * ALIGNMENT_TRACE_SLACK).round() as u32;
     let (mut cx, mut cy) = (seed.x, seed.y);
     let ssl = SquareSpiralLeg::new(radius);
@@ -239,12 +242,11 @@ fn pinpoint_alignment_centre(
                     && (x + 1 == img.w || img.get_bit_unbounded(x + 1, y))
                 {
                     if let Some(stone) = img.get_contour_capped((x, y), (x, y), max_width) {
-                        let Some(stone_centre) = stone.centre() else {
-                            continue;
-                        };
-
                         if stone.visited_in != pass {
                             stone.visited_in = pass;
+                            let Some(stone_centre) = stone.centre() else {
+                                continue;
+                            };
                             if verify_alignment_centre(img, &stone_centre, mod_size) {
                                 return Some(stone_centre);
                             }
@@ -261,13 +263,15 @@ fn pinpoint_alignment_centre(
 // the middle band of an alignment pattern. And a closed white ring shares its centroid with
 // what it encloses, so the two centres must very nearly agree.
 
-fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &Point, mod_size: f64) -> bool {
-    debug_assert!(img.contains(stone_centre.x, stone_centre.y));
+fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &PointF, mod_size: f64) -> bool {
+    let sc = Point::from(stone_centre);
+
+    debug_assert!(img.contains(sc.x, sc.y));
 
     let w = img.w;
     let mut step = 0;
     let max_steps = (mod_size * 3.0).round() as u32;
-    let (mut x, y) = (stone_centre.x as u32, stone_centre.y as u32);
+    let (mut x, y) = (sc.x as u32, sc.y as u32);
     let mut prev = img.get_bit_unbounded(x, y);
     if prev {
         return false;
@@ -297,19 +301,17 @@ fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &Point, mod_size
     }
 
     let max_width = (mod_size * 3.0 * ALIGNMENT_TRACE_SLACK).round() as u32;
-    let Some(ring) =
-        img.get_contour_capped((x, y), (stone_centre.x as u32, stone_centre.y as u32), max_width)
-    else {
+    let Some(ring) = img.get_contour_capped((x, y), (sc.x as u32, sc.y as u32), max_width) else {
         return false;
     };
 
-    if !ring.contains(stone_centre) {
+    if !ring.contains(&sc) {
         return false;
     }
 
     // Concentricity test. The ring and stone centre should be reasonably near each other
     let max_drift = mod_size * ALIGNMENT_CENTRE_DRIFT_TOLERANCE;
-    stone_centre.dist_sq(&ring.centre().unwrap()) as f64 <= max_drift * max_drift
+    stone_centre.dist_sq(&ring.centre().unwrap()) <= max_drift * max_drift
 }
 
 pub(super) fn infer_alignment_centres(ver: Version, ff: &LocalFrame, centres: &mut Anchors) {
@@ -324,7 +326,7 @@ pub(super) fn infer_alignment_centres(ver: Version, ff: &LocalFrame, centres: &m
                 centres[r][c] = line_intersection(xn, xsn, yn, ysn);
             }
             if centres[r][c].is_none() {
-                centres[r][c] = Some(ff.map(aps[c] as f64 - 3.0, aps[r] as f64 - 3.0));
+                centres[r][c] = Some(ff.exact_map(aps[c] as f64 - 3.0, aps[r] as f64 - 3.0));
             }
         }
     }
@@ -335,7 +337,7 @@ fn nearest_pair(
     col: usize,
     ver: Version,
     centres: &Anchors,
-) -> Option<(Point, Point, Point, Point)> {
+) -> Option<(PointF, PointF, PointF, PointF)> {
     let (sr, sc) = (row as i32, col as i32);
     let n = ver.alignment_pattern().len();
 
@@ -345,8 +347,8 @@ fn nearest_pair(
     let n = n as i32;
 
     // Zigzagging along row
-    let mut nearest: Option<Point> = None;
-    let mut second_nearest: Option<Point> = None;
+    let mut nearest: Option<PointF> = None;
+    let mut second_nearest: Option<PointF> = None;
     for i in 2..(2 * n) {
         let dir = ((i & 1) << 1) - 1;
         let step = i >> 1;
@@ -370,8 +372,8 @@ fn nearest_pair(
     let xsn = second_nearest?;
 
     // Zigzagging along column
-    let mut nearest: Option<Point> = None;
-    let mut second_nearest: Option<Point> = None;
+    let mut nearest: Option<PointF> = None;
+    let mut second_nearest: Option<PointF> = None;
     for i in 2..(2 * n) {
         let dir = ((i & 1) << 1) - 1;
         let step = i >> 1;
@@ -398,11 +400,11 @@ fn nearest_pair(
 }
 
 // Intersection point of line p1 -> p2 and line p3 -> p4
-fn line_intersection(p1: Point, p2: Point, p3: Point, p4: Point) -> Option<Point> {
-    let (x1, y1) = (f64::from(p1.x), f64::from(p1.y));
-    let (x2, y2) = (f64::from(p2.x), f64::from(p2.y));
-    let (x3, y3) = (f64::from(p3.x), f64::from(p3.y));
-    let (x4, y4) = (f64::from(p4.x), f64::from(p4.y));
+fn line_intersection(p1: PointF, p2: PointF, p3: PointF, p4: PointF) -> Option<PointF> {
+    let (x1, y1) = (p1.x, p1.y);
+    let (x2, y2) = (p2.x, p2.y);
+    let (x3, y3) = (p3.x, p3.y);
+    let (x4, y4) = (p4.x, p4.y);
 
     let dx1 = x2 - x1;
     let dy1 = y2 - y1;
@@ -418,10 +420,10 @@ fn line_intersection(p1: Point, p2: Point, p3: Point, p4: Point) -> Option<Point
 
     let t = ((x3 - x1) * dy2 - (y3 - y1) * dx2) / denom;
 
-    let x = (x1 + t * dx1).round() as i32;
-    let y = (y1 + t * dy1).round() as i32;
+    let x = x1 + t * dx1;
+    let y = y1 + t * dy1;
 
-    Some(Point { x, y })
+    Some(PointF { x, y })
 }
 
 #[cfg(test)]
@@ -433,8 +435,12 @@ mod alignment_pattern_tests {
     use crate::metadata::Version;
     use crate::reader::binarize::BinaryImage;
     use crate::reader::utils::frame::LocalFrame;
-    use crate::reader::utils::geometry::Point;
+    use crate::reader::utils::geometry::PointF;
     use crate::{ECLevel, QRBuilder};
+
+    fn p(x: f64, y: f64) -> PointF {
+        PointF { x, y }
+    }
 
     #[test]
     fn test_locate_alignment_centres() {
@@ -443,8 +449,9 @@ mod alignment_pattern_tests {
         let k = 3.0; // Pixels per module
         let q = 4.0; // Quiet zone, modules
 
-        // Centre of module `m` along either axis, in pixels
-        let centre_px = |m: f64| (q + m + 0.5) * k;
+        // Centre of module `m` along either axis, in pixel indices -- the middle pixel of the
+        // module, which is where a contour centroid lands
+        let centre_px = |m: f64| (q + m + 0.5) * k - 0.5;
 
         for v in 2..=40u32 {
             let ver = Version::Normal(v as usize);
@@ -456,7 +463,6 @@ mod alignment_pattern_tests {
             let mut img = BinaryImage::prepare(&qr.to_gray_image(k as u32));
 
             // Finder centres sit on module 3 and module w - 4
-            let p = |x: f64, y: f64| Point { x: x.round() as i32, y: y.round() as i32 };
             let near = centre_px(3.0);
             let far = centre_px(w as f64 - 4.0);
             let finders = [p(near, far), p(near, near), p(far, near)]; // BL, TL, TR
@@ -468,16 +474,16 @@ mod alignment_pattern_tests {
             locate_alignment_centres(&mut img, ver, &ff, &mut centres);
 
             for (row, &apy) in ap_coords.iter().enumerate() {
-                let actualy = centre_px(apy as f64) as i32;
                 for (col, &apx) in ap_coords.iter().enumerate() {
                     if [(0, 0), (0, n - 1), (n - 1, 0)].contains(&(row, col)) {
                         continue;
                     }
-                    let actualx = centre_px(apx as f64) as i32;
-                    let pred = centres[row][col].unwrap();
-
-                    assert_eq!(actualx, pred.x);
-                    assert_eq!(actualy, pred.y);
+                    let actual = p(centre_px(apx as f64), centre_px(apy as f64));
+                    let pred = centres[row][col];
+                    assert!(
+                        pred.is_some_and(|pred| pred.approx_eq(&actual)),
+                        "Version = {v}, Row = {row}, Column = {col}: {pred:?}"
+                    );
                 }
             }
         }
@@ -494,7 +500,7 @@ mod alignment_pattern_tests {
         let mut img = BinaryImage::prepare(&qr.to_gray_image(k as u32));
 
         // Finder centres for a version 1 symbol at 3 px per module with a 4 module quiet zone
-        let finders = [Point { x: 23, y: 65 }, Point { x: 23, y: 23 }, Point { x: 65, y: 23 }];
+        let finders = [p(22.0, 64.0), p(22.0, 22.0), p(64.0, 22.0)];
         let span = (ver.width() - 7) as f64; // Modules between finders
         let ff = LocalFrame::new(&finders[1], &finders[2], &finders[0], span, span); // Finders frame
 
@@ -512,7 +518,7 @@ mod alignment_pattern_tests {
         let k = 3.0; // Pixels per module
 
         // Centre of module `m` along either axis, in pixels
-        let centre_px = |m: f64| ((q + m + 0.5) * k).round() as i32;
+        let centre_px = |m: f64| (q + m + 0.5) * k;
 
         for v in 1..=40 {
             let ver = Version::Normal(v);
@@ -521,16 +527,25 @@ mod alignment_pattern_tests {
             // Finder centres sit on module 3 and module w - 4
             let near = centre_px(3.0);
             let far = centre_px(w - 4.0);
-            let c0 = Point { x: near, y: far };
-            let c1 = Point { x: near, y: near };
-            let c2 = Point { x: far, y: near };
+            let c0 = p(near, far);
+            let c1 = p(near, near);
+            let c2 = p(far, near);
 
             let centres = anchors_from_finders(ver, &[c0, c1, c2]);
             let last = ver.alignment_pattern().len().max(2) - 1;
 
-            assert_eq!(centres[last][0], Some(c0), "Version = {v}: BL finder centre");
-            assert_eq!(centres[0][0], Some(c1), "Version = {v}: TL finder centre");
-            assert_eq!(centres[0][last], Some(c2), "Version = {v}: TR finder centre");
+            assert!(
+                centres[last][0].is_some_and(|c| c.approx_eq(&c0)),
+                "Version = {v}: BL finder centre"
+            );
+            assert!(
+                centres[0][0].is_some_and(|c| c.approx_eq(&c1)),
+                "Version = {v}: TL finder centre"
+            );
+            assert!(
+                centres[0][last].is_some_and(|c| c.approx_eq(&c2)),
+                "Version = {v}: TR finder centre"
+            );
 
             for (r, row) in centres.iter().enumerate() {
                 for (c, centre) in row.iter().enumerate() {
@@ -552,7 +567,7 @@ mod alignment_pattern_tests {
         let k = 10.0; // Pixels per module
 
         // Centre of module `m` along either axis, in pixels
-        let centre_px = |m: f64| ((q + m + 0.5) * k).round() as i32;
+        let centre_px = |m: f64| (q + m + 0.5) * k;
 
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let img = BinaryImage::prepare(&qr.to_gray_image(k as u32));
@@ -561,9 +576,9 @@ mod alignment_pattern_tests {
         let w = ver.width() as f64;
         let near = centre_px(3.0);
         let far = centre_px(w - 4.0);
-        let c0 = Point { x: near, y: far };
-        let c1 = Point { x: near, y: near };
-        let c2 = Point { x: far, y: near };
+        let c0 = p(near, far);
+        let c1 = p(near, near);
+        let c2 = p(far, near);
         let span = w - 7.0; // Modules between finders
         let ff = LocalFrame::new(&c1, &c2, &c0, span, span); // Finders frame
 
@@ -572,8 +587,8 @@ mod alignment_pattern_tests {
         // The calculated centre is (215, 215). The quiet zone score plateaus around it, and the
         // nearest-to-TL tie break settles those ties on the inward edge of that plateau, so the
         // anchor lands a few pixels short of the calculated point.
-        assert_eq!(Point { x: far, y: far }, Point { x: 215, y: 215 });
-        assert_eq!(br, Point { x: 212, y: 213 });
+        assert!(p(far, far).approx_eq(&p(215.0, 215.0)), "Calculated centre");
+        assert!(br.approx_eq(&p(212.0, 213.0)), "BR anchor: {br:?}");
     }
 
     #[test]
@@ -587,7 +602,7 @@ mod alignment_pattern_tests {
         let k = 10.0; // Pixels per module
 
         // Centre of module `m` along either axis, in pixels
-        let centre_px = |m: f64| ((q + m + 0.5) * k).round() as i32;
+        let centre_px = |m: f64| (q + m + 0.5) * k;
 
         let qr = QRBuilder::new(data.as_bytes()).version(ver).ec_level(ecl).build().unwrap();
         let img = BinaryImage::prepare(&qr.to_gray_image(k as u32));
@@ -596,9 +611,9 @@ mod alignment_pattern_tests {
         let w = ver.width() as f64;
         let near = centre_px(3.0);
         let far = centre_px(w - 4.0);
-        let c0 = Point { x: near, y: far };
-        let c1 = Point { x: near, y: near };
-        let c2 = Point { x: far, y: near };
+        let c0 = p(near, far);
+        let c1 = p(near, near);
+        let c2 = p(far, near);
         let span = w - 7.0; // Modules between finders
         let ff = LocalFrame::new(&c1, &c2, &c0, span, span); // Finders frame
 
@@ -612,11 +627,11 @@ mod alignment_pattern_tests {
         for v in 2..=40 {
             let ver = Version::Normal(v);
             let w = ver.width() as f64;
-            let near = ((q + 3.5) * k) as i32;
-            let far = ((q + w - 3.5) * k) as i32;
-            let c0 = Point { x: near, y: far };
-            let c1 = Point { x: near, y: near };
-            let c2 = Point { x: far, y: near };
+            let near = (q + 3.5) * k;
+            let far = (q + w - 3.5) * k;
+            let c0 = p(near, far);
+            let c1 = p(near, near);
+            let c2 = p(far, near);
             let ff = LocalFrame::new(&c1, &c2, &c0, w - 7.0, w - 7.0);
 
             let aps = ver.alignment_pattern();
@@ -631,13 +646,12 @@ mod alignment_pattern_tests {
                 for c in 0..n {
                     if centres[r][c].is_none() {
                         centres[r][c] = Some(provisional_alignment(r, c, ver, &ff, &centres));
-                        let exp_centre = Some(Point {
-                            x: ((q + aps[c] as f64 + 0.5) * k) as i32,
-                            y: ((q + aps[r] as f64 + 0.5) * k) as i32,
-                        });
-                        assert_eq!(
-                            centres[r][c], exp_centre,
-                            "Version = {v}, Row = {r}, Column = {c}"
+                        let exp_centre =
+                            p((q + aps[c] as f64 + 0.5) * k, (q + aps[r] as f64 + 0.5) * k);
+                        let centre = centres[r][c];
+                        assert!(
+                            centre.is_some_and(|centre| centre.approx_eq(&exp_centre)),
+                            "Version = {v}, Row = {r}, Column = {c}: {centre:?}"
                         );
                     }
                 }
@@ -652,11 +666,11 @@ mod alignment_pattern_tests {
         for v in 2..=40 {
             let ver = Version::Normal(v);
             let w = ver.width() as f64;
-            let near = ((q + 3.5) * k) as i32;
-            let far = ((q + w - 3.5) * k) as i32;
-            let c0 = Point { x: near, y: far };
-            let c1 = Point { x: near, y: near };
-            let c2 = Point { x: far, y: near };
+            let near = (q + 3.5) * k;
+            let far = (q + w - 3.5) * k;
+            let c0 = p(near, far);
+            let c1 = p(near, near);
+            let c2 = p(far, near);
             let ff = LocalFrame::new(&c1, &c2, &c0, w - 7.0, w - 7.0);
 
             let aps = ver.alignment_pattern();
@@ -674,11 +688,13 @@ mod alignment_pattern_tests {
                     if [(0, 0), (n - 1, 0), (0, n - 1)].contains(&(r, c)) {
                         continue;
                     }
-                    let exp_centre = Some(Point {
-                        x: ((q + aps[c] as f64 + 0.5) * k) as i32,
-                        y: ((q + aps[r] as f64 + 0.5) * k) as i32,
-                    });
-                    assert_eq!(centres[r][c], exp_centre, "Version = {v}, Row = {r}, Column = {c}");
+                    let exp_centre =
+                        p((q + aps[c] as f64 + 0.5) * k, (q + aps[r] as f64 + 0.5) * k);
+                    let centre = centres[r][c];
+                    assert!(
+                        centre.is_some_and(|centre| centre.approx_eq(&exp_centre)),
+                        "Version = {v}, Row = {r}, Column = {c}: {centre:?}"
+                    );
                 }
             }
         }
@@ -686,111 +702,110 @@ mod alignment_pattern_tests {
 
     #[test]
     fn test_line_intersection_perpendicular() {
-        let p = |x, y| Point { x, y };
-
         // Horizontal line y = 0 crossed by the vertical line x = 4
-        let res = line_intersection(p(0, 0), p(10, 0), p(4, -5), p(4, 5));
-        assert_eq!(res, Some(p(4, 0)));
+        let res = line_intersection(p(0.0, 0.0), p(10.0, 0.0), p(4.0, -5.0), p(4.0, 5.0));
+        assert!(res.is_some_and(|r| r.approx_eq(&p(4.0, 0.0))), "Horizontal x vertical: {res:?}");
 
         // The two diagonals of a square meet at its centre
-        let res = line_intersection(p(0, 0), p(10, 10), p(0, 10), p(10, 0));
-        assert_eq!(res, Some(p(5, 5)));
+        let res = line_intersection(p(0.0, 0.0), p(10.0, 10.0), p(0.0, 10.0), p(10.0, 0.0));
+        assert!(res.is_some_and(|r| r.approx_eq(&p(5.0, 5.0))), "Square diagonals: {res:?}");
     }
 
     #[test]
     fn test_line_intersection_is_order_independent() {
-        let p = |x, y| Point { x, y };
-        let (a, b, c, d) = (p(-6, -2), p(6, 10), p(-6, 10), p(6, -2));
+        let (a, b, c, d) = (p(-6.0, -2.0), p(6.0, 10.0), p(-6.0, 10.0), p(6.0, -2.0));
 
-        let expected = Some(p(0, 4));
-        assert_eq!(line_intersection(a, b, c, d), expected);
-        assert_eq!(line_intersection(b, a, c, d), expected, "First line reversed");
-        assert_eq!(line_intersection(a, b, d, c), expected, "Second line reversed");
-        assert_eq!(line_intersection(c, d, a, b), expected, "Lines swapped");
+        let meets = |res: Option<PointF>| res.is_some_and(|r| r.approx_eq(&p(0.0, 4.0)));
+        assert!(meets(line_intersection(a, b, c, d)), "As given");
+        assert!(meets(line_intersection(b, a, c, d)), "First line reversed");
+        assert!(meets(line_intersection(a, b, d, c)), "Second line reversed");
+        assert!(meets(line_intersection(c, d, a, b)), "Lines swapped");
     }
 
     #[test]
     fn test_line_intersection_extends_beyond_endpoints() {
-        let p = |x, y| Point { x, y };
-
         // The lines are infinite, so the meeting point need not lie on either segment
-        let res = line_intersection(p(0, 0), p(1, 1), p(10, 0), p(10, 1));
-        assert_eq!(res, Some(p(10, 10)));
+        let res = line_intersection(p(0.0, 0.0), p(1.0, 1.0), p(10.0, 0.0), p(10.0, 1.0));
+        assert!(res.is_some_and(|r| r.approx_eq(&p(10.0, 10.0))), "Beyond the far end: {res:?}");
 
         // Meeting point behind the start of the first segment
-        let res = line_intersection(p(0, 0), p(1, 1), p(-4, 0), p(-4, 1));
-        assert_eq!(res, Some(p(-4, -4)));
+        let res = line_intersection(p(0.0, 0.0), p(1.0, 1.0), p(-4.0, 0.0), p(-4.0, 1.0));
+        assert!(res.is_some_and(|r| r.approx_eq(&p(-4.0, -4.0))), "Behind the start: {res:?}");
     }
 
     #[test]
     fn test_line_intersection_parallel_and_collinear() {
-        let p = |x, y| Point { x, y };
-
         // Parallel horizontals
-        assert_eq!(line_intersection(p(0, 0), p(10, 0), p(0, 5), p(10, 5)), None);
+        let res = line_intersection(p(0.0, 0.0), p(10.0, 0.0), p(0.0, 5.0), p(10.0, 5.0));
+        assert!(res.is_none(), "Parallel horizontals");
 
         // Parallel diagonals
-        assert_eq!(line_intersection(p(0, 0), p(10, 10), p(3, 0), p(13, 10)), None);
+        let res = line_intersection(p(0.0, 0.0), p(10.0, 10.0), p(3.0, 0.0), p(13.0, 10.0));
+        assert!(res.is_none(), "Parallel diagonals");
 
         // Collinear, overlapping
-        assert_eq!(line_intersection(p(0, 0), p(10, 0), p(2, 0), p(5, 0)), None);
+        let res = line_intersection(p(0.0, 0.0), p(10.0, 0.0), p(2.0, 0.0), p(5.0, 0.0));
+        assert!(res.is_none(), "Collinear, overlapping");
 
         // Collinear, disjoint
-        assert_eq!(line_intersection(p(0, 0), p(4, 4), p(10, 10), p(20, 20)), None);
+        let res = line_intersection(p(0.0, 0.0), p(4.0, 4.0), p(10.0, 10.0), p(20.0, 20.0));
+        assert!(res.is_none(), "Collinear, disjoint");
     }
 
     #[test]
     fn test_line_intersection_degenerate_lines() {
-        let p = |x, y| Point { x, y };
-
         // A line given by a single repeated point has no direction
-        assert_eq!(line_intersection(p(3, 3), p(3, 3), p(0, 0), p(10, 10)), None);
-        assert_eq!(line_intersection(p(0, 0), p(10, 10), p(7, 1), p(7, 1)), None);
-        assert_eq!(line_intersection(p(3, 3), p(3, 3), p(7, 1), p(7, 1)), None);
+        let res = line_intersection(p(3.0, 3.0), p(3.0, 3.0), p(0.0, 0.0), p(10.0, 10.0));
+        assert!(res.is_none(), "First line degenerate");
+        let res = line_intersection(p(0.0, 0.0), p(10.0, 10.0), p(7.0, 1.0), p(7.0, 1.0));
+        assert!(res.is_none(), "Second line degenerate");
+        let res = line_intersection(p(3.0, 3.0), p(3.0, 3.0), p(7.0, 1.0), p(7.0, 1.0));
+        assert!(res.is_none(), "Both lines degenerate");
     }
 
     #[test]
-    fn test_line_intersection_rounds_to_nearest_pixel() {
-        let p = |x, y| Point { x, y };
+    fn test_line_intersection_keeps_sub_pixel_precision() {
+        // Meeting points off the pixel grid come back as is, not rounded
+        let res = line_intersection(p(0.0, 0.0), p(2.0, 1.0), p(1.0, -5.0), p(1.0, 5.0));
+        assert!(res.is_some_and(|r| r.approx_eq(&p(1.0, 0.5))), "Half pixel: {res:?}");
 
-        // Exact meeting point is (1, 0.5) -- halves round away from zero
-        assert_eq!(line_intersection(p(0, 0), p(2, 1), p(1, -5), p(1, 5)), Some(p(1, 1)));
+        let res = line_intersection(p(0.0, 0.0), p(2.0, -1.0), p(1.0, -5.0), p(1.0, 5.0));
+        assert!(res.is_some_and(|r| r.approx_eq(&p(1.0, -0.5))), "Negative half pixel: {res:?}");
 
-        // Exact meeting point is (1, -0.5)
-        assert_eq!(line_intersection(p(0, 0), p(2, -1), p(1, -5), p(1, 5)), Some(p(1, -1)));
+        let res = line_intersection(p(0.0, 0.0), p(4.0, 1.0), p(1.0, -5.0), p(1.0, 5.0));
+        assert!(res.is_some_and(|r| r.approx_eq(&p(1.0, 0.25))), "Quarter pixel: {res:?}");
 
-        // Exact meeting point is (1, 0.25), which rounds down
-        assert_eq!(line_intersection(p(0, 0), p(4, 1), p(1, -5), p(1, 5)), Some(p(1, 0)));
+        // Endpoints off the pixel grid too
+        let res = line_intersection(p(0.5, 0.5), p(2.5, 2.5), p(0.5, 2.5), p(2.5, 0.5));
+        assert!(res.is_some_and(|r| r.approx_eq(&p(1.5, 1.5))), "Fractional endpoints: {res:?}");
     }
 
     #[test]
     fn test_line_intersection_near_parallel() {
-        let p = |x, y| Point { x, y };
-
         // Equal slopes over a long span never meet, however close the endpoints are
-        let res = line_intersection(p(0, 0), p(1000, 1000), p(0, 1), p(1000, 1001));
-        assert_eq!(res, None, "Same slope, offset by one -- parallel");
+        let res = line_intersection(p(0.0, 0.0), p(1000.0, 1000.0), p(0.0, 1.0), p(1000.0, 1001.0));
+        assert!(res.is_none(), "Same slope, offset by one -- parallel");
 
         // Slopes differing by the least integer endpoints allow still cross, out at the far end
-        let res = line_intersection(p(0, 0), p(1000, 1000), p(0, 1), p(1000, 1000));
-        assert_eq!(res, Some(p(1000, 1000)));
+        let res = line_intersection(p(0.0, 0.0), p(1000.0, 1000.0), p(0.0, 1.0), p(1000.0, 1000.0));
+        assert!(res.is_some_and(|r| r.approx_eq(&p(1000.0, 1000.0))), "Barely converging: {res:?}");
     }
 
     #[test]
     fn test_line_intersection_on_alignment_grid() {
         // Four located centres of an alignment grid: the row through (r, c) and the column
         // through it should meet at the missing centre, (60, 30)
-        let p = |x, y| Point { x, y };
-        let (row_near, row_far) = (p(30, 30), p(6, 30)); // Same row as the target
-        let (col_near, col_far) = (p(60, 54), p(60, 78)); // Same column as the target
+        let (row_near, row_far) = (p(30.0, 30.0), p(6.0, 30.0)); // Same row as the target
+        let (col_near, col_far) = (p(60.0, 54.0), p(60.0, 78.0)); // Same column as the target
 
-        assert_eq!(line_intersection(row_near, row_far, col_near, col_far), Some(p(60, 30)));
+        let res = line_intersection(row_near, row_far, col_near, col_far);
+        assert!(res.is_some_and(|r| r.approx_eq(&p(60.0, 30.0))), "Missing centre: {res:?}");
     }
 
     // The centre stored in cell (row, col) of a test grid. Each cell carries a distinct point,
     // so a returned centre names the cell it was taken from.
-    fn cell(row: usize, col: usize) -> Point {
-        Point { x: col as i32 * 10, y: row as i32 * 10 }
+    fn cell(row: usize, col: usize) -> PointF {
+        p(col as f64 * 10.0, row as f64 * 10.0)
     }
 
     // Every cell of the whole `MAX_ALIGN_CELLS` square filled, the version's own grid included.
@@ -816,11 +831,10 @@ mod alignment_pattern_tests {
         // candidates are settled by the zigzag's leading direction -- left before right, above
         // before below -- so the nearer of each pair is the one at the lower index.
         let (xn, xsn, yn, ysn) = nearest_pair(2, 2, ver, &centres).unwrap();
-
-        assert_eq!(xn, cell(2, 1), "Nearest along the row");
-        assert_eq!(xsn, cell(2, 3), "Second nearest along the row");
-        assert_eq!(yn, cell(1, 2), "Nearest along the column");
-        assert_eq!(ysn, cell(3, 2), "Second nearest along the column");
+        assert!(xn.approx_eq(&cell(2, 1)), "Nearest along the row");
+        assert!(xsn.approx_eq(&cell(2, 3)), "Second nearest along the row");
+        assert!(yn.approx_eq(&cell(1, 2)), "Nearest along the column");
+        assert!(ysn.approx_eq(&cell(3, 2)), "Second nearest along the column");
     }
 
     #[test]
@@ -831,13 +845,17 @@ mod alignment_pattern_tests {
         // The row of a top edge cell opens on the TL finder at (0, 0). That cell holds a finder
         // centre, not an alignment centre, so the sweep passes it and reaches further right.
         let (xn, xsn, yn, ysn) = nearest_pair(0, 1, ver, &centres).unwrap();
-        assert_eq!((xn, xsn), (cell(0, 2), cell(0, 3)), "(0, 0) is a finder");
-        assert_eq!((yn, ysn), (cell(1, 1), cell(2, 1)));
+        assert!(xn.approx_eq(&cell(0, 2)), "Nearest along the row");
+        assert!(xsn.approx_eq(&cell(0, 3)), "Second nearest along the row");
+        assert!(yn.approx_eq(&cell(1, 1)), "Nearest along the column");
+        assert!(ysn.approx_eq(&cell(2, 1)), "Second nearest along the column");
 
         // Same along a column, where the sweep opens on the TL finder going up
         let (xn, xsn, yn, ysn) = nearest_pair(1, 0, ver, &centres).unwrap();
-        assert_eq!((xn, xsn), (cell(1, 1), cell(1, 2)));
-        assert_eq!((yn, ysn), (cell(2, 0), cell(3, 0)), "(0, 0) is a finder");
+        assert!(xn.approx_eq(&cell(1, 1)), "Nearest along the row");
+        assert!(xsn.approx_eq(&cell(1, 2)), "Second nearest along the row");
+        assert!(yn.approx_eq(&cell(2, 0)), "Nearest along the column");
+        assert!(ysn.approx_eq(&cell(3, 0)), "Second nearest along the column");
     }
 
     #[test]
@@ -850,11 +868,12 @@ mod alignment_pattern_tests {
         centres[2][3] = None;
         centres[1][2] = None;
 
+        // Row falls back to distance 2. Down at distance 1 beats up at distance 2
         let (xn, xsn, yn, ysn) = nearest_pair(2, 2, ver, &centres).unwrap();
-
-        assert_eq!((xn, xsn), (cell(2, 0), cell(2, 4)), "Row falls back to distance 2");
-        // Down at distance 1 beats up at distance 2
-        assert_eq!((yn, ysn), (cell(3, 2), cell(0, 2)));
+        assert!(xn.approx_eq(&cell(2, 0)), "Nearest along the row");
+        assert!(xsn.approx_eq(&cell(2, 4)), "Second nearest along the row");
+        assert!(yn.approx_eq(&cell(3, 2)), "Nearest along the column");
+        assert!(ysn.approx_eq(&cell(0, 2)), "Second nearest along the column");
     }
 
     #[test]
@@ -865,12 +884,14 @@ mod alignment_pattern_tests {
         let centres = filled_grid(); // Cells 3..7 are filled but out of this version's grid
 
         let (xn, xsn, yn, ysn) = nearest_pair(1, 1, ver, &centres).unwrap();
-        assert_eq!((xn, xsn), (cell(1, 0), cell(1, 2)));
-        assert_eq!((yn, ysn), (cell(0, 1), cell(2, 1)));
+        assert!(xn.approx_eq(&cell(1, 0)), "Nearest along the row");
+        assert!(xsn.approx_eq(&cell(1, 2)), "Second nearest along the row");
+        assert!(yn.approx_eq(&cell(0, 1)), "Nearest along the column");
+        assert!(ysn.approx_eq(&cell(2, 1)), "Second nearest along the column");
 
         // Cell (2, 2) has (2, 1) to its left, the BL finder at (2, 0) beyond that, and nothing
         // to its right within the 3x3 grid -- the filled cells at (2, 3) onward are out of reach
-        assert_eq!(nearest_pair(2, 2, ver, &centres), None);
+        assert!(nearest_pair(2, 2, ver, &centres).is_none());
     }
 
     #[test]
@@ -878,7 +899,7 @@ mod alignment_pattern_tests {
         // A 2x2 grid is all finders but for cell (1, 1), which has no company on either axis
         let ver = Version::Normal(2);
         assert_eq!(ver.alignment_pattern().len(), 2);
-        assert_eq!(nearest_pair(1, 1, ver, &filled_grid()), None);
+        assert!(nearest_pair(1, 1, ver, &filled_grid()).is_none());
 
         let ver = Version::Normal(21); // 5x5 alignment grid
 
@@ -887,18 +908,18 @@ mod alignment_pattern_tests {
         for c in [0, 1, 3] {
             centres[2][c] = None;
         }
-        assert_eq!(nearest_pair(2, 2, ver, &centres), None, "Only (2, 4) left in the row");
+        assert!(nearest_pair(2, 2, ver, &centres).is_none(), "Only (2, 4) left in the row");
 
         // Row has its pair, column is one centre short
         let mut centres = filled_grid();
         for r in [0, 3, 4] {
             centres[r][2] = None;
         }
-        assert_eq!(nearest_pair(2, 2, ver, &centres), None, "Only (1, 2) left in the column");
+        assert!(nearest_pair(2, 2, ver, &centres).is_none(), "Only (1, 2) left in the column");
 
         // Nothing located at all
         let centres: Anchors = [[None; MAX_ALIGN_CELLS]; MAX_ALIGN_CELLS];
-        assert_eq!(nearest_pair(2, 2, ver, &centres), None);
+        assert!(nearest_pair(2, 2, ver, &centres).is_none());
     }
 
     #[test]

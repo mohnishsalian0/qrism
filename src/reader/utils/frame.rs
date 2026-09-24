@@ -1,4 +1,4 @@
-use super::geometry::Point;
+use super::geometry::{Point, PointF};
 
 // Local frame
 //
@@ -25,7 +25,7 @@ use super::geometry::Point;
 
 #[derive(Debug, Copy, Clone)]
 pub struct LocalFrame {
-    o: Point,      // Origin
+    o: PointF,     // Origin
     u: (f64, f64), // Basis vector along x axis
     v: (f64, f64), // Basis vector along y axis
 }
@@ -35,22 +35,27 @@ impl LocalFrame {
     // and `spany` modules out from the origin along their respective axes. The two
     // directions must not be parallel: a degenerate basis leaves `map` returning
     // meaningless points rather than failing.
-    pub fn new(o: &Point, px: &Point, py: &Point, spanx: f64, spany: f64) -> Self {
+    pub fn new(o: &PointF, px: &PointF, py: &PointF, spanx: f64, spany: f64) -> Self {
         debug_assert!(spanx > 0.0 && spany > 0.0, "Spans cannot be zero");
 
         Self {
             o: *o,
-            u: ((px.x - o.x) as f64 / spanx, (px.y - o.y) as f64 / spanx),
-            v: ((py.x - o.x) as f64 / spany, (py.y - o.y) as f64 / spany),
+            u: ((px.x - o.x) / spanx, (px.y - o.y) / spanx),
+            v: ((py.x - o.x) / spany, (py.y - o.y) / spany),
         }
     }
 
     // Maps module coordinates, relative to the origin, onto image pixels. Offsets are counted
     // in modules and the basis is already per-module, so they scale it directly.
     pub fn map(&self, x: f64, y: f64) -> Point {
-        Point {
-            x: (self.o.x as f64 + x * self.u.0 + y * self.v.0).round() as i32,
-            y: (self.o.y as f64 + x * self.u.1 + y * self.v.1).round() as i32,
+        Point::from(&self.exact_map(x, y))
+    }
+
+    // Maps module coordinates onto image pixels with sub pixel precision.
+    pub fn exact_map(&self, x: f64, y: f64) -> PointF {
+        PointF {
+            x: self.o.x + x * self.u.0 + y * self.v.0,
+            y: self.o.y + x * self.u.1 + y * self.v.1,
         }
     }
 

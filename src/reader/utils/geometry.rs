@@ -74,6 +74,40 @@ impl Point {
     }
 }
 
+impl From<&Point> for PointF {
+    fn from(value: &Point) -> Self {
+        Self { x: value.x as f64, y: value.y as f64 }
+    }
+}
+
+// Point floating
+//------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PointF {
+    pub x: f64,
+    pub y: f64,
+}
+
+impl PointF {
+    pub fn dist_sq(&self, other: &PointF) -> f64 {
+        let dx = other.x - self.x;
+        let dy = other.y - self.y;
+        dx * dx + dy * dy
+    }
+
+    pub fn approx_eq(&self, other: &PointF) -> bool {
+        (self.x - other.x).abs() < SUBPIXEL_TOLERANCE
+            && (self.y - other.y).abs() < SUBPIXEL_TOLERANCE
+    }
+}
+
+impl From<&PointF> for Point {
+    fn from(value: &PointF) -> Self {
+        Self { x: value.x.round() as i32, y: value.y.round() as i32 }
+    }
+}
+
 // Slope
 //------------------------------------------------------------------------------
 
@@ -81,14 +115,6 @@ impl Point {
 pub struct Slope {
     pub dx: i32,
     pub dy: i32,
-}
-
-impl Slope {
-    pub fn new(start: &Point, end: &Point) -> Self {
-        let dx = end.x - start.x;
-        let dy = end.y - start.y;
-        Self { dx, dy }
-    }
 }
 
 // Axis trait to modify functions based on X/Y axis at compile time
@@ -354,3 +380,8 @@ mod square_spiral_tests {
         }
     }
 }
+
+// Global constants
+//------------------------------------------------------------------------------
+
+const SUBPIXEL_TOLERANCE: f64 = 1e-6;

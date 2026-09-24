@@ -7,13 +7,17 @@ use super::{
     tile::{band_table, build_tiles, Tile, MAX_WIDTH},
     utils::{
         frame::LocalFrame,
-        geometry::{Axis, BresenhamLine, Point, Slope, X, Y},
+        geometry::{Axis, BresenhamLine, Point, X, Y},
     },
 };
 use crate::{
     ec::rectify_info,
     metadata::{VERSION_ERROR_BIT_LEN, VERSION_ERROR_CAPACITY, VERSION_INFOS},
-    reader::alignment::{anchors_from_finders, locate_br_anchor},
+    reader::{
+        alignment::{anchors_from_finders, locate_br_anchor},
+        finder::Finder,
+        utils::geometry::PointF,
+    },
     utils::{QRError, QRResult},
     Version,
 };
@@ -65,53 +69,57 @@ impl SymbolLocation {
     // ****************************
     // ****************************
     // ****************************
-    pub fn locate(img: &mut BinaryImage, group: &mut FinderGroup) -> Option<SymbolLocation> {
-        let [mut c0, c1, mut c2] = group.finders;
+    pub fn locate(
+        img: &mut BinaryImage,
+        finders: &[Finder],
+        group: &mut FinderGroup,
+    ) -> Option<SymbolLocation> {
+        let [mut c0, c1, mut c2] =
+            [finders[group.ids[0]].c, finders[group.ids[1]].c, finders[group.ids[2]].c];
 
         // Compute provisional location of alignment centre (c3)
         let dx = c2.x - c1.x;
         let dy = c2.y - c1.y;
-        let align = Point { x: c0.x + dx, y: c0.y + dy };
+        let align = PointF { x: c0.x + dx, y: c0.y + dy };
+        let alignr = Point::from(&align);
 
         // Skip if intersection pt is outside the image
-        if align.x < 0 || align.x as u32 >= img.w || align.y < 0 || align.y as u32 >= img.h {
+        if alignr.x < 0 || alignr.x as u32 >= img.w || alignr.y < 0 || alignr.y as u32 >= img.h {
             return None;
         }
 
-        // Hypotenuse slope
-        let mut hm = Slope::new(&c0, &c2);
-
         // Make sure the middle(datum) finder is top-left and not bottom-right
-        if (c1.y - c0.y) * hm.dx - (c1.x - c0.x) * hm.dy > 0 {
-            group.finders.swap(0, 2);
+        let cross = (c1.y - c0.y) * (c2.x - c0.x) - (c1.x - c0.x) * (c2.y - c0.y);
+        if cross > 0.0 {
             std::mem::swap(&mut c0, &mut c2);
-            hm.dx *= -1;
-            hm.dy *= -1;
         }
+
+        let finders = [c0, c1, c2];
+        let (c0r, c1r, c2r) = (Point::from(&c0), Point::from(&c1), Point::from(&c2));
 
         // Locating midpoints for finder edges which cross the lines connecting the centres. In
         // other words the edges which don't lie on the boundary. These will be used as endpoints
         // to measure timing patterns, and also to locate the provisional alignment centre for
         // versions above 1.
         let mids = [
-            find_ring_mid(img, &c0, &align)?,
-            find_ring_mid(img, &c0, &c1)?,
-            find_ring_mid(img, &c1, &c0)?,
-            find_ring_mid(img, &c1, &c2)?,
-            find_ring_mid(img, &c2, &c1)?,
-            find_ring_mid(img, &c2, &align)?,
+            find_ring_mid(img, &c0r, &alignr)?,
+            find_ring_mid(img, &c0r, &c1r)?,
+            find_ring_mid(img, &c1r, &c0r)?,
+            find_ring_mid(img, &c1r, &c2r)?,
+            find_ring_mid(img, &c2r, &c1r)?,
+            find_ring_mid(img, &c2r, &alignr)?,
         ];
 
-        let size = verify_symbol_size(img, &group.finders, &mids)?;
+        let size = verify_symbol_size(img, &finders, &mids)?;
         let ver = Version::from_grid_size(size as usize)?;
         let span = (ver.width() - 7) as f64; // Modules between finders
         let ff = LocalFrame::new(&c1, &c2, &c0, span, span); // Finders frame
 
         // Alignement pattern points
-        let mut align_centres: Anchors = anchors_from_finders(ver, &group.finders);
+        let mut align_centres: Anchors = anchors_from_finders(ver, &finders);
 
         if ver.alignment_pattern().is_empty() {
-            align_centres[1][1] = Some(locate_br_anchor(img, ver, &group.finders, &ff));
+            align_centres[1][1] = Some(locate_br_anchor(img, ver, &finders, &ff));
         } else {
             locate_alignment_centres(img, ver, &ff, &mut align_centres);
         }
@@ -164,7 +172,7 @@ impl SymbolLocation {
 
         for &a in self._anchors.iter().flatten() {
             if let Some(pt) = a {
-                pt.highlight(img, color);
+                Point::from(&pt).highlight(img, color);
             }
         }
 
@@ -213,7 +221,7 @@ impl SymbolLocation {
 //    estimate stands in. The resulting size must agree with that estimate.
 //
 // Every comparison is a relative difference measured against SYMBOL_HEURISTIC_THRESHOLD.
-fn verify_symbol_size(img: &BinaryImage, finders: &[Point; 3], mids: &[Point; 6]) -> Option<u32> {
+fn verify_symbol_size(img: &BinaryImage, finders: &[PointF; 3], mids: &[PointF; 6]) -> Option<u32> {
     let [c0, c1, c2] = finders;
     let [m03, m01, m10, m12, m21, m23] = mids;
 
@@ -236,7 +244,7 @@ fn verify_symbol_size(img: &BinaryImage, finders: &[Point; 3], mids: &[Point; 6]
     // For version 7 (size 45) or above, use version info bits
     let size = if est_size < 45 {
         // Measure timing pattern from c1 to c2
-        let t12 = measure_timing_patterns(img, m10, m23);
+        let t12 = measure_timing_patterns(img, &Point::from(m10), &Point::from(m23));
         let mod_score12 = ((mc12 / (t12 + 6) as f64) - 1.0).abs();
 
         // Skip if one is more than twice as long as the other
@@ -245,7 +253,7 @@ fn verify_symbol_size(img: &BinaryImage, finders: &[Point; 3], mids: &[Point; 6]
         }
 
         // Measure timing pattern from c1 to c3
-        let t10 = measure_timing_patterns(img, m12, m03);
+        let t10 = measure_timing_patterns(img, &Point::from(m12), &Point::from(m03));
         let mod_score10 = ((mc10 / (t10 + 6) as f64) - 1.0).abs();
 
         // Skip if one is more than twice as long as the other
@@ -303,7 +311,7 @@ fn nearest_valid_size(mod_count: f64) -> (i32, i32) {
     (est + err, err)
 }
 
-fn find_ring_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point> {
+fn find_ring_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<PointF> {
     let dx = (to.x - from.x).abs();
     let dy = (to.y - from.y).abs();
     if dx > dy {
@@ -313,7 +321,7 @@ fn find_ring_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point> {
     }
 }
 
-fn mid_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> Option<Point>
+fn mid_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> Option<PointF>
 where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
@@ -330,8 +338,7 @@ where
             last = color;
             if flips == 3 {
                 let idx = buffer.len() * 6 / 7;
-                let mid = buffer[idx];
-                return Some(mid);
+                return Some(PointF::from(&buffer[idx]));
             }
         }
 
@@ -371,12 +378,12 @@ where
     transitions
 }
 
-fn estimate_mod_count(c1: &Point, m1: &Point, c2: &Point, m2: &Point) -> f64 {
+fn estimate_mod_count(c1: &PointF, m1: &PointF, c2: &PointF, m2: &PointF) -> f64 {
     let d1 = c1.dist_sq(m1);
     let d2 = c2.dist_sq(m2);
 
-    let avg_d = ((d1 + d2) / 2) as f64;
-    let d12 = c1.dist_sq(c2) as f64;
+    let avg_d = (d1 + d2) / 2.0;
+    let d12 = c1.dist_sq(c2);
 
     (d12 * 9.0 / avg_d).sqrt()
 }
@@ -401,7 +408,7 @@ mod symbol_locate_tests {
     use super::{read_version_info, LocalFrame};
     use crate::metadata::{Color, ECLevel, Version};
     use crate::reader::binarize::BinaryImage;
-    use crate::reader::utils::geometry::Point;
+    use crate::reader::utils::geometry::PointF;
     use crate::{Module, QRBuilder};
 
     #[test]
@@ -420,7 +427,7 @@ mod symbol_locate_tests {
             let q = 4.0; // quiet zone, modules
             let c = (3.5 + q) * k; // 3.5 modules in from the edge
             let far = (w as f64 - 3.5 + q) * k;
-            let p = |x: f64, y: f64| Point { x: x.round() as i32, y: y.round() as i32 };
+            let p = |x: f64, y: f64| PointF { x, y };
 
             // BL: centre, then m03 (+3 modules right) and m01 (3 modules up)
             let blf =
@@ -464,7 +471,7 @@ mod symbol_locate_tests {
             let q = 4.0; // quiet zone, modules
             let c = (3.5 + q) * k; // 3.5 modules in from the edge
             let far = (w as f64 - 3.5 + q) * k;
-            let p = |x: f64, y: f64| Point { x: x.round() as i32, y: y.round() as i32 };
+            let p = |x: f64, y: f64| PointF { x, y };
 
             // BL: centre, then m03 (+3 modules right) and m01 (3 modules up)
             let blf =
@@ -496,7 +503,7 @@ mod symbol_locate_tests {
         let q = 4.0; // quiet zone, modules
         let c = (3.5 + q) * k; // 3.5 modules in from the edge
         let far = (w as f64 - 3.5 + q) * k;
-        let p = |x: f64, y: f64| Point { x: x.round() as i32, y: y.round() as i32 };
+        let p = |x: f64, y: f64| PointF { x, y };
 
         // BL: centre, then m03 (+3 modules right) and m01 (3 modules up)
         let blf = LocalFrame::new(&p(c, far), &p(c + 3.0 * k, far), &p(c, far - 3.0 * k), 3.0, 3.0);
@@ -513,7 +520,7 @@ mod symbol_locate_integration_tests {
             binarize::BinaryImage,
             finder::{group_finders, locate_finders},
             locate_symbols,
-            utils::geometry::Point,
+            utils::geometry::PointF,
         },
         ECLevel, MaskPattern, QRBuilder, Version,
     };
@@ -536,17 +543,18 @@ mod symbol_locate_integration_tests {
 
         let img = qr.to_gray_image(10);
         let exp_anchors = [
-            [Some(Point { x: 75, y: 75 }), Some(Point { x: 335, y: 75 })],
-            [Some(Point { x: 75, y: 335 }), Some(Point { x: 305, y: 305 })],
+            [PointF { x: 74.5, y: 74.5 }, PointF { x: 334.5, y: 74.5 }],
+            [PointF { x: 74.5, y: 334.5 }, PointF { x: 304.5, y: 304.5 }],
         ];
 
         let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let groups = group_finders(&finders);
-        let symbols = locate_symbols(&mut img, groups);
+        let symbols = locate_symbols(&mut img, finders, groups);
         for (i, exp_row) in exp_anchors.iter().enumerate() {
-            for (j, &exp_anc) in exp_row.iter().enumerate() {
-                assert_eq!(symbols[0]._anchors[i][j], exp_anc)
+            for (j, exp_anc) in exp_row.iter().enumerate() {
+                let anc = symbols[0]._anchors[i][j].unwrap();
+                assert!(anc.approx_eq(exp_anc), "Anc: {:?}, Expected anc: {:?}", anc, exp_anc);
             }
         }
     }

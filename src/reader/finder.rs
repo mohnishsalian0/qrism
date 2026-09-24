@@ -1,6 +1,9 @@
 use super::{
     binarize::BinaryImage,
-    utils::{geometry::Point, matches_finder_ratio, verify_finder_diagonal, verify_finder_pattern},
+    utils::{
+        geometry::{Point, PointF},
+        matches_finder_ratio, verify_finder_diagonal, verify_finder_pattern,
+    },
 };
 
 #[cfg(test)]
@@ -104,7 +107,7 @@ impl LineScanner {
 // which grouping degenerates into an O(n^3) explosion on dense scenes.
 #[derive(Debug, Clone, Copy)]
 pub struct Finder {
-    pub c: Point,      // stone centre
+    pub c: PointF,     // stone centre
     pub mod_size: f32, // estimated module size in px
 }
 
@@ -138,15 +141,15 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
                 None => continue,
             };
 
-            if let Some(centre) = verify_and_mark_finder(img, &datum) {
-                finders.push(centre);
+            if let Some(f) = verify_and_mark_finder(img, &datum) {
+                finders.push(f);
             }
         }
 
         // Handles an edge case where the QR is located at the right edge of the image
         if let Some(datum) = scanner.advance(true) {
-            if let Some(centre) = verify_and_mark_finder(img, &datum) {
-                finders.push(centre);
+            if let Some(f) = verify_and_mark_finder(img, &datum) {
+                finders.push(f);
             }
         }
 
@@ -245,7 +248,7 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
     let max_drift = mod_size * FINDER_CENTRE_DRIFT_TOLERANCE;
     let rcentre = ring.centre()?;
     let scentre = stone.centre()?;
-    if rcentre.dist_sq(&scentre) > max_drift.powi(2).round() as u32 {
+    if rcentre.dist_sq(&scentre) > max_drift.powi(2) {
         return None;
     }
 
@@ -265,7 +268,7 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
 mod finder_tests {
 
     use crate::{
-        reader::{binarize::BinaryImage, utils::geometry::Point},
+        reader::{binarize::BinaryImage, utils::geometry::PointF},
         ECLevel, MaskPattern, QRBuilder, Version,
     };
 
@@ -288,13 +291,13 @@ mod finder_tests {
             .unwrap();
         let img = qr.to_gray_image(10);
 
-        let centres = [[75, 75], [335, 75], [75, 335]];
+        let centres = [(74.5, 74.5), (334.5, 74.5), (74.5, 334.5)];
         let mut bin_img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut bin_img);
 
         for (i, f) in finders.iter().enumerate() {
-            let cent_pt = Point { x: centres[i][0], y: centres[i][1] };
-            assert_eq!(f.c, cent_pt, "Finder centre doesn't match");
+            let cent_pt = PointF { x: centres[i].0, y: centres[i].1 };
+            assert!(f.c.approx_eq(&cent_pt), "Finder centre doesn't match");
         }
     }
 }
@@ -304,18 +307,18 @@ mod finder_tests {
 
 #[derive(Debug, Clone)]
 pub struct FinderGroup {
-    pub finders: [Point; 3], // [BL, TL, TR]
-    pub score: f64,          // symmetry_score + angle_score (lower = closer to ideal L)
+    pub ids: [usize; 3], // ids of corresponding finders
+    pub score: f64,      // symmetry_score + angle_score (lower = closer to ideal L)
 }
 
 impl FinderGroup {
     #[cfg(test)]
-    pub fn highlight(&self, img: &mut RgbImage) {
+    pub fn highlight(&self, img: &mut RgbImage, finders: &Vec<Finder>) {
         use super::utils::rnd_rgb;
 
         let color = rnd_rgb();
-        for f in self.finders.iter() {
-            f.highlight(img, color);
+        for f in self.ids.iter() {
+            Point::from(&finders[*f].c).highlight(img, color);
         }
     }
 }
@@ -325,7 +328,7 @@ pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
     let mut groups: Vec<FinderGroup> = Vec::new();
 
     // Reused per vertex: the arms that clear the cheap scale gates below.
-    let mut arms: Vec<(&Finder, u32)> = Vec::new();
+    let mut arms: Vec<(&Finder, f64, usize)> = Vec::new();
 
     // f1 is the candidate corner (TL); f2 and f3 are its two arms (BL/TR).
     for (i1, f1) in finders.iter().enumerate() {
@@ -337,7 +340,7 @@ pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
         // so a valid span is ~[14, 170] modules; the loose bounds below never clip a real symbol.
         let min_d = (MIN_CENTRE_SPAN_MODULES * m * MIN_CENTRE_SPAN_FACTOR) as f64;
         let max_d = (MAX_CENTRE_SPAN_MODULES * m * MAX_CENTRE_SPAN_FACTOR) as f64;
-        let (min_d_sq, max_d_sq) = ((min_d * min_d) as u32, (max_d * max_d) as u32);
+        let (min_d_sq, max_d_sq) = (min_d * min_d, max_d * max_d);
         for (i2, f2) in finders.iter().enumerate() {
             if i2 == i1 {
                 continue;
@@ -355,24 +358,24 @@ pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
                 continue;
             }
 
-            arms.push((f2, d));
+            arms.push((f2, d, i2));
         }
 
         // Pair the (few) surviving arms. `j3 > j2` dedups the unordered {arm, arm} pair.
-        for (j2, &(f2, d12)) in arms.iter().enumerate() {
-            for &(f3, d13) in arms.iter().skip(j2 + 1) {
+        for (j2, &(f2, d12, id2)) in arms.iter().enumerate() {
+            for &(f3, d13, id3) in arms.iter().skip(j2 + 1) {
                 // Closeness of the dist of bl and tr finders from tl finder
-                let symmetry_score = ((d12 as f64 / d13 as f64).sqrt() - 1.0).abs();
+                let symmetry_score = ((d12 / d13).sqrt() - 1.0).abs();
                 if symmetry_score > SYMMETRY_THRESHOLD {
                     continue;
                 }
 
                 // Angle of c2-c1-c3. Gate on the cosine. The accepted window [45, 135].
-                let ab = ((f2.c.x - f1.c.x) as f64, (f2.c.y - f1.c.y) as f64);
-                let cb = ((f3.c.x - f1.c.x) as f64, (f3.c.y - f1.c.y) as f64);
+                let ab = (f2.c.x - f1.c.x, f2.c.y - f1.c.y);
+                let cb = (f3.c.x - f1.c.x, f3.c.y - f1.c.y);
                 let dot = ab.0 * cb.0 + ab.1 * cb.1;
                 let dot_sq = dot.powi(2);
-                let mag_sq = (d12 as f64) * (d13 as f64);
+                let mag_sq = d12 * d13;
                 let angle_score_sq = dot_sq / mag_sq;
                 if angle_score_sq > ANGLE_THRESHOLD {
                     continue;
@@ -381,13 +384,13 @@ pub fn group_finders(finders: &[Finder]) -> Vec<FinderGroup> {
                 let score = symmetry_score + angle_score_sq.sqrt();
 
                 // Create and push group into groups
-                let group = FinderGroup { finders: [f3.c, f1.c, f2.c], score };
+                let group = FinderGroup { ids: [id3, i1, id2], score };
                 groups.push(group);
             }
         }
     }
 
-    groups.sort_unstable_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
+    groups.sort_unstable_by(|a, b| a.score.total_cmp(&b.score));
 
     groups
 }
@@ -416,14 +419,14 @@ mod group_finders_tests {
             .unwrap();
         let img = qr.to_gray_image(10);
 
-        let centres = [(75, 75), (335, 75), (75, 335)];
+        let centres = [(74.5, 74.5), (334.5, 74.5), (74.5, 334.5)];
 
         let mut img = BinaryImage::prepare(&img);
         let finders = locate_finders(&mut img);
         let group = group_finders(&finders);
         assert!(!group.is_empty(), "No group found");
-        for f in group[0].finders.iter() {
-            let c = (f.x, f.y);
+        for fid in group[0].ids.iter() {
+            let c = (finders[*fid].c.x, finders[*fid].c.y);
             assert!(centres.contains(&c))
         }
     }
