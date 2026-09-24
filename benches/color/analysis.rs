@@ -5,7 +5,6 @@
 //! differences are attributable to the pipeline alone. Combinations exercised:
 //!   - euclid raw              : Identity    + EuclidMeasured
 //!   - euclid intensity        : Intensity   + EuclidMeasured
-//!   - max-channel euclid      : MaxChannel  + EuclidMeasured
 //!   - black/white euclid      : BlackWhite  + EuclidMeasured
 //!   - per-colorant int + adp  : Intensity   + PerColorant + Adaptive
 //!   - per-colorant abs + adp  : Absorptance + PerColorant + Adaptive
@@ -49,13 +48,15 @@ use crate::calibration::{
     calibration_coords, function_mask, group_by_color, reference_grid, sample_groups,
     sample_module_rgb, GroupedSamples,
 };
-use crate::hiq::{decode_layers, Layer};
+use crate::deblur::{estimate_beta_optical, estimate_sigma_optical, Deblur};
+use crate::hiq::{decode_layers, decode_layers_conf, Layer};
 use crate::normalization::{
     absorptance::Absorptance, black_white::BlackWhite, intensity::Intensity,
-    max_channel::MaxChannel, Identity, Normalizer,
+    Identity, Normalizer,
 };
 use crate::recovery::{
-    euclid_measured::EuclidMeasured, per_colorant::PerColorant, ChannelRecovery, DirectRecovery,
+    euclid_measured::EuclidMeasured, mahalanobis::Mahalanobis, per_colorant::PerColorant,
+    ChannelRecovery, DirectRecovery,
 };
 use crate::thresholding::{adaptive::Adaptive, local::Local, Thresholder};
 use qrism::detect_hc_qr;
@@ -90,7 +91,7 @@ fn cname(c: Color) -> &'static str {
 //------------------------------------------------------------------------------
 
 const BASE: &str = "benches/dataset/high_capacity/hiq";
-const FOLDERS: [&str; 8] = ["01", "02", "03", "04", "05", "06", "07", "08"];
+pub(crate) const FOLDERS: [&str; 8] = ["01", "02", "03", "04", "05", "06", "07", "08"];
 
 /// The reference renders in `source/`, named by QR version. A photo whose detected version is
 /// not one of these has been misread by the localizer and is skipped rather than scored
@@ -107,14 +108,14 @@ const SAMPLES_PER_FOLDER: usize = usize::MAX;
 /// bucketed by their reference colour, the mask separating function modules from data, and the
 /// three messages the symbol carries. Built once and shared across every photo of that
 /// version, so the reference decode costs five runs per pass rather than one per photo.
-struct Reference {
-    truth: Vec<Vec<Color>>,
-    groups: [Vec<(i32, i32)>; 8],
+pub(crate) struct Reference {
+    pub(crate) truth: Vec<Vec<Color>>,
+    pub(crate) groups: [Vec<(i32, i32)>; 8],
     func: Vec<Vec<bool>>,
-    messages: [String; 3],
+    pub(crate) messages: [String; 3],
 }
 
-fn load_references() -> HashMap<usize, Reference> {
+pub(crate) fn load_references() -> HashMap<usize, Reference> {
     VERSIONS
         .into_iter()
         .map(|v| {
@@ -138,7 +139,7 @@ fn load_references() -> HashMap<usize, Reference> {
 
 /// Lists the photos sampled from one capture folder, in a deterministic order so runs are
 /// comparable.
-fn photos(folder: &str) -> Vec<PathBuf> {
+pub(crate) fn photos(folder: &str) -> Vec<PathBuf> {
     let dir = format!("{BASE}/{folder}");
     let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("{dir}: {e}"))
@@ -294,6 +295,58 @@ impl Score {
     fn code_rate(&self) -> f64 {
         100.0 * self.codes_ok as f64 / self.codes_total.max(1) as f64
     }
+}
+
+/// The colour pipeline the erasure experiment is built on: the best of [`PIPELINES`].
+pub(crate) const BEST_BETA: f64 = 0.06;
+
+/// Erasure schedules compared in the soft-decision pass. Each entry is a list of fractions of
+/// a block's parity to erase — lowest-confidence codewords first — tried in order until the
+/// block's parity checks clear. `&[0.0]` is the plain error-only decode, so it doubles as the
+/// control that must reproduce the matching row of the main table.
+#[allow(clippy::type_complexity)]
+const ERASE_STEPS: [(&str, &[f64]); 7] = [
+    ("none (control)", &[0.0]),
+    ("12% of parity", &[0.125]),
+    ("25% of parity", &[0.25]),
+    ("50% of parity", &[0.50]),
+    ("75% of parity", &[0.75]),
+    ("ladder coarse", &[0.0, 0.25, 0.50, 0.75, 1.0]),
+    ("ladder fine", &[0.0, 0.125, 0.25, 0.375, 0.50, 0.625, 0.75, 0.875, 1.0]),
+];
+
+fn new_erase_scores() -> [Score; ERASE_STEPS.len()] {
+    std::array::from_fn(|_| Score::new())
+}
+
+/// The best colour pipeline, returning both the per-module decision and how close that call
+/// was. The margin is what the erasure decoder ranks codewords by.
+#[allow(clippy::type_complexity)]
+fn best_with_conf(
+    grid: usize,
+    rgb: &[Vec<[f64; 3]>],
+    groups: &[Vec<(i32, i32)>; 8],
+) -> (Vec<Vec<Color>>, [Vec<Vec<f64>>; 3]) {
+    let db = Deblur::fixed(BEST_BETA);
+    let dg = db.apply(rgb);
+    let draw = db.sample_groups(rgb, groups);
+    let norm = Identity;
+    let ng = norm.normalize_groups(&draw);
+    let rec = Mahalanobis::fit_rda(&ng);
+
+    let mut pred = vec![vec![Color::White; grid]; grid];
+    let mut conf: [Vec<Vec<f64>>; 3] =
+        std::array::from_fn(|_| vec![vec![0.0f64; grid]; grid]);
+    for gy in 0..grid {
+        for gx in 0..grid {
+            let (c, m) = rec.classify_with_channel_margins(norm.apply(dg[gy][gx]));
+            pred[gy][gx] = c;
+            for k in 0..3 {
+                conf[k][gy][gx] = m[k];
+            }
+        }
+    }
+    (pred, conf)
 }
 
 fn new_scores() -> [Score; PIPELINES.len()] {
@@ -487,15 +540,22 @@ fn eval_channel<N: Normalizer, R: ChannelRecovery, T: Thresholder>(
 // Pipelines
 //------------------------------------------------------------------------------
 
-const PIPELINES: [&str; 8] = [
+const PIPELINES: [&str; 15] = [
     "euclid raw",
     "euclid intensity",
-    "max-channel euclid",
     "black/white euclid",
     "per-colorant int + adp",
     "per-colorant abs + adp",
     "per-colorant int + local",
     "local standalone (raw)",
+    "mahalanobis lda (raw)",
+    "mahalanobis qda (raw)",
+    "mahalanobis rda (raw)",
+    "rda + deblur fit",
+    "rda + deblur b=.04",
+    "rda + deblur b=.08",
+    "rda + deblur b=.12",
+    "rda + deblur optical",
 ];
 
 /// Fits every pipeline on this image's calibration samples and decodes the whole grid with
@@ -513,6 +573,8 @@ fn run_pipelines(
     grid: usize,
     rgb: &[Vec<[f64; 3]>],
     raw: &GroupedSamples,
+    groups: &[Vec<(i32, i32)>; 8],
+    beta_optical: [f64; 3],
 ) -> ([Vec<Vec<Color>>; PIPELINES.len()], [Duration; PIPELINES.len()]) {
     let mut times = [Duration::ZERO; PIPELINES.len()];
     let euclid_raw = timed(&mut times[0], || {
@@ -529,21 +591,14 @@ fn run_pipelines(
         eval_direct(&norm, &rec, grid, rgb)
     });
 
-    let maxch_euclid = timed(&mut times[2], || {
-        let norm = MaxChannel::fit(raw);
-        let ng = norm.normalize_groups(raw);
-        let rec = EuclidMeasured::fit(&ng);
-        eval_direct(&norm, &rec, grid, rgb)
-    });
-
-    let bw_euclid = timed(&mut times[3], || {
+    let bw_euclid = timed(&mut times[2], || {
         let norm = BlackWhite::fit(raw);
         let ng = norm.normalize_groups(raw);
         let rec = EuclidMeasured::fit(&ng);
         eval_direct(&norm, &rec, grid, rgb)
     });
 
-    let pc_int = timed(&mut times[4], || {
+    let pc_int = timed(&mut times[3], || {
         let norm = Intensity::fit(raw);
         let ng = norm.normalize_groups(raw);
         let rec = PerColorant::fit(&ng);
@@ -551,7 +606,7 @@ fn run_pipelines(
         eval_channel(&norm, &rec, &thr, grid, rgb)
     });
 
-    let pc_abs = timed(&mut times[5], || {
+    let pc_abs = timed(&mut times[4], || {
         let norm = Absorptance::fit(raw);
         let ng = norm.normalize_groups(raw);
         let rec = PerColorant::fit(&ng);
@@ -559,7 +614,7 @@ fn run_pipelines(
         eval_channel(&norm, &rec, &thr, grid, rgb)
     });
 
-    let pc_int_local = timed(&mut times[6], || {
+    let pc_int_local = timed(&mut times[5], || {
         let norm = Intensity::fit(raw);
         let ng = norm.normalize_groups(raw);
         let rec = PerColorant::fit(&ng);
@@ -569,24 +624,89 @@ fn run_pipelines(
 
     // Block-threshold the sampled RGB grid directly (no recovery). The most direct mirror of
     // `prepare`, with its native brighter-is-on polarity.
-    let local_raw = timed(&mut times[7], || Local::intensity().decide_grid(rgb));
+    let local_raw = timed(&mut times[6], || Local::intensity().decide_grid(rgb));
+
+    // Same centroids as `euclid raw`, but distance measured under a learned covariance, so
+    // the delta against it isolates the metric. The three differ only in how `Sigma` is
+    // estimated: pooled, per-class, or per-class shrunk halfway toward pooled.
+    let maha_lda = timed(&mut times[7], || {
+        let norm = Identity;
+        let ng = norm.normalize_groups(raw);
+        let rec = Mahalanobis::fit_lda(&ng);
+        eval_direct(&norm, &rec, grid, rgb)
+    });
+
+    let maha_qda = timed(&mut times[8], || {
+        let norm = Identity;
+        let ng = norm.normalize_groups(raw);
+        let rec = Mahalanobis::fit_qda(&ng);
+        eval_direct(&norm, &rec, grid, rgb)
+    });
+
+    let maha_rda = timed(&mut times[9], || {
+        let norm = Identity;
+        let ng = norm.normalize_groups(raw);
+        let rec = Mahalanobis::fit_rda(&ng);
+        eval_direct(&norm, &rec, grid, rgb)
+    });
+
+    // Phase 0 deblur in front of the best pipeline. The deblurred grid is what both the fit
+    // and the decode see, so the palette is learned in the same space it is applied in. The
+    // fixed variants bracket the fitted one, so a flat result can be read as "deblur does not
+    // help here" rather than "the fit picked badly".
+    let run_deblur = |db: Deblur| {
+        let dg = db.apply(rgb);
+        let draw = db.sample_groups(rgb, groups);
+        let norm = Identity;
+        let ng = norm.normalize_groups(&draw);
+        let rec = Mahalanobis::fit_rda(&ng);
+        eval_direct(&norm, &rec, grid, &dg)
+    };
+
+    let rda_db_fit = timed(&mut times[10], || run_deblur(Deblur::fit(rgb, groups)));
+    let rda_db_04 = timed(&mut times[11], || run_deblur(Deblur::fixed(0.04)));
+    let rda_db_08 = timed(&mut times[12], || run_deblur(Deblur::fixed(0.08)));
+    let rda_db_12 = timed(&mut times[13], || run_deblur(Deblur::fixed(0.12)));
+    let rda_db_opt = timed(&mut times[14], || run_deblur(Deblur::per_channel(beta_optical)));
 
     (
-        [euclid_raw, euclid_int, maxch_euclid, bw_euclid, pc_int, pc_abs, pc_int_local, local_raw],
+        [
+            euclid_raw,
+            euclid_int,
+            bw_euclid,
+            pc_int,
+            pc_abs,
+            pc_int_local,
+            local_raw,
+            maha_lda,
+            maha_qda,
+            maha_rda,
+            rda_db_fit,
+            rda_db_04,
+            rda_db_08,
+            rda_db_12,
+            rda_db_opt,
+        ],
         times,
     )
 }
 
 /// Dumps the parameters each stage fitted on one image, as a sanity check that a bad score is
 /// a strategy failing rather than a fit going degenerate.
-fn print_fit_params(label: &str, raw: &GroupedSamples) {
+fn print_fit_params(
+    label: &str,
+    raw: &GroupedSamples,
+    rgb: &[Vec<[f64; 3]>],
+    groups: &[Vec<(i32, i32)>; 8],
+    beta_optical: [f64; 3],
+    sigma_optical: [f64; 3],
+) {
     let counts: Vec<String> =
         COLORS.iter().map(|&c| format!("{}={}", cname(c), raw[c as usize].len())).collect();
     println!("\n  [{label}] calibration samples: {}", counts.join(" "));
 
     let int = Intensity::fit(raw);
     let abs = Absorptance::fit(raw);
-    let maxch = MaxChannel::fit(raw);
     let bw = BlackWhite::fit(raw);
     let (black, white) = bw.references();
 
@@ -597,7 +717,6 @@ fn print_fit_params(label: &str, raw: &GroupedSamples) {
     };
     let ti = thresh(&int);
     let ta = thresh(&abs);
-    let mid = maxch.midpoints();
     let iw = int.white();
 
     println!(
@@ -614,12 +733,30 @@ fn print_fit_params(label: &str, raw: &GroupedSamples) {
         ta[2]
     );
     println!(
-        "    max-channel black-guard midpoints R/G/B {:>5.1} / {:>5.1} / {:>5.1}",
-        mid[0], mid[1], mid[2]
-    );
-    println!(
         "    black/white refs: black ({:>5.1}, {:>5.1}, {:>5.1})  white ({:>5.1}, {:>5.1}, {:>5.1})",
         black[0], black[1], black[2], white[0], white[1], white[2]
+    );
+
+    // The pooled within-class scatter the Mahalanobis metric is built from. The off-diagonal
+    // correlations are the point: they are what tells the metric that shading moves all three
+    // channels together, and so should count for less than a chromatic difference.
+    let db = Deblur::fit(rgb, groups);
+    println!(
+        "    leak beta: grid-fit {:>5.3}   optical R/G/B {:>5.3} / {:>5.3} / {:>5.3}",
+        db.beta()[0],
+        beta_optical[0],
+        beta_optical[1],
+        beta_optical[2]
+    );
+    println!(
+        "    optical blur sigma (modules) R/G/B {:>5.3} / {:>5.3} / {:>5.3}",
+        sigma_optical[0], sigma_optical[1], sigma_optical[2]
+    );
+
+    let (sd, corr) = Mahalanobis::pooled_structure(raw);
+    println!(
+        "    pooled within-class sd R/G/B {:>5.1} / {:>5.1} / {:>5.1}   correlation RG {:>5.2}  RB {:>5.2}  GB {:>5.2}",
+        sd[0], sd[1], sd[2], corr[0][1], corr[0][2], corr[1][2]
     );
 }
 
@@ -629,14 +766,20 @@ fn print_fit_params(label: &str, raw: &GroupedSamples) {
 /// Everything downstream of image decoding for one photo: the version the localizer reported,
 /// the per-module RGB, and the calibration samples drawn from the function patterns. Shared by
 /// the accuracy pass and the timing pass so both measure the same inputs.
-struct Sampled {
-    version: usize,
-    rgb: Vec<Vec<[f64; 3]>>,
+pub(crate) struct Sampled {
+    pub(crate) version: usize,
+    pub(crate) rgb: Vec<Vec<[f64; 3]>>,
     raw: GroupedSamples,
+    /// Blur measured off the finder patterns in the photograph itself, as a 5-point leak
+    /// fraction. Computed here because it needs the symbol geometry and the source pixels,
+    /// neither of which survives into the module grid.
+    beta_optical: [f64; 3],
+    /// The blur width behind `beta_optical`, kept for reporting.
+    sigma_optical: [f64; 3],
 }
 
 /// Why a photo contributed nothing.
-enum Skip {
+pub(crate) enum Skip {
     Unreadable,
     NoSymbol,
     /// Localized at a version with no reference render — a misread, not a colour failure.
@@ -647,7 +790,7 @@ enum Skip {
 
 /// Localizes a photo and samples its module grid. Depends on nothing but its arguments, so
 /// photos run in parallel.
-fn sample_grid(path: &Path, refs: &HashMap<usize, Reference>) -> Result<Sampled, Skip> {
+pub(crate) fn sample_grid(path: &Path, refs: &HashMap<usize, Reference>) -> Result<Sampled, Skip> {
     let Ok(dynimg) = image::open(path) else {
         return Err(Skip::Unreadable);
     };
@@ -679,14 +822,23 @@ fn sample_grid(path: &Path, refs: &HashMap<usize, Reference>) -> Result<Sampled,
     }
 
     let raw = sample_groups(&reference.groups, &rgb);
-    Ok(Sampled { version, rgb, raw })
+    let beta_optical = estimate_beta_optical(sym, &photo, ver);
+    let sigma_optical = estimate_sigma_optical(sym, &photo, ver);
+    Ok(Sampled { version, rgb, raw, beta_optical, sigma_optical })
 }
 
 /// What one photo contributed: a score per pipeline, plus the calibration samples it fitted on
 /// — kept so the driver can dump one representative fit per version.
 struct PhotoResult {
     scores: [Score; PIPELINES.len()],
+    /// One score per [`ERASE_STEPS`] schedule, all over the same predicted grid.
+    erase: [Score; ERASE_STEPS.len()],
     raw: GroupedSamples,
+    /// Kept only so the driver can report the deblur fit for one representative photo.
+    rgb: Vec<Vec<[f64; 3]>>,
+    beta_optical: [f64; 3],
+    /// The blur width behind `beta_optical`, kept for reporting.
+    sigma_optical: [f64; 3],
 }
 
 enum Outcome {
@@ -705,14 +857,35 @@ fn analyze(path: &Path, refs: &HashMap<usize, Reference>) -> Outcome {
     let reference = &refs[&sampled.version];
     let grid = sampled.rgb.len();
     let ver = Version::Normal(sampled.version);
-    let (preds, _times) = run_pipelines(grid, &sampled.rgb, &sampled.raw);
+    let (preds, _times) =
+        run_pipelines(grid, &sampled.rgb, &sampled.raw, &reference.groups, sampled.beta_optical);
     let scores = std::array::from_fn(|pi| {
         let mut s = score(&reference.truth, &preds[pi], &reference.func, grid);
         s.add_decode(&decode_layers(&preds[pi], ver), &reference.messages);
         s
     });
 
-    Outcome::Scored(sampled.version, Box::new(PhotoResult { scores, raw: sampled.raw }))
+    // Soft-decision pass: one prediction grid plus its confidences, decoded under each
+    // erasure schedule. Module accuracy is identical across these by construction, so only the
+    // delivered-message figures differ.
+    let (bp, bc) = best_with_conf(grid, &sampled.rgb, &reference.groups);
+    let erase = std::array::from_fn(|k| {
+        let mut s = Score::new();
+        s.add_decode(&decode_layers_conf(&bp, &bc, ver, ERASE_STEPS[k].1), &reference.messages);
+        s
+    });
+
+    Outcome::Scored(
+        sampled.version,
+        Box::new(PhotoResult {
+            scores,
+            erase,
+            raw: sampled.raw,
+            rgb: sampled.rgb,
+            beta_optical: sampled.beta_optical,
+            sigma_optical: sampled.sigma_optical,
+        }),
+    )
 }
 
 // Accuracy pass
@@ -724,6 +897,13 @@ pub fn benchmark_accuracy() {
     let mut dumped = HashSet::new();
 
     let mut overall = new_scores();
+    // Optical leak estimates, pooled per version, to check whether the measurement tracks
+    // module size the way inter-module bleed predicts.
+    let mut betas_by_version: HashMap<usize, Vec<f64>> =
+        VERSIONS.into_iter().map(|v| (v, Vec::new())).collect();
+    let mut erase_overall = new_erase_scores();
+    let mut erase_by_version: HashMap<usize, [Score; ERASE_STEPS.len()]> =
+        VERSIONS.into_iter().map(|v| (v, new_erase_scores())).collect();
     let mut by_version: HashMap<usize, [Score; PIPELINES.len()]> =
         VERSIONS.into_iter().map(|v| (v, new_scores())).collect();
     let mut by_folder: HashMap<&str, [Score; PIPELINES.len()]> =
@@ -748,7 +928,22 @@ pub fn benchmark_accuracy() {
                 Outcome::Scored(v, res) => {
                     scored += 1;
                     if dumped.insert(v) {
-                        print_fit_params(&format!("v{v} sample: {}", path.display()), &res.raw);
+                        print_fit_params(
+                            &format!("v{v} sample: {}", path.display()),
+                            &res.raw,
+                            &res.rgb,
+                            &refs[&v].groups,
+                            res.beta_optical,
+                            res.sigma_optical,
+                        );
+                    }
+                    betas_by_version
+                        .get_mut(&v)
+                        .unwrap()
+                        .push(res.beta_optical.iter().sum::<f64>() / 3.0);
+                    for (k, s) in res.erase.iter().enumerate() {
+                        erase_overall[k].merge(s);
+                        erase_by_version.get_mut(&v).unwrap()[k].merge(s);
                     }
                     for (pi, s) in res.scores.iter().enumerate() {
                         overall[pi].merge(s);
@@ -833,6 +1028,99 @@ pub fn benchmark_accuracy() {
         dec_cell,
     );
 
+    // Optically measured blur
+    //--------------------------------------------------------------------------
+    println!(
+        "\n\n  optically measured leak, from finder edge sharpness in the photograph:\n  \
+         (a fixed lens blur covers a larger share of a smaller module, so this should rise \
+         with version)"
+    );
+    println!(
+        "    {:<10}{:>10}{:>10}{:>10}{:>10}{:>10}",
+        "version", "photos", "p10", "median", "p90", "mean"
+    );
+    let mut pooled: Vec<f64> = Vec::new();
+    for v in VERSIONS {
+        let b = betas_by_version.get_mut(&v).unwrap();
+        if b.is_empty() {
+            continue;
+        }
+        b.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        pooled.extend(b.iter().copied());
+        let q = |f: f64| b[((b.len() - 1) as f64 * f) as usize];
+        println!(
+            "    {:<10}{:>10}{:>10.3}{:>10.3}{:>10.3}{:>10.3}",
+            format!("v{v}"),
+            b.len(),
+            q(0.10),
+            q(0.50),
+            q(0.90),
+            b.iter().sum::<f64>() / b.len() as f64
+        );
+    }
+    if !pooled.is_empty() {
+        pooled.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        let q = |f: f64| pooled[((pooled.len() - 1) as f64 * f) as usize];
+        println!(
+            "    {:<10}{:>10}{:>10.3}{:>10.3}{:>10.3}{:>10.3}",
+            "all",
+            pooled.len(),
+            q(0.10),
+            q(0.50),
+            q(0.90),
+            pooled.iter().sum::<f64>() / pooled.len() as f64
+        );
+    }
+
+    // Soft-decision / erasure pass
+    //--------------------------------------------------------------------------
+    println!(
+        "\n\n========== soft-decision erasure decoding ==========\n  \
+         all rows share one prediction grid (rda + deblur b={BEST_BETA:.2}), so module accuracy \
+         is identical;\n  only the Reed-Solomon stage differs. Codewords are erased \
+         lowest-confidence first, where a\n  module's confidence is the margin between its best \
+         and runner-up colour."
+    );
+    println!(
+        "\n    {:<26}{:>9}{:>8}{:>14}{:>14}{:>14}",
+        "erasure schedule", "layer%", "code%", "no symbol%", "bad format%", "bad payload%"
+    );
+    for (k, (name, _)) in ERASE_STEPS.iter().enumerate() {
+        let s = &erase_overall[k];
+        let pct = |n: usize| 100.0 * n as f64 / s.layer_total.max(1) as f64;
+        println!(
+            "    {:<26}{:>9.1}{:>8.1}{:>14.1}{:>14.1}{:>14.1}",
+            name,
+            s.layer_rate(),
+            s.code_rate(),
+            pct(s.layer_nosym),
+            pct(s.layer_badfmt),
+            pct(s.layer_badpld)
+        );
+        if s.layer_wrong > 0 {
+            println!("      !! {} layers decoded to the WRONG message", s.layer_wrong);
+        }
+    }
+
+    println!("\n  erasure decoding by version:  (cells are layer% / code%)");
+    print!("    {:<26}", "");
+    for v in VERSIONS {
+        print!("{:>14}", format!("v{v}"));
+    }
+    println!();
+    for (k, (name, _)) in ERASE_STEPS.iter().enumerate() {
+        print!("    {:<26}", name);
+        for v in VERSIONS {
+            let s = &erase_by_version[&v][k];
+            if s.layer_total == 0 {
+                print!("{:>14}", "-");
+            } else {
+                print!("{:>8.1}/{:<5.1}", s.layer_rate(), s.code_rate());
+            }
+        }
+        println!();
+    }
+
     for (pi, name) in PIPELINES.iter().enumerate() {
         print_confusion(name, &overall[pi]);
     }
@@ -871,7 +1159,9 @@ pub fn benchmark_timing() {
     let mut totals = [Duration::ZERO; PIPELINES.len()];
     for _ in 0..TIMING_REPS {
         for s in &grids {
-            let (_preds, times) = run_pipelines(s.rgb.len(), &s.rgb, &s.raw);
+            let groups = &refs[&s.version].groups;
+            let (_preds, times) =
+                run_pipelines(s.rgb.len(), &s.rgb, &s.raw, groups, s.beta_optical);
             for (slot, t) in totals.iter_mut().zip(times) {
                 *slot += t;
             }

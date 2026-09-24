@@ -213,9 +213,9 @@ pub(crate) fn sample_groups(
 // RGB sampling
 //------------------------------------------------------------------------------
 
-/// Robustly samples a module's colour: projects a 3x3 grid over the central ~30% of the
-/// module through the homography of the tile owning that module and takes the per-channel
-/// median, rejecting edge/bleed pixels and specular outliers.
+/// Samples a module's colour at its centre, projected through the homography of the tile
+/// owning that module. The median below is kept so more offsets can be added back without
+/// touching the rest.
 ///
 /// `None` when no offset mapped — the localizer left no tile for this module. Coordinates are
 /// rounded to match `Homography::map`, which the library's own read path samples through.
@@ -225,7 +225,7 @@ pub(crate) fn sample_module_rgb(
     gx: usize,
     gy: usize,
 ) -> Option<[f64; 3]> {
-    const OFFS: [f64; 3] = [0.35, 0.5, 0.65];
+    const OFFS: [f64; 1] = [0.5];
     let (w, ht) = img.dimensions();
     let (mut rs, mut gs, mut bs) =
         (Vec::with_capacity(9), Vec::with_capacity(9), Vec::with_capacity(9));

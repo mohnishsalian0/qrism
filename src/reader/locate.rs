@@ -314,11 +314,8 @@ fn nearest_valid_size(mod_count: f64) -> (i32, i32) {
 fn find_ring_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<PointF> {
     let dx = (to.x - from.x).abs();
     let dy = (to.y - from.y).abs();
-    if dx > dy {
-        mid_scan::<X>(img, from, to)
-    } else {
-        mid_scan::<Y>(img, from, to)
-    }
+    let mid = if dx > dy { mid_scan::<X>(img, &from, &to) } else { mid_scan::<Y>(img, &from, &to) };
+    mid.map(PointF::from)
 }
 
 fn mid_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> Option<PointF>
@@ -348,14 +345,15 @@ where
     None
 }
 
-fn measure_timing_patterns(img: &BinaryImage, from: &Point, to: &Point) -> u32 {
+fn measure_timing_patterns(img: &BinaryImage, from: &PointF, to: &PointF) -> u32 {
+    let (from, to) = (from.round(), to.round());
     let dx = (to.x - from.x).abs();
     let dy = (to.y - from.y).abs();
 
     if dx > dy {
-        timing_scan::<X>(img, from, to)
+        timing_scan::<X>(img, &from, &to)
     } else {
-        timing_scan::<Y>(img, from, to)
+        timing_scan::<Y>(img, &from, &to)
     }
 }
 
@@ -392,7 +390,7 @@ fn read_version_info(img: &BinaryImage, fr: LocalFrame) -> Option<(u32, u32)> {
     let mut vinfo = 0;
     for x in (-3..3).rev() {
         for y in 5..8 {
-            let pt = fr.map(x as f64, y as f64);
+            let pt = fr.map_px(x as f64, y as f64);
             let bit = img.get_bit_at_point(&pt)?;
             vinfo = (vinfo << 1) | !bit as u32;
         }
@@ -542,6 +540,9 @@ mod symbol_locate_integration_tests {
             .unwrap();
 
         let img = qr.to_gray_image(10);
+        // Every anchor is the centroid of an odd-module block, so each sits on a half pixel at
+        // 10 px per module: the finder stones cover modules 2..=4 and 27..=29, the lone alignment
+        // stone modules 25..=27, all offset by the 4-module quiet zone.
         let exp_anchors = [
             [PointF { x: 74.5, y: 74.5 }, PointF { x: 334.5, y: 74.5 }],
             [PointF { x: 74.5, y: 334.5 }, PointF { x: 304.5, y: 304.5 }],

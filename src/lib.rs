@@ -154,3 +154,32 @@ pub use reader::*;
 
 #[cfg(test)]
 pub(crate) use builder::Module;
+
+/// Benchmark-only access to crate-private pieces the error-correction replay harness needs:
+/// the Reed-Solomon codec and the data-region walk. Kept behind a thin wrapper rather than
+/// re-exporting `Block`, so the internal type stays free to change.
+#[cfg(feature = "benchmark")]
+pub mod bench_hooks {
+    use crate::common::ec::Block;
+    use crate::common::utils::EncRegionIter;
+    use crate::Version;
+
+    /// Systematic Reed-Solomon encode: `data` followed by `ec_len` parity bytes.
+    pub fn rs_encode(data: &[u8], ec_len: usize) -> Vec<u8> {
+        Block::new(data, data.len() + ec_len).full().to_vec()
+    }
+
+    /// Errors-and-erasures Reed-Solomon decode of one received block, returning the data
+    /// bytes. `erased` is indexed like `received`; an all-false mask is a plain error-only
+    /// decode.
+    pub fn rs_decode(received: &[u8], dlen: usize, erased: &[bool]) -> Option<Vec<u8>> {
+        let mut blk = Block::with_encoded(received, dlen);
+        blk.rectify_with_erasures(erased).ok().map(|d| d.to_vec())
+    }
+
+    /// The module coordinates of a channel's codeword bits, in the order the encoder places
+    /// them. Remainder bits are excluded.
+    pub fn data_region(ver: Version) -> Vec<(i32, i32)> {
+        EncRegionIter::new(ver).take(ver.channel_codewords() * 8).collect()
+    }
+}

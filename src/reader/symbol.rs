@@ -53,6 +53,63 @@ impl Symbol {
         Ok((meta, msg))
     }
 
+    /// Decodes using a per-module confidence grid, so the blocks are rectified as
+    /// errors-and-erasures rather than errors alone.
+    ///
+    /// Reed-Solomon spends two parity symbols locating and fixing an error whose position it
+    /// must discover, but only one on an *erasure* — a position already known to be suspect.
+    /// A colour decoder knows more than the bit it emitted: it also knows how close the call
+    /// was. Feeding that through lets a block survive up to `ec_len` corrupt codewords instead
+    /// of `ec_len / 2`, provided the flags land on the corruption.
+    ///
+    /// `conf` is indexed `[y][x]` in module coordinates, higher meaning more reliable; its
+    /// scale is arbitrary because only the ranking within a block is used. `steps` are
+    /// fractions of `ec_len` to erase, tried in order until a block's parity checks clear, so
+    /// `&[0.0]` reproduces [`Self::decode`] and a rising ladder costs nothing on blocks that
+    /// were already clean.
+    pub fn decode_with_confidence(
+        &mut self,
+        conf: &[Vec<f64>],
+        steps: &[f64],
+    ) -> QRResult<(Metadata, String)> {
+        let (ecl, mask) = self.read_format_info()?;
+        let ver = self.loc.ver;
+        let hi_cap = self.read_capacity_info()?;
+
+        let (pld, step_conf) = self.extract_payload_inner(&mask, Some(conf))?;
+
+        let blk_info = ver.data_codewords_per_block(ecl);
+        let ec_len = ver.ecc_per_block(ecl);
+        let mut enc = BitStream::new(pld.len() << 3);
+        let chan_cap = ver.channel_codewords();
+
+        // A codeword is only as trustworthy as its least trustworthy module: its eight bits
+        // come from eight consecutive steps of the region walk, and one bad module ruins the
+        // byte. Every channel region shares the same step ordering, so this is computed once.
+        let byte_conf: Vec<f64> = (0..chan_cap)
+            .map(|j| {
+                let hi = ((j + 1) * 8).min(step_conf.len());
+                step_conf[(j * 8).min(hi)..hi].iter().copied().fold(f64::INFINITY, f64::min)
+            })
+            .collect();
+
+        // The confidences ride the same interleave permutation as the codewords they describe.
+        let conf_blks = deinterleave_vals(&byte_conf, blk_info, ec_len);
+
+        for c in pld.data().chunks_exact(chan_cap) {
+            let mut blocks = deinterleave(c, blk_info, ec_len);
+            for (b, bc) in blocks.iter_mut().zip(conf_blks.iter()) {
+                let rectified = rectify_laddered(b, bc, ec_len, steps)?;
+                enc.extend(rectified);
+            }
+        }
+
+        let msg = codec_decode(&mut enc, ver, ecl, hi_cap)?;
+        let meta = Metadata::new(Some(ver), Some(ecl), Some(mask));
+
+        Ok((meta, msg))
+    }
+
     pub fn get(&self, x: i32, y: i32) -> QRResult<Color> {
         let (xp, yp) = self.wrap_coord(x, y);
         let tile = self.loc.tile_at(xp as usize, yp as usize)?;
@@ -238,11 +295,22 @@ mod symbol_infos_tests {
 
 impl Symbol {
     pub fn extract_payload(&self, mask: &MaskPattern) -> QRResult<BitArray> {
+        Ok(self.extract_payload_inner(mask, None)?.0)
+    }
+
+    /// The payload read, optionally recording each region-walk step's module confidence so a
+    /// caller can map it onto codewords. The second element is empty when `conf` is `None`.
+    fn extract_payload_inner(
+        &self,
+        mask: &MaskPattern,
+        conf: Option<&[Vec<f64>]>,
+    ) -> QRResult<(BitArray, Vec<f64>)> {
         let ver = self.loc.ver;
         let mask_fn = mask.mask_functions();
         let chan_bits = ver.channel_codewords() << 3;
         let offsets = [2 * chan_bits, chan_bits, 0]; // B, G, R offsets
         let mut payload = BitArray::new(chan_bits * 3);
+        let mut step_conf = Vec::with_capacity(if conf.is_some() { chan_bits } else { 0 });
         let mut rgn_iter = EncRegionIter::new(ver);
 
         for (i, (x, y)) in rgn_iter.by_ref().take(chan_bits).enumerate() {
@@ -255,6 +323,9 @@ impl Symbol {
                 }
                 payload.put(i + off, bit);
             }
+            if let Some(cg) = conf {
+                step_conf.push(cg[y as usize][x as usize]);
+            }
         }
 
         debug_assert_eq!(
@@ -263,11 +334,18 @@ impl Symbol {
             "Remainder bits don't match"
         );
 
-        Ok(payload)
+        Ok((payload, step_conf))
     }
 }
 
-fn deinterleave(data: &[u8], blk_info: (usize, usize, usize, usize), ec_len: usize) -> Vec<Block> {
+/// Undoes the interleave for any per-codeword quantity — the codewords themselves, or a
+/// parallel array describing them such as a confidence. Generic so a descriptor cannot drift
+/// out of step with the bytes it annotates.
+fn deinterleave_vals<T: Copy>(
+    data: &[T],
+    blk_info: (usize, usize, usize, usize),
+    _ec_len: usize,
+) -> Vec<Vec<T>> {
     // b1s = block1_size, b1c = block1_count
     let (b1s, b1c, b2s, b2c) = blk_info;
 
@@ -275,7 +353,7 @@ fn deinterleave(data: &[u8], blk_info: (usize, usize, usize, usize), ec_len: usi
     let spl = b1s * total_blks;
     let data_sz = b1s * b1c + b2s * b2c;
 
-    let mut dilvd = vec![Vec::with_capacity(b2s); total_blks];
+    let mut dilvd: Vec<Vec<T>> = vec![Vec::with_capacity(b2s); total_blks];
 
     // Deinterleaving data
     data[..spl]
@@ -292,9 +370,51 @@ fn deinterleave(data: &[u8], blk_info: (usize, usize, usize, usize), ec_len: usi
         .chunks(total_blks)
         .for_each(|ch| ch.iter().enumerate().for_each(|(i, v)| dilvd[i].push(*v)));
 
-    let mut blks: Vec<Block> = Vec::with_capacity(256);
-    dilvd.iter().for_each(|b| blks.push(Block::with_encoded(b, b.len() - ec_len)));
-    blks
+    dilvd
+}
+
+fn deinterleave(data: &[u8], blk_info: (usize, usize, usize, usize), ec_len: usize) -> Vec<Block> {
+    deinterleave_vals(data, blk_info, ec_len)
+        .iter()
+        .map(|b| Block::with_encoded(b, b.len() - ec_len))
+        .collect()
+}
+
+/// Rectifies one block, escalating through `steps` (fractions of `ec_len` to erase, lowest
+/// confidence first) and stopping at the first attempt whose parity checks clear.
+///
+/// Each attempt restarts from the block as received, because a failed rectification leaves
+/// partially applied corrections behind.
+fn rectify_laddered<'a>(
+    blk: &'a mut Block,
+    conf: &[f64],
+    ec_len: usize,
+    steps: &[f64],
+) -> QRResult<&'a [u8]> {
+    let pristine = *blk;
+    let mut order: Vec<usize> = (0..conf.len().min(blk.len)).collect();
+    order.sort_by(|&a, &b| conf[a].partial_cmp(&conf[b]).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut last = Err(QRError::TooManyError);
+    for &frac in steps {
+        *blk = pristine;
+        let n = ((frac * ec_len as f64).floor() as usize).min(order.len());
+        let mut erased = vec![false; blk.len];
+        for &i in order.iter().take(n) {
+            erased[i] = true;
+        }
+        // Borrow-checker: probe on a copy, then redo the winning attempt on `blk` itself.
+        let mut probe = pristine;
+        match probe.rectify_with_erasures(&erased) {
+            Ok(_) => {
+                *blk = pristine;
+                return blk.rectify_with_erasures(&erased);
+            }
+            Err(e) => last = Err(e),
+        }
+    }
+    *blk = pristine;
+    last
 }
 
 #[cfg(test)]

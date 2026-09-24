@@ -51,7 +51,7 @@ pub(super) fn locate_br_anchor(
     let mut dst = [c1, c2, &seed, c0].map(|p| (p.x, p.y));
     let h = Homography::compute(src, dst);
 
-    let mut best_br_anchor = (seed.x, seed.y);
+    let mut best_br_anchor = seed;
     let mut best_score = if let Ok(h) = h { quiet_zone_score(img, ver, &h) } else { 0 };
     let mut best_dist_sq = (c1.x - seed.x).powi(2) + (c1.y - seed.y).powi(2);
 
@@ -222,13 +222,14 @@ fn provisional_alignment(
 // match -- see `locate_alignment_centres`.
 fn pinpoint_alignment_centre(
     img: &mut BinaryImage,
-    seed: Point,
+    seed: &PointF,
     mod_size: f64,
     radius: i32,
     pass: u32,
 ) -> Option<PointF> {
     let max_width = (mod_size * ALIGNMENT_TRACE_SLACK).round() as u32;
-    let (mut cx, mut cy) = (seed.x, seed.y);
+    let seed_px = seed.round();
+    let (mut cx, mut cy) = (seed_px.x, seed_px.y);
     let ssl = SquareSpiralLeg::new(radius);
 
     for (leg, dx, dy) in ssl {
@@ -463,6 +464,7 @@ mod alignment_pattern_tests {
             let mut img = BinaryImage::prepare(&qr.to_gray_image(k as u32));
 
             // Finder centres sit on module 3 and module w - 4
+            let p = |x: f64, y: f64| PointF { x, y };
             let near = centre_px(3.0);
             let far = centre_px(w as f64 - 4.0);
             let finders = [p(near, far), p(near, near), p(far, near)]; // BL, TL, TR
@@ -473,6 +475,9 @@ mod alignment_pattern_tests {
 
             locate_alignment_centres(&mut img, ver, &ff, &mut centres);
 
+            // The measured centroid is a sub-pixel figure now, so it is checked against the
+            // exact placement rather than a rounded one. Half a pixel is the slack a
+            // thresholded 3x3-module stone leaves at 3 px per module.
             for (row, &apy) in ap_coords.iter().enumerate() {
                 for (col, &apx) in ap_coords.iter().enumerate() {
                     if [(0, 0), (0, n - 1), (n - 1, 0)].contains(&(row, col)) {
@@ -763,6 +768,8 @@ mod alignment_pattern_tests {
         assert!(res.is_none(), "Both lines degenerate");
     }
 
+    // The meeting point is where a missing alignment centre is placed, and it is what a tile
+    // homography is then fitted to, so the fraction is kept rather than snapped to a pixel.
     #[test]
     fn test_line_intersection_keeps_sub_pixel_precision() {
         // Meeting points off the pixel grid come back as is, not rounded

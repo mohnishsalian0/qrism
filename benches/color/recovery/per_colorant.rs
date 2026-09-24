@@ -12,6 +12,7 @@
 //! the grouped calibration samples and recover `j = D^-1 * x`; a downstream thresholding
 //! stage turns `j` into channel bits.
 
+use super::linalg::{inv3, matvec, IDENTITY3};
 use super::ChannelRecovery;
 use crate::calibration::GroupedSamples;
 
@@ -67,34 +68,4 @@ impl ChannelRecovery for PerColorant {
 /// White -> (0,0,0) (no density), Black -> (1,1,1) (all channels darkened).
 fn darken_vec(color: usize) -> [f64; 3] {
     std::array::from_fn(|k| (1 - ((color >> (2 - k)) & 1)) as f64)
-}
-
-// Small linear-algebra helpers
-//------------------------------------------------------------------------------
-
-const IDENTITY3: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
-
-fn matvec(m: &[[f64; 3]; 3], v: &[f64; 3]) -> [f64; 3] {
-    std::array::from_fn(|r| (0..3).map(|c| m[r][c] * v[c]).sum())
-}
-
-fn inv3(m: &[[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
-    let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-    if det.abs() < 1e-9 {
-        return None;
-    }
-    let inv_det = 1.0 / det;
-    let mut out = [[0.0f64; 3]; 3];
-    out[0][0] = (m[1][1] * m[2][2] - m[1][2] * m[2][1]) * inv_det;
-    out[0][1] = (m[0][2] * m[2][1] - m[0][1] * m[2][2]) * inv_det;
-    out[0][2] = (m[0][1] * m[1][2] - m[0][2] * m[1][1]) * inv_det;
-    out[1][0] = (m[1][2] * m[2][0] - m[1][0] * m[2][2]) * inv_det;
-    out[1][1] = (m[0][0] * m[2][2] - m[0][2] * m[2][0]) * inv_det;
-    out[1][2] = (m[0][2] * m[1][0] - m[0][0] * m[1][2]) * inv_det;
-    out[2][0] = (m[1][0] * m[2][1] - m[1][1] * m[2][0]) * inv_det;
-    out[2][1] = (m[0][1] * m[2][0] - m[0][0] * m[2][1]) * inv_det;
-    out[2][2] = (m[0][0] * m[1][1] - m[0][1] * m[1][0]) * inv_det;
-    Some(out)
 }

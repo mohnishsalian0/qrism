@@ -24,9 +24,12 @@
 //!   cargo bench --features benchmark --bench color
 //!   cargo bench --features benchmark --bench color -- accuracy
 //!   cargo bench --features benchmark --bench color -- timing
+//!   cargo bench --features benchmark --bench color -- llr-record llr-replay
 
 pub(crate) mod calibration;
+pub(crate) mod deblur;
 pub(crate) mod hiq;
+pub(crate) mod llr;
 pub(crate) mod normalization;
 pub(crate) mod recovery;
 pub(crate) mod thresholding;
@@ -43,5 +46,14 @@ fn main() {
     }
     if run("timing") {
         analysis::benchmark_timing();
+    }
+
+    // Opt-in only: recording rewrites a few hundred MB, and replay needs that recording.
+    let explicit = |name: &str| args.iter().any(|a| a == name);
+    if explicit("llr-record") {
+        llr::record();
+    }
+    if explicit("llr-replay") {
+        llr::replay();
     }
 }

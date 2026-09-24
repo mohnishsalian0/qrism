@@ -4,14 +4,12 @@
 //! per image from the grouped calibration samples, then applied per module. [`Identity`]
 //! is the "no normalization" slot (used e.g. by euclid-measured on raw RGB); real
 //! strategies are [`intensity::Intensity`] (optical density),
-//! [`absorptance::Absorptance`] (its linear-in-reflectance analog, `1 - rgb/white`),
-//! [`max_channel::MaxChannel`] (brightness neutralization with a black guard) and
+//! [`absorptance::Absorptance`] (its linear-in-reflectance analog, `1 - rgb/white`) and
 //! [`black_white::BlackWhite`] (per-channel black/white-point affine stretch).
 
 pub(crate) mod absorptance;
 pub(crate) mod black_white;
 pub(crate) mod intensity;
-pub(crate) mod max_channel;
 
 use crate::calibration::GroupedSamples;
 

@@ -4,12 +4,14 @@
 //! strategies decide differently:
 //!   - [`ChannelRecovery`] (per-colorant) separates the signal into per-channel indicators
 //!     that still need a [`crate::thresholding`] step to become a `Color`.
-//!   - [`DirectRecovery`] (euclid-measured) classifies straight to a `Color`, self-
-//!     thresholding, so it skips the thresholding phase.
+//!   - [`DirectRecovery`] (euclid-measured, mahalanobis) classifies straight to a `Color`,
+//!     self-thresholding, so it skips the thresholding phase.
 //!
 //! Both fit per image on the normalized grouped calibration samples.
 
 pub(crate) mod euclid_measured;
+pub(crate) mod linalg;
+pub(crate) mod mahalanobis;
 pub(crate) mod per_colorant;
 
 use qrism::Color;
