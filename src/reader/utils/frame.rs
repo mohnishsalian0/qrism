@@ -59,11 +59,6 @@ impl LocalFrame {
         }
     }
 
-    // Same mapping, snapped to the pixel the caller is about to look up.
-    pub fn map_px(&self, x: f64, y: f64) -> Point {
-        self.map(x, y).round()
-    }
-
     // Side of one module in pixels, averaged over the two axes. The mean of the two lengths, not
     // the root of their mean square: the two disagree once perspective foreshortens one axis, and
     // the root mean square runs high when they do.

@@ -314,8 +314,11 @@ fn nearest_valid_size(mod_count: f64) -> (i32, i32) {
 fn find_ring_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<PointF> {
     let dx = (to.x - from.x).abs();
     let dy = (to.y - from.y).abs();
-    let mid = if dx > dy { mid_scan::<X>(img, &from, &to) } else { mid_scan::<Y>(img, &from, &to) };
-    mid.map(PointF::from)
+    if dx > dy {
+        mid_scan::<X>(img, from, to)
+    } else {
+        mid_scan::<Y>(img, from, to)
+    }
 }
 
 fn mid_scan<A: Axis>(img: &BinaryImage, from: &Point, to: &Point) -> Option<PointF>
@@ -345,15 +348,14 @@ where
     None
 }
 
-fn measure_timing_patterns(img: &BinaryImage, from: &PointF, to: &PointF) -> u32 {
-    let (from, to) = (from.round(), to.round());
+fn measure_timing_patterns(img: &BinaryImage, from: &Point, to: &Point) -> u32 {
     let dx = (to.x - from.x).abs();
     let dy = (to.y - from.y).abs();
 
     if dx > dy {
-        timing_scan::<X>(img, &from, &to)
+        timing_scan::<X>(img, from, to)
     } else {
-        timing_scan::<Y>(img, &from, &to)
+        timing_scan::<Y>(img, from, to)
     }
 }
 
@@ -390,7 +392,7 @@ fn read_version_info(img: &BinaryImage, fr: LocalFrame) -> Option<(u32, u32)> {
     let mut vinfo = 0;
     for x in (-3..3).rev() {
         for y in 5..8 {
-            let pt = fr.map_px(x as f64, y as f64);
+            let pt = fr.map(x as f64, y as f64);
             let bit = img.get_bit_at_point(&pt)?;
             vinfo = (vinfo << 1) | !bit as u32;
         }

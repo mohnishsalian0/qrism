@@ -51,7 +51,7 @@ pub(super) fn locate_br_anchor(
     let mut dst = [c1, c2, &seed, c0].map(|p| (p.x, p.y));
     let h = Homography::compute(src, dst);
 
-    let mut best_br_anchor = seed;
+    let mut best_br_anchor = (seed.x, seed.y);
     let mut best_score = if let Ok(h) = h { quiet_zone_score(img, ver, &h) } else { 0 };
     let mut best_dist_sq = (c1.x - seed.x).powi(2) + (c1.y - seed.y).powi(2);
 
@@ -168,8 +168,13 @@ pub(super) fn locate_alignment_centres(
             if centres[r][c].is_none() {
                 let seed = provisional_alignment(r, c, ver, ff, centres);
 
-                let exact_centre =
-                    pinpoint_alignment_centre(img, Point::from(&seed), mod_size, search_span, pass);
+                let exact_centre = pinpoint_alignment_centre(
+                    img,
+                    &Point::from(&seed),
+                    mod_size,
+                    search_span,
+                    pass,
+                );
 
                 centres[r][c] = exact_centre;
             }
@@ -222,14 +227,13 @@ fn provisional_alignment(
 // match -- see `locate_alignment_centres`.
 fn pinpoint_alignment_centre(
     img: &mut BinaryImage,
-    seed: &PointF,
+    seed: &Point,
     mod_size: f64,
     radius: i32,
     pass: u32,
 ) -> Option<PointF> {
     let max_width = (mod_size * ALIGNMENT_TRACE_SLACK).round() as u32;
-    let seed_px = seed.round();
-    let (mut cx, mut cy) = (seed_px.x, seed_px.y);
+    let (mut cx, mut cy) = (seed.x, seed.y);
     let ssl = SquareSpiralLeg::new(radius);
 
     for (leg, dx, dy) in ssl {
