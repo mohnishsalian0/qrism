@@ -1,6 +1,6 @@
 use crate::{
     binarize::{BinaryImage, UNLABELED},
-    reader::utils::geometry::{Direction, Point},
+    reader::utils::geometry::{Direction, Point, PointF},
 };
 
 // Crack contour
@@ -44,7 +44,7 @@ impl Contour {
         self.perimeter
     }
 
-    pub fn centre(&self) -> Option<Point> {
+    pub fn centre(&self) -> Option<PointF> {
         if self.bailed || self.area2 <= 0 {
             return None;
         }
@@ -52,7 +52,7 @@ impl Contour {
         let denom = 3.0 * self.area2 as f64;
         let x = self.cx6 as f64 / denom - 0.5;
         let y = self.cy6 as f64 / denom - 0.5;
-        Some(Point { x: x.round() as i32, y: y.round() as i32 })
+        Some(PointF { x, y })
     }
 
     pub fn compactness(&self) -> f64 {
@@ -281,7 +281,8 @@ mod contour_tests {
         let c = img.get_contours().last().unwrap();
         assert_eq!(c.perimeter, 4, "L1 perimeter of one pixel");
         assert_eq!(c.area(), 1);
-        assert_eq!(c.centre(), Some(Point { x: 2, y: 1 }));
+        let centre = c.centre().unwrap();
+        assert!(centre.approx_eq(&PointF { x: 2.0, y: 1.0 }));
         assert_eq!(c.bounds, (2, 1, 3, 2), "corner box around a single pixel");
         assert_eq!(c.compactness(), 1.0, "Compactness test failed");
     }
@@ -293,7 +294,8 @@ mod contour_tests {
         let c = img.get_contours().last().unwrap();
         assert_eq!(c.perimeter, 12, "L1 perimeter of a 3x3 square");
         assert_eq!(c.area(), 9, "shoelace over cracks is the exact pixel count");
-        assert_eq!(c.centre(), Some(Point { x: 2, y: 2 }));
+        let centre = c.centre().unwrap();
+        assert!(centre.approx_eq(&PointF { x: 2.0, y: 2.0 }));
         assert_eq!(c.bounds, (1, 1, 4, 4), "pixels x,y in 1..=3, so corners in 1..=4");
         assert_eq!(c.compactness(), 1.0, "Compactness test failed");
     }
@@ -365,7 +367,8 @@ mod contour_tests {
         let c = img.get_contours().last().unwrap();
         assert_eq!(c.area(), 9, "outer crack encloses the hole");
         assert_eq!(c.perimeter, 12);
-        assert_eq!(c.centre(), Some(Point { x: 2, y: 2 }));
+        let centre = c.centre().unwrap();
+        assert!(centre.approx_eq(&PointF { x: 2.0, y: 2.0 }));
         assert_eq!(c.bounds, (1, 1, 4, 4), "hole leaves the outer box untouched");
     }
 

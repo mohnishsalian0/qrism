@@ -1,6 +1,9 @@
 use super::{
     alignment::Anchors,
-    utils::{geometry::Point, homography::Homography},
+    utils::{
+        geometry::{Point, PointF},
+        homography::Homography,
+    },
 };
 use crate::{utils::QRResult, Version};
 
@@ -29,10 +32,10 @@ impl Tile {
     pub(super) fn new(
         bounds: (u32, u32, u32, u32),
         anchors: [(f64, f64); 4],
-        centres: [Point; 4],
+        centres: [PointF; 4],
     ) -> QRResult<Self> {
         let (x0, y0, x1, y1) = bounds;
-        let dst = centres.map(|p| (p.x as f64, p.y as f64));
+        let dst = centres.map(|p| (p.x, p.y));
 
         Ok(Self { h: Homography::compute(anchors, dst)?, x0, y0, x1, y1 })
     }
@@ -85,7 +88,7 @@ fn anchor_coord(ver: Version, row: usize, col: usize) -> (f64, f64) {
 
 // Image space centres in the order: TL, TR, BR, BL -- or `None` if any of
 // the four went unlocated. A tile is only as good as its worst corner.
-fn tile_centres(centres: &Anchors, row: usize, col: usize) -> Option<[Point; 4]> {
+fn tile_centres(centres: &Anchors, row: usize, col: usize) -> Option<[PointF; 4]> {
     Some([
         centres[row][col]?,
         centres[row][col + 1]?,
@@ -161,7 +164,7 @@ mod tile_tests {
     use super::{build_tiles, Anchors};
     use crate::metadata::Version;
     use crate::reader::alignment::MAX_ALIGN_CELLS;
-    use crate::reader::utils::geometry::Point;
+    use crate::reader::utils::geometry::PointF;
 
     const KX: f64 = 12.0; // Pixels per module, x
     const KY: f64 = 16.0; // Pixels per module, y
@@ -206,7 +209,7 @@ mod tile_tests {
             for (col, centre) in centres_row.iter_mut().enumerate().take(n) {
                 let (mx, my) = cell_centre(ver, row, col);
                 let (px, py) = project(mx, my);
-                *centre = Some(Point { x: px as i32, y: py as i32 });
+                *centre = Some(PointF { x: px, y: py });
             }
         }
         centres
