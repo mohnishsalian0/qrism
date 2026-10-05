@@ -155,31 +155,113 @@ pub use reader::*;
 #[cfg(test)]
 pub(crate) use builder::Module;
 
-/// Benchmark-only access to crate-private pieces the error-correction replay harness needs:
-/// the Reed-Solomon codec and the data-region walk. Kept behind a thin wrapper rather than
-/// re-exporting `Block`, so the internal type stays free to change.
+/// Benchmark-only access to crate-private pieces the colour bench needs: grid format reads and
+/// a per-block high-capacity decode. Kept behind a thin wrapper so internal types stay free to
+/// change.
 #[cfg(feature = "benchmark")]
 pub mod bench_hooks {
-    use crate::common::ec::Block;
-    use crate::common::utils::EncRegionIter;
-    use crate::Version;
+    use crate::common::codec::decode as codec_decode;
+    use crate::common::ec::rectify_info;
+    use crate::common::metadata::{
+        parse_format_info_qr, FORMAT_ERROR_CAPACITY, FORMAT_INFOS_QR, FORMAT_INFO_COORDS_QR_MAIN,
+        FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK,
+    };
+    use crate::common::utils::{BitStream, EncRegionIter};
+    use crate::reader::symbol::deinterleave;
+    use crate::{Color, ECLevel, MaskPattern, Version};
 
-    /// Systematic Reed-Solomon encode: `data` followed by `ec_len` parity bytes.
-    pub fn rs_encode(data: &[u8], ec_len: usize) -> Vec<u8> {
-        Block::new(data, data.len() + ec_len).full().to_vec()
+    /// Reads the format info off a module grid indexed `[y][x]`, the way `Symbol` reads it
+    /// off an image: any non-white module is dark. Tries the main copy, then the side copy.
+    pub fn read_grid_format(grid: &[Vec<Color>]) -> Option<(ECLevel, MaskPattern)> {
+        let w = grid.len() as i32;
+        let number = |coords: &[(i32, i32)]| {
+            coords.iter().fold(0u32, |num, &(x, y)| {
+                let (x, y) = (x.rem_euclid(w) as usize, y.rem_euclid(w) as usize);
+                (num << 1) | (grid[y][x] != Color::White) as u32
+            })
+        };
+        [&FORMAT_INFO_COORDS_QR_MAIN, &FORMAT_INFO_COORDS_QR_SIDE].into_iter().find_map(|c| {
+            let (format, _) =
+                rectify_info(number(c), &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY).ok()?;
+            Some(parse_format_info_qr(format ^ FORMAT_MASK))
+        })
     }
 
-    /// Errors-and-erasures Reed-Solomon decode of one received block, returning the data
-    /// bytes. `erased` is indexed like `received`; an all-false mask is a plain error-only
-    /// decode.
-    pub fn rs_decode(received: &[u8], dlen: usize, erased: &[bool]) -> Option<Vec<u8>> {
-        let mut blk = Block::with_encoded(received, dlen);
-        blk.rectify_with_erasures(erased).ok().map(|d| d.to_vec())
+    /// Where a high-capacity grid decode gave out, once its format was known.
+    pub enum Payload {
+        /// At least one Reed-Solomon block, in some channel, could not be corrected.
+        RsFailed,
+        /// Every block corrected, but the codec rejected the bit stream.
+        CodecFailed,
+        Decoded(String),
     }
 
-    /// The module coordinates of a channel's codeword bits, in the order the encoder places
-    /// them. Remainder bits are excluded.
-    pub fn data_region(ver: Version) -> Vec<(i32, i32)> {
-        EncRegionIter::new(ver).take(ver.channel_codewords() * 8).collect()
+    /// A high-capacity decode broken out per channel and per Reed-Solomon block, which
+    /// `Symbol::decode` folds into a single pass/fail. Channels are indexed R, G, B.
+    pub struct GridDecode {
+        /// Each block's codewords as received — data then parity, deinterleaved — before
+        /// correction. Diffing these against a clean render's counts codeword errors exactly.
+        pub received: [Vec<Vec<u8>>; 3],
+        /// Whether each block corrected.
+        pub block_ok: [Vec<bool>; 3],
+        pub ec_len: usize,
+        pub payload: Payload,
+    }
+
+    /// Decodes a high-capacity module grid with a known EC level and mask, mirroring
+    /// `Symbol::decode` but keeping every block's outcome rather than stopping at the first
+    /// failure.
+    pub fn decode_hc_grid(
+        grid: &[Vec<Color>],
+        ver: Version,
+        ecl: ECLevel,
+        mask: MaskPattern,
+    ) -> GridDecode {
+        let w = grid.len() as i32;
+        let mask_fn = mask.mask_functions();
+        let chan_cap = ver.channel_codewords();
+        let chan_bits = chan_cap << 3;
+        let blk_info = ver.data_codewords_per_block(ecl);
+        let ec_len = ver.ecc_per_block(ecl);
+
+        // One bit stream per channel. `Color as u8` packs R<<2 | G<<1 | B.
+        let mut bits = [vec![false; chan_bits], vec![false; chan_bits], vec![false; chan_bits]];
+        for (i, (x, y)) in EncRegionIter::new(ver).take(chan_bits).enumerate() {
+            let (xu, yu) = (x.rem_euclid(w) as usize, y.rem_euclid(w) as usize);
+            let rgb = grid[yu][xu] as u8;
+            for (ch, chan) in bits.iter_mut().enumerate() {
+                chan[i] = ((rgb >> (2 - ch)) & 1 == 1) != !mask_fn(x, y);
+            }
+        }
+
+        let mut received: [Vec<Vec<u8>>; 3] = Default::default();
+        let mut block_ok: [Vec<bool>; 3] = Default::default();
+        let mut enc = BitStream::new(chan_cap * 3 * 8);
+        for ch in 0..3 {
+            let bytes: Vec<u8> = bits[ch]
+                .chunks_exact(8)
+                .map(|b| b.iter().fold(0u8, |acc, &bit| (acc << 1) | bit as u8))
+                .collect();
+
+            for mut blk in deinterleave(&bytes, blk_info, ec_len) {
+                received[ch].push(blk.full().to_vec());
+                let fixed = blk.rectify().map(|d| d.to_vec());
+                block_ok[ch].push(fixed.is_ok());
+                if let Ok(d) = fixed {
+                    enc.extend(&d);
+                }
+            }
+        }
+
+        let payload = if block_ok.iter().flatten().all(|&ok| ok) {
+            match codec_decode(&mut enc, ver, ecl, true) {
+                Ok(msg) => Payload::Decoded(msg),
+                Err(_) => Payload::CodecFailed,
+            }
+        } else {
+            Payload::RsFailed
+        };
+
+        GridDecode { received, block_ok, ec_len, payload }
     }
 }

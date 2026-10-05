@@ -45,7 +45,7 @@
 
 use image::{DynamicImage, GrayImage, Luma};
 
-use qrism::{detect_qr, Color, ECLevel, Version};
+use qrism::{detect_qr, Color, Version};
 
 /// Pixels per module in the synthetic render. Three is enough for the localizer to lock on
 /// — the image is noiseless and axis-aligned — and measurably cheaper than four.
@@ -214,45 +214,8 @@ fn render_layer(pred: &[Vec<Color>], chan: usize, ver: Version) -> DynamicImage 
 // Decode
 //------------------------------------------------------------------------------
 
-/// The EC level each layer of a clean grid was encoded at, in R, G, B order. HiQ picks it per
-/// layer, and it fixes the Reed-Solomon block layout a replay has to reproduce.
-pub(crate) fn layer_ec_levels(truth: &[Vec<Color>], ver: Version) -> [ECLevel; 3] {
-    std::array::from_fn(|chan| {
-        let img = render_layer(truth, chan, ver);
-        let mut res = detect_qr(&img);
-        let sym = res.symbols().first_mut().expect("clean layer must localize");
-        sym.read_format_info().expect("clean layer must have format info").0
-    })
-}
-
 /// Decodes all three layers of a predicted grid, in R, G, B order.
 pub(crate) fn decode_layers(pred: &[Vec<Color>], ver: Version) -> [Layer; 3] {
-    decode_layers_inner(pred, ver, None)
-}
-
-/// As [`decode_layers`], but handing the decoder a per-module confidence so each block is
-/// rectified as errors-and-erasures. `steps` are fractions of the block's parity to erase,
-/// tried in order.
-///
-/// `conf` holds one grid per channel, since each layer is decoded as its own symbol and a
-/// module's bit can be safe in one channel while being marginal in another. Grids are indexed
-/// in the predicted grid's own module coordinates, which lines up with the re-detected
-/// synthetic symbol because [`render_layer`] draws a canonical, axis-aligned QR at a fixed
-/// scale, so localization recovers the same grid it was given.
-pub(crate) fn decode_layers_conf(
-    pred: &[Vec<Color>],
-    conf: &[Vec<Vec<f64>>; 3],
-    ver: Version,
-    steps: &[f64],
-) -> [Layer; 3] {
-    decode_layers_inner(pred, ver, Some((conf, steps)))
-}
-
-fn decode_layers_inner(
-    pred: &[Vec<Color>],
-    ver: Version,
-    soft: Option<(&[Vec<Vec<f64>>; 3], &[f64])>,
-) -> [Layer; 3] {
     std::array::from_fn(|chan| {
         let img = render_layer(pred, chan, ver);
         let mut res = detect_qr(&img);
@@ -270,11 +233,7 @@ fn decode_layers_inner(
         if sym.read_format_info().is_err() {
             return Layer::BadFormat;
         }
-        let decoded = match soft {
-            Some((conf, steps)) => sym.decode_with_confidence(&conf[chan], steps),
-            None => sym.decode(),
-        };
-        match decoded {
+        match sym.decode() {
             Ok((_meta, msg)) => Layer::Decoded(msg),
             Err(_) => Layer::BadPayload,
         }

@@ -186,17 +186,28 @@ mod qr_util_tests {
 
 impl QR {
     fn draw_finder_patterns(&mut self) {
-        self.draw_finder_pattern_at(3, 3);
-        match self.ver {
-            Version::Micro(_) => {}
-            Version::Normal(_) => {
-                self.draw_finder_pattern_at(3, -4);
-                self.draw_finder_pattern_at(-4, 3);
+        if self.high_capacity() {
+            self.draw_finder_pattern_at(3, 3, Color::Green, Color::Magenta);
+            match self.ver {
+                Version::Micro(_) => {}
+                Version::Normal(_) => {
+                    self.draw_finder_pattern_at(3, -4, Color::Blue, Color::Yellow);
+                    self.draw_finder_pattern_at(-4, 3, Color::Red, Color::Cyan);
+                }
+            }
+        } else {
+            self.draw_finder_pattern_at(3, 3, Color::Black, Color::Black);
+            match self.ver {
+                Version::Micro(_) => {}
+                Version::Normal(_) => {
+                    self.draw_finder_pattern_at(3, -4, Color::Black, Color::Black);
+                    self.draw_finder_pattern_at(-4, 3, Color::Black, Color::Black);
+                }
             }
         }
     }
 
-    fn draw_finder_pattern_at(&mut self, x: i32, y: i32) {
+    fn draw_finder_pattern_at(&mut self, x: i32, y: i32, ring_clr: Color, stone_clr: Color) {
         let (left, right) = if x > 0 { (-3, 4) } else { (-4, 3) };
         let (top, bottom) = if y > 0 { (-3, 4) } else { (-4, 3) };
         for i in left..=right {
@@ -206,9 +217,9 @@ impl QR {
                     y + j,
                     match (i, j) {
                         (4 | -4, _) | (_, 4 | -4) => Module::Func(Color::White),
-                        (3 | -3, _) | (_, 3 | -3) => Module::Func(Color::Black),
+                        (3 | -3, _) | (_, 3 | -3) => Module::Func(ring_clr),
                         (2 | -2, _) | (_, 2 | -2) => Module::Func(Color::White),
-                        _ => Module::Func(Color::Black),
+                        _ => Module::Func(stone_clr),
                     },
                 );
             }

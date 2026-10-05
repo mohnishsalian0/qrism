@@ -49,7 +49,7 @@ use crate::calibration::{
     sample_module_rgb, GroupedSamples,
 };
 use crate::deblur::{estimate_beta_optical, estimate_sigma_optical, Deblur};
-use crate::hiq::{decode_layers, decode_layers_conf, Layer};
+use crate::hiq::{decode_layers, Layer};
 use crate::normalization::{
     absorptance::Absorptance, black_white::BlackWhite, intensity::Intensity,
     Identity, Normalizer,
@@ -63,7 +63,7 @@ use qrism::detect_hc_qr;
 use qrism::Color;
 use qrism::Version;
 
-const COLORS: [Color; 8] = [
+pub(crate) const COLORS: [Color; 8] = [
     Color::Black,
     Color::Blue,
     Color::Green,
@@ -74,7 +74,7 @@ const COLORS: [Color; 8] = [
     Color::White,
 ];
 
-fn cname(c: Color) -> &'static str {
+pub(crate) fn cname(c: Color) -> &'static str {
     match c {
         Color::Black => "Black",
         Color::Blue => "Blue",
@@ -297,63 +297,14 @@ impl Score {
     }
 }
 
-/// The colour pipeline the erasure experiment is built on: the best of [`PIPELINES`].
+/// Leak fraction of the best pipeline in [`PIPELINES`], `rda + deblur` at a fixed beta.
 pub(crate) const BEST_BETA: f64 = 0.06;
-
-/// Erasure schedules compared in the soft-decision pass. Each entry is a list of fractions of
-/// a block's parity to erase — lowest-confidence codewords first — tried in order until the
-/// block's parity checks clear. `&[0.0]` is the plain error-only decode, so it doubles as the
-/// control that must reproduce the matching row of the main table.
-#[allow(clippy::type_complexity)]
-const ERASE_STEPS: [(&str, &[f64]); 7] = [
-    ("none (control)", &[0.0]),
-    ("12% of parity", &[0.125]),
-    ("25% of parity", &[0.25]),
-    ("50% of parity", &[0.50]),
-    ("75% of parity", &[0.75]),
-    ("ladder coarse", &[0.0, 0.25, 0.50, 0.75, 1.0]),
-    ("ladder fine", &[0.0, 0.125, 0.25, 0.375, 0.50, 0.625, 0.75, 0.875, 1.0]),
-];
-
-fn new_erase_scores() -> [Score; ERASE_STEPS.len()] {
-    std::array::from_fn(|_| Score::new())
-}
-
-/// The best colour pipeline, returning both the per-module decision and how close that call
-/// was. The margin is what the erasure decoder ranks codewords by.
-#[allow(clippy::type_complexity)]
-fn best_with_conf(
-    grid: usize,
-    rgb: &[Vec<[f64; 3]>],
-    groups: &[Vec<(i32, i32)>; 8],
-) -> (Vec<Vec<Color>>, [Vec<Vec<f64>>; 3]) {
-    let db = Deblur::fixed(BEST_BETA);
-    let dg = db.apply(rgb);
-    let draw = db.sample_groups(rgb, groups);
-    let norm = Identity;
-    let ng = norm.normalize_groups(&draw);
-    let rec = Mahalanobis::fit_rda(&ng);
-
-    let mut pred = vec![vec![Color::White; grid]; grid];
-    let mut conf: [Vec<Vec<f64>>; 3] =
-        std::array::from_fn(|_| vec![vec![0.0f64; grid]; grid]);
-    for gy in 0..grid {
-        for gx in 0..grid {
-            let (c, m) = rec.classify_with_channel_margins(norm.apply(dg[gy][gx]));
-            pred[gy][gx] = c;
-            for k in 0..3 {
-                conf[k][gy][gx] = m[k];
-            }
-        }
-    }
-    (pred, conf)
-}
 
 fn new_scores() -> [Score; PIPELINES.len()] {
     std::array::from_fn(|_| Score::new())
 }
 
-fn ci(c: Color) -> usize {
+pub(crate) fn ci(c: Color) -> usize {
     COLORS.iter().position(|&x| x == c).unwrap()
 }
 
@@ -512,7 +463,7 @@ fn decode_grid(
 
 /// Fits and evaluates a direct-recovery pipeline (normalize -> classify), returning its
 /// prediction grid.
-fn eval_direct<N: Normalizer, R: DirectRecovery>(
+pub(crate) fn eval_direct<N: Normalizer, R: DirectRecovery>(
     norm: &N,
     rec: &R,
     grid: usize,
@@ -524,7 +475,7 @@ fn eval_direct<N: Normalizer, R: DirectRecovery>(
 /// Fits and evaluates a channel-recovery pipeline (normalize -> recover -> threshold),
 /// returning its prediction grid. The recovered grid is materialised first so a spatial
 /// thresholder (e.g. local) can see each module's neighbours.
-fn eval_channel<N: Normalizer, R: ChannelRecovery, T: Thresholder>(
+pub(crate) fn eval_channel<N: Normalizer, R: ChannelRecovery, T: Thresholder>(
     norm: &N,
     rec: &R,
     thr: &T,
@@ -831,8 +782,6 @@ pub(crate) fn sample_grid(path: &Path, refs: &HashMap<usize, Reference>) -> Resu
 /// — kept so the driver can dump one representative fit per version.
 struct PhotoResult {
     scores: [Score; PIPELINES.len()],
-    /// One score per [`ERASE_STEPS`] schedule, all over the same predicted grid.
-    erase: [Score; ERASE_STEPS.len()],
     raw: GroupedSamples,
     /// Kept only so the driver can report the deblur fit for one representative photo.
     rgb: Vec<Vec<[f64; 3]>>,
@@ -865,21 +814,10 @@ fn analyze(path: &Path, refs: &HashMap<usize, Reference>) -> Outcome {
         s
     });
 
-    // Soft-decision pass: one prediction grid plus its confidences, decoded under each
-    // erasure schedule. Module accuracy is identical across these by construction, so only the
-    // delivered-message figures differ.
-    let (bp, bc) = best_with_conf(grid, &sampled.rgb, &reference.groups);
-    let erase = std::array::from_fn(|k| {
-        let mut s = Score::new();
-        s.add_decode(&decode_layers_conf(&bp, &bc, ver, ERASE_STEPS[k].1), &reference.messages);
-        s
-    });
-
     Outcome::Scored(
         sampled.version,
         Box::new(PhotoResult {
             scores,
-            erase,
             raw: sampled.raw,
             rgb: sampled.rgb,
             beta_optical: sampled.beta_optical,
@@ -901,9 +839,6 @@ pub fn benchmark_accuracy() {
     // module size the way inter-module bleed predicts.
     let mut betas_by_version: HashMap<usize, Vec<f64>> =
         VERSIONS.into_iter().map(|v| (v, Vec::new())).collect();
-    let mut erase_overall = new_erase_scores();
-    let mut erase_by_version: HashMap<usize, [Score; ERASE_STEPS.len()]> =
-        VERSIONS.into_iter().map(|v| (v, new_erase_scores())).collect();
     let mut by_version: HashMap<usize, [Score; PIPELINES.len()]> =
         VERSIONS.into_iter().map(|v| (v, new_scores())).collect();
     let mut by_folder: HashMap<&str, [Score; PIPELINES.len()]> =
@@ -941,10 +876,6 @@ pub fn benchmark_accuracy() {
                         .get_mut(&v)
                         .unwrap()
                         .push(res.beta_optical.iter().sum::<f64>() / 3.0);
-                    for (k, s) in res.erase.iter().enumerate() {
-                        erase_overall[k].merge(s);
-                        erase_by_version.get_mut(&v).unwrap()[k].merge(s);
-                    }
                     for (pi, s) in res.scores.iter().enumerate() {
                         overall[pi].merge(s);
                         by_version.get_mut(&v).unwrap()[pi].merge(s);
@@ -1070,55 +1001,6 @@ pub fn benchmark_accuracy() {
             q(0.90),
             pooled.iter().sum::<f64>() / pooled.len() as f64
         );
-    }
-
-    // Soft-decision / erasure pass
-    //--------------------------------------------------------------------------
-    println!(
-        "\n\n========== soft-decision erasure decoding ==========\n  \
-         all rows share one prediction grid (rda + deblur b={BEST_BETA:.2}), so module accuracy \
-         is identical;\n  only the Reed-Solomon stage differs. Codewords are erased \
-         lowest-confidence first, where a\n  module's confidence is the margin between its best \
-         and runner-up colour."
-    );
-    println!(
-        "\n    {:<26}{:>9}{:>8}{:>14}{:>14}{:>14}",
-        "erasure schedule", "layer%", "code%", "no symbol%", "bad format%", "bad payload%"
-    );
-    for (k, (name, _)) in ERASE_STEPS.iter().enumerate() {
-        let s = &erase_overall[k];
-        let pct = |n: usize| 100.0 * n as f64 / s.layer_total.max(1) as f64;
-        println!(
-            "    {:<26}{:>9.1}{:>8.1}{:>14.1}{:>14.1}{:>14.1}",
-            name,
-            s.layer_rate(),
-            s.code_rate(),
-            pct(s.layer_nosym),
-            pct(s.layer_badfmt),
-            pct(s.layer_badpld)
-        );
-        if s.layer_wrong > 0 {
-            println!("      !! {} layers decoded to the WRONG message", s.layer_wrong);
-        }
-    }
-
-    println!("\n  erasure decoding by version:  (cells are layer% / code%)");
-    print!("    {:<26}", "");
-    for v in VERSIONS {
-        print!("{:>14}", format!("v{v}"));
-    }
-    println!();
-    for (k, (name, _)) in ERASE_STEPS.iter().enumerate() {
-        print!("    {:<26}", name);
-        for v in VERSIONS {
-            let s = &erase_by_version[&v][k];
-            if s.layer_total == 0 {
-                print!("{:>14}", "-");
-            } else {
-                print!("{:>8.1}/{:<5.1}", s.layer_rate(), s.code_rate());
-            }
-        }
-        println!();
     }
 
     for (pi, name) in PIPELINES.iter().enumerate() {

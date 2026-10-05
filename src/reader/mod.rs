@@ -227,13 +227,13 @@ mod reader_tests {
         dbg!(sym_locs.len());
         sym_locs.iter().for_each(|sl| sl.highlight(&mut img));
 
-        let bin_img = Arc::new(bin_img);
-        let mut symbols: Vec<Symbol> =
-            sym_locs.into_iter().map(|sl| Symbol::new(bin_img.clone(), sl)).collect::<_>();
-
-        symbols.iter_mut().for_each(|s| {
-            let _ = dbg!(s.decode());
-        });
+        // let bin_img = Arc::new(bin_img);
+        // let mut symbols: Vec<Symbol> =
+        //     sym_locs.into_iter().map(|sl| Symbol::new(bin_img.clone(), sl)).collect::<_>();
+        //
+        // symbols.iter_mut().for_each(|s| {
+        //     let _ = dbg!(s.decode());
+        // });
 
         let out_path = std::path::Path::new("assets/detect.png");
         img.save(out_path).unwrap();
