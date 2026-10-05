@@ -5,10 +5,7 @@ use super::{
         geometry::{Point, PointF},
     },
 };
-use crate::{
-    reader::utils::{geometry::SquareSpiralLeg, homography::Homography},
-    Version,
-};
+use crate::{reader::utils::homography::Homography, Version};
 
 // The alignment grid is at most 7x7 -- version 40 carries 7 alignment coordinates per axis.
 pub(super) const MAX_ALIGN_CELLS: usize = 7;
@@ -68,7 +65,7 @@ pub(super) fn locate_br_anchor(
                 dst[2] = (cx, cy);
                 let Ok(h) = Homography::compute(src, dst) else { continue };
                 let score = quiet_zone_score(img, ver, &h);
-                let dist_sq = ((c1.x - cx).powi(2) + (c1.y - cy).powi(2)) as f64;
+                let dist_sq = (c1.x - cx).powi(2) + (c1.y - cy).powi(2);
                 if score > best_score || (score == best_score && dist_sq < best_dist_sq) {
                     best_br_anchor = dst[2];
                     best_score = score;
@@ -127,11 +124,11 @@ pub(super) fn alignment_coords(ver: Version) -> impl Iterator<Item = (i32, i32)>
 //
 // The three cells that coincide with finders are taken straight from the finder centres. Every
 // other cell is resolved in two steps: a local frame predicts where the pattern should sit, then
-// `pinpoint_alignment_centre` spirals out from that prediction until it finds a black region that
-// reads as the pattern's centre stone. The measured centre is what gets stored -- the prediction
-// only ever seeds the search. A cell whose search comes up empty is left `None`, marking a centre
-// the caller was not given rather than one that sits at the prediction. In case of v1, the bottom
-// right point is extrapolated from local frame
+// `pinpoint_alignment_centre` scans a window around that prediction, nearest dark run first, until
+// it finds a black region that reads as the pattern's centre stone. The measured centre is what
+// gets stored -- the prediction only ever seeds the search. A cell whose search comes up empty is
+// left `None`, marking a centre the caller was not given rather than one that sits at the
+// prediction. In case of v1, the bottom right point is extrapolated from local frame
 //
 // The frame is built on the three finder centres, so its basis spans `width - 7` modules rather
 // than the 3 a single finder's own ring would give. Both scale gates come off that same frame --
@@ -139,7 +136,7 @@ pub(super) fn alignment_coords(ver: Version) -> impl Iterator<Item = (i32, i32)>
 // over the whole symbol rather than measurements taken at the cell being searched. On a strongly
 // warped symbol the module footprint in the far corner will not match that average.
 //
-// Each stone in the symbol can likewise be claimed only once, so a cell whose spiral reaches a
+// Each stone in the symbol can likewise be claimed only once, so a cell whose scan reaches a
 // stone another cell has already taken passes over it, and is left `None` if it finds nothing
 // else. A claim is recorded on the contour itself, stamped with the pass number `next_pass` hands
 // out here. Contours outlive a single symbol -- a second symbol in the same image sees every
@@ -168,13 +165,8 @@ pub(super) fn locate_alignment_centres(
             if centres[r][c].is_none() {
                 let seed = provisional_alignment(r, c, ver, ff, centres);
 
-                let exact_centre = pinpoint_alignment_centre2(
-                    img,
-                    Point::from(&seed),
-                    mod_size,
-                    search_span,
-                    pass,
-                );
+                let exact_centre =
+                    pinpoint_alignment_centre(img, Point::from(&seed), mod_size, search_span, pass);
 
                 centres[r][c] = exact_centre;
             }
@@ -213,7 +205,13 @@ fn provisional_alignment(
     ff.exact_map(aps[col] as f64 - 3.0, aps[row] as f64 - 3.0)
 }
 
-fn pinpoint_alignment_centre2(
+// Locates the centre of the alignment pattern nearest `seed`, or `None` if none lies within
+// `radius` of it.
+//
+// Every dark run ending inside the square window around `seed` is a candidate, tried nearest
+// first. A candidate's stone is traced and then claimed by stamping it with `pass`, whether it
+// verifies or not, so each stone is tested once per symbol -- see `locate_alignment_centres`.
+fn pinpoint_alignment_centre(
     img: &mut BinaryImage,
     seed: Point,
     mod_size: f64,
@@ -232,25 +230,21 @@ fn pinpoint_alignment_centre2(
     for y in ys as u32..=ye as u32 {
         let (sbit, ends) = img.run_ends(xs, xe, y);
         let ends = ends.get(sbit as usize..).unwrap_or_default();
-        candidates.extend(ends.chunks_exact(2).map(|c| (c[0] as i32, c[1] as i32, y as i32)));
+        candidates.extend(ends.iter().step_by(2).map(|&e| (e as i32, y as i32)));
     }
-    candidates.sort_unstable_by_key(|c| seed.x.abs_diff(c.0).pow(2) + seed.y.abs_diff(c.2).pow(2));
+    candidates.sort_unstable_by_key(|c| seed.x.abs_diff(c.0).pow(2) + seed.y.abs_diff(c.1).pow(2));
 
     let max_width = (mod_size * ALIGNMENT_TRACE_SLACK).round() as u32;
     for c in candidates {
-        let (sx, rx, y) = (c.0 as u32, c.1 as u32, c.2 as u32);
+        let (x, y) = (c.0 as u32, c.1 as u32);
 
-        if rx - sx > (mod_size * 3.0).round() as u32 {
-            continue;
-        }
-
-        if let Some(stone) = img.get_contour_capped((sx, y), (sx, y), max_width) {
+        if let Some(stone) = img.get_contour_capped((x, y), (x, y), max_width) {
             if stone.visited_in != pass {
                 stone.visited_in = pass;
                 let Some(stone_centre) = stone.centre() else {
                     continue;
                 };
-                if verify_alignment_centre2(img, (rx, y), &stone_centre, mod_size) {
+                if verify_alignment_centre(img, &stone_centre, mod_size) {
                     return Some(stone_centre);
                 }
             }
@@ -259,23 +253,21 @@ fn pinpoint_alignment_centre2(
     None
 }
 
-fn verify_alignment_centre2(
-    img: &mut BinaryImage,
-    ring_seed: (u32, u32),
-    stone_centre: &PointF,
-    mod_size: f64,
-) -> bool {
-    debug_assert!(img.contains(ring_seed.0 as i32, ring_seed.1 as i32));
-
+// Whether the stone centred at `stone_centre` is the middle of an alignment pattern: a white ring
+// must enclose it, and the ring's centroid must sit within the drift tolerance of the stone's.
+fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &PointF, mod_size: f64) -> bool {
     let sc = Point::from(stone_centre);
-    if img.get_bit(sc.x as u32, sc.y as u32) != Some(false) {
+    if !img.contains(sc.x, sc.y) {
         return false;
     }
 
+    let (x, y) = (sc.x as u32, sc.y as u32);
+    let Some(ring_seed) = find_ring_seed(img, (x, y), mod_size) else {
+        return false;
+    };
+
     let max_width = (mod_size * 3.0 * ALIGNMENT_TRACE_SLACK).round() as u32;
-    let Some(ring) =
-        img.get_contour_capped((ring_seed.0, ring_seed.1), (sc.x as u32, sc.y as u32), max_width)
-    else {
+    let Some(ring) = img.get_contour_capped((ring_seed.0, ring_seed.1), (x, y), max_width) else {
         return false;
     };
 
@@ -288,113 +280,28 @@ fn verify_alignment_centre2(
     stone_centre.dist_sq(&ring.centre().unwrap()) <= max_drift * max_drift
 }
 
-// Locates the centre of the alignment pattern nearest `seed`, or `None` if the spiral runs out
-// to `search_span` without finding one.
-//
-// The search walks a square spiral outward from `seed`. At each black pixel it traces contour of
-// the region within and tests it as a candidate centre stone, by tracing the white ring that
-// encircles it -- see `verify_alignment_centre`.
-//
-// A stone is claimed by stamping its contour with `pass`, whether it went on to verify or not, and
-// a stone already carrying this pass is passed over. `pass` is the same for every cell of the grid,
-// so each stone can be claimed only once: a cell whose spiral reaches a stone that another cell has
-// already taken keeps searching. Stamps left by an earlier symbol carry a different pass and never
-// match -- see `locate_alignment_centres`.
-fn pinpoint_alignment_centre(
-    img: &mut BinaryImage,
-    seed: Point,
+// Last white pixel of the ring on the stone centre's row, which is where tracing the ring starts.
+// `None` if the centre is light, or the ring ends more than 3 modules right of the centre.
+fn find_ring_seed(
+    img: &BinaryImage,
+    stone_centre: (u32, u32),
     mod_size: f64,
-    radius: i32,
-    pass: u32,
-) -> Option<PointF> {
-    let max_width = (mod_size * ALIGNMENT_TRACE_SLACK).round() as u32;
-    let (mut cx, mut cy) = (seed.x, seed.y);
-    let ssl = SquareSpiralLeg::new(radius);
+) -> Option<(u32, u32)> {
+    let (x, y) = (stone_centre.0, stone_centre.1);
 
-    for (leg, dx, dy) in ssl {
-        for _ in 0..leg {
-            cx += dx;
-            cy += dy;
-            // Drop a cursor that has spiralled off the image before looking it up
-            if img.contains(cx, cy) {
-                let (x, y) = (cx as u32, cy as u32);
-                if !img.get_bit_unbounded(x, y)
-                    && (x + 1 == img.w || img.get_bit_unbounded(x + 1, y))
-                {
-                    if let Some(stone) = img.get_contour_capped((x, y), (x, y), max_width) {
-                        if stone.visited_in != pass {
-                            stone.visited_in = pass;
-                            let Some(stone_centre) = stone.centre() else {
-                                continue;
-                            };
-                            if verify_alignment_centre(img, &stone_centre, mod_size) {
-                                return Some(stone_centre);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-// Sweeps the white ring encircling a candidate centre stone and reports whether it reads as
-// the middle band of an alignment pattern. And a closed white ring shares its centroid with
-// what it encloses, so the two centres must very nearly agree.
-
-fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &PointF, mod_size: f64) -> bool {
-    let sc = Point::from(stone_centre);
-
-    debug_assert!(img.contains(sc.x, sc.y));
-
-    let w = img.w;
-    let mut step = 0;
-    let max_steps = (mod_size * 3.0).round() as u32;
-    let (mut x, y) = (sc.x as u32, sc.y as u32);
-    let mut prev = img.get_bit_unbounded(x, y);
-    if prev {
-        return false;
-    }
-    let mut flips = 0;
-    while step <= max_steps && flips < 2 {
-        x += 1;
-        step += 1;
-        if x == w {
-            return false;
-        }
-
-        let cur = img.get_bit_unbounded(x, y);
-        if prev != cur {
-            flips += 1;
-        }
-        prev = cur;
+    let (sbit, slen) = img.run(x, y)?;
+    if sbit {
+        return None;
     }
 
-    if flips < 2 {
-        return false;
+    let (_, rlen) = img.run(x + slen, y)?;
+    let rx = x + slen + rlen - 1;
+
+    if rx + 1 >= img.w || slen + rlen > (mod_size * 3.0).round() as u32 {
+        return None;
     }
 
-    x -= 1;
-    if img.get_bit(x, y) != Some(true) {
-        return false;
-    }
-
-    let max_width = (mod_size * 3.0 * ALIGNMENT_TRACE_SLACK).round() as u32;
-    let Some(ring) = img.get_contour_capped((x, y), (sc.x as u32, sc.y as u32), max_width) else {
-        return false;
-    };
-
-    if !ring.contains(&sc) {
-        return false;
-    }
-
-    // Concentricity test. The ring and stone centre should be reasonably near each other
-    let max_drift = mod_size * ALIGNMENT_CENTRE_DRIFT_TOLERANCE;
-    let Some(ring_centre) = ring.centre() else {
-        return false;
-    };
-    stone_centre.dist_sq(&ring_centre) <= max_drift * max_drift
+    Some((rx, y))
 }
 
 pub(super) fn infer_alignment_centres(ver: Version, ff: &LocalFrame, centres: &mut Anchors) {

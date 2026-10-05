@@ -483,12 +483,6 @@ impl BinaryImage {
         Some((bit, len))
     }
 
-    // Bit at `(x, y)`, for callers that have already bounds-checked the coordinate.
-    #[inline]
-    pub(super) fn get_bit_unbounded(&self, x: u32, y: u32) -> bool {
-        self.buffer.get_bit(x, y)
-    }
-
     pub fn get_bit_bounded(&self, x: i32, y: i32) -> Option<bool> {
         if x < 0 || y < 0 {
             return None;
@@ -662,16 +656,6 @@ mod bit_accessor_tests {
         assert_eq!(img.get_bit(img.w, 0), None, "one past the right edge");
         assert_eq!(img.get_bit(0, img.h), None, "one past the bottom edge");
         assert_eq!(img.get_bit(img.w - 1, img.h - 1), Some(false), "the last pixel is in bounds");
-    }
-
-    #[test]
-    fn test_get_bit_unbounded_agrees_with_get_bit() {
-        let img = sketch(&ROWS);
-        for y in 0..img.h {
-            for x in 0..img.w {
-                assert_eq!(img.get_bit_unbounded(x, y), img.get_bit(x, y).unwrap(), "({x}, {y})");
-            }
-        }
     }
 
     #[test]
