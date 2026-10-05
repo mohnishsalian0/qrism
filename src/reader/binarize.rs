@@ -568,6 +568,11 @@ impl BinaryImage {
         self.pass
     }
 
+    #[inline]
+    pub fn run_ends(&self, xs: u32, xe: u32, y: u32) -> (bool, Vec<u32>) {
+        self.buffer.run_ends(xs, xe, y)
+    }
+
     #[cfg(test)]
     pub fn save(&self, path: &Path) -> ImageResult<()> {
         let mut img = RgbImage::new(self.w, self.h);
@@ -760,7 +765,6 @@ mod bit_accessor_tests {
     }
 }
 
-// Flood fill related functions
 impl BinaryImage {
     pub(crate) fn get_contour_capped(
         &mut self,

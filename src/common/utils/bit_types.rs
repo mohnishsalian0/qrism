@@ -550,6 +550,46 @@ impl BitMatrix {
 
         (idx, off)
     }
+
+    /// Returns the bit at `xs` and every `e` in `xs..xe` where the bit at `e` differs from the bit
+    /// at `e + 1`, i.e. the last x of each run. The final run's end at `xe` is not included.
+    pub fn run_ends(&self, xs: u32, xe: u32, y: u32) -> (bool, Vec<u32>) {
+        debug_assert!(self.elem_bits == 1, "Bit size should be 1, but is {}", self.elem_bits);
+        debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
+        debug_assert!(xs <= xe, "X start is greater than X end: X start {}, X end {}", xs, xe);
+        debug_assert!(xe < self.w, "X end is out of bounds: Width {}, X end {}", self.w, xe);
+
+        let mut xc = xs; // Current x
+        let (mut idx, mut off) = self.elem_pos(xs, y);
+        let mut elem = self.data[idx] >> off;
+        let sbit = (elem & 1) != 0;
+        let mut bit = sbit;
+        let mut flips = Vec::new();
+
+        loop {
+            let trailing_bits =
+                if bit { elem.trailing_ones() } else { elem.trailing_zeros().min(64 - off) };
+
+            xc += trailing_bits;
+            if xc > xe {
+                break;
+            }
+
+            off += trailing_bits;
+
+            elem = if off < 64 {
+                flips.push(xc - 1);
+                bit = !bit;
+                elem >> trailing_bits
+            } else {
+                idx += 1;
+                off = 0;
+                self.data[idx]
+            };
+        }
+
+        (sbit, flips)
+    }
 }
 
 #[cfg(test)]
@@ -1061,6 +1101,203 @@ mod bit_matrix_tests {
         let mut bm = BitMatrix::new(8, 1, 1);
         bm.push_bits(0xFF, 8);
         bm.push_bits(1, 1);
+    }
+
+    #[test]
+    fn test_bit_run_ends_returns_all_ends() {
+        let mut bm = BitMatrix::new(128, 10, 1);
+        bm.push_bits(0b11111111, 8);
+        bm.push_bits(0b00000000, 56);
+        let (sbit, ends) = bm.run_ends(0, 64, 0);
+
+        assert!(sbit, "First bit should not be 0");
+        assert_eq!(ends.len(), 1, "1 ends should be found, found {}", ends.len());
+        assert_eq!(ends[0], 7, "Incorrect flip pos {:?}", ends[0]);
+    }
+
+    #[test]
+    fn test_bit_run_ends_returns_flip_at_word_end() {
+        let mut bm = BitMatrix::new(128, 10, 1);
+        bm.push_bits(0b0, 64);
+        bm.push_bits(0b11, 2);
+        let (sbit, ends) = bm.run_ends(0, 64, 0);
+
+        assert!(!sbit, "First bit should not be 1");
+        assert_eq!(ends.len(), 1, "1 flip should be found, found {}", ends.len());
+        assert_eq!(ends[0], 63, "Incorrect flip pos {:?}", ends[0]);
+    }
+
+    // Reference for `ends`: every `e` in `xs..xe` whose bit differs from the bit at `e + 1`.
+    fn naive_ends(bm: &BitMatrix, xs: u32, xe: u32, y: u32) -> (bool, Vec<u32>) {
+        let ends = (xs..xe).filter(|&e| bm.get_bit(e, y) != bm.get_bit(e + 1, y)).collect();
+        (bm.get_bit(xs, y), ends)
+    }
+
+    fn matrix_from_rows(rows: &[&[u8]]) -> BitMatrix {
+        let mut bm = BitMatrix::new(rows[0].len() as u32, rows.len() as u32, 1);
+        for (y, row) in rows.iter().enumerate() {
+            for (x, &b) in row.iter().enumerate() {
+                bm.put(x as u32, y as u32, b as u64);
+            }
+        }
+        bm
+    }
+
+    #[test]
+    fn test_run_ends_matches_naive_scan() {
+        // Widths either side of a word boundary, so rows start at every alignment within a word.
+        for &(w, h) in &[(1u32, 3u32), (7, 5), (63, 4), (64, 3), (65, 4), (100, 3), (130, 4)] {
+            // Patterns: random mix of long runs and rapid flips, all zero, all one, alternating.
+            for pattern in 0..4 {
+                let mut bm = BitMatrix::new(w, h, 1);
+                let mut seed = 0x9e3779b9u64;
+                for y in 0..h {
+                    for x in 0..w {
+                        seed = seed
+                            .wrapping_mul(6364136223846793005)
+                            .wrapping_add(1442695040888963407);
+                        let v = match pattern {
+                            0 if (seed >> 33) % 3 == 0 => (seed >> 17) & 1,
+                            0 => (x as u64 / 5) & 1,
+                            1 => 0,
+                            2 => 1,
+                            _ => ((x + y) & 1) as u64,
+                        };
+                        bm.put(x, y, v);
+                    }
+                }
+
+                for y in 0..h {
+                    for xs in 0..w {
+                        for xe in xs..w {
+                            assert_eq!(
+                                bm.run_ends(xs, xe, y),
+                                naive_ends(&bm, xs, xe, y),
+                                "w={w} h={h} pattern={pattern} y={y} xs={xs} xe={xe}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_ends_zero_run_to_word_end_from_mid_word() {
+        // Regression: a zero run starting mid-word and reaching the word's end must not count the
+        // zeros shifted in by `>> off` as pixels.
+        let mut bm = BitMatrix::new(128, 1, 1);
+        bm.put(70, 0, 1);
+        assert_eq!(bm.run_ends(10, 100, 0), (false, vec![69, 70]));
+
+        // Same, but the zero run follows a flip inside the first word.
+        for x in 0..8 {
+            bm.put(x, 0, 1);
+        }
+        assert_eq!(bm.run_ends(0, 100, 0), (true, vec![7, 69, 70]));
+    }
+
+    #[test]
+    fn test_run_ends_single_pixel_span() {
+        let bm = matrix_from_rows(&[&[0, 1, 0]]);
+        assert_eq!(bm.run_ends(0, 0, 0), (false, vec![]));
+        assert_eq!(bm.run_ends(1, 1, 0), (true, vec![]));
+        assert_eq!(bm.run_ends(2, 2, 0), (false, vec![]));
+    }
+
+    #[test]
+    fn test_run_ends_flip_at_xe_is_excluded() {
+        // A flip between xe and xe + 1 is outside the span; one between xe - 1 and xe is inside.
+        let bm = matrix_from_rows(&[&[1, 1, 1, 0, 0]]);
+        assert_eq!(bm.run_ends(0, 2, 0), (true, vec![]), "flip after xe");
+        assert_eq!(bm.run_ends(0, 3, 0), (true, vec![2]), "flip just before xe");
+        assert_eq!(bm.run_ends(0, 4, 0), (true, vec![2]));
+    }
+
+    #[test]
+    fn test_run_ends_alternating_bits() {
+        let bm = matrix_from_rows(&[&[1, 0, 1, 0, 1, 0, 1]]);
+        assert_eq!(bm.run_ends(0, 6, 0), (true, vec![0, 1, 2, 3, 4, 5]));
+        assert_eq!(bm.run_ends(1, 5, 0), (false, vec![1, 2, 3, 4]));
+    }
+
+    #[test]
+    fn test_run_ends_uniform_row_spanning_words() {
+        let (w, h) = (200, 3);
+        let mut bm = BitMatrix::new(w, h, 1);
+        for x in 0..w {
+            bm.put(x, 1, 1);
+        }
+        assert_eq!(bm.run_ends(0, w - 1, 0), (false, vec![]), "all-zero row");
+        assert_eq!(bm.run_ends(0, w - 1, 1), (true, vec![]), "all-one row");
+        assert_eq!(bm.run_ends(37, 150, 1), (true, vec![]), "mid-word start, crosses two words");
+    }
+
+    #[test]
+    fn test_run_ends_flips_on_both_sides_of_word_boundary() {
+        // Row 1 of a 100-wide matrix starts at flat bit 100, so x=27 is the last bit of word 1 and
+        // x=28 the first bit of word 2.
+        let mut bm = BitMatrix::new(100, 2, 1);
+        bm.put(27, 1, 1);
+        assert_eq!(bm.run_ends(0, 99, 1), (false, vec![26, 27]), "lone one at the word's last bit");
+
+        bm.put(27, 1, 0);
+        bm.put(28, 1, 1);
+        assert_eq!(
+            bm.run_ends(0, 99, 1),
+            (false, vec![27, 28]),
+            "lone one at the next word's first bit"
+        );
+
+        bm.put(27, 1, 1);
+        assert_eq!(bm.run_ends(0, 99, 1), (false, vec![26, 28]), "run straddling the boundary");
+    }
+
+    #[test]
+    fn test_run_ends_does_not_leak_into_neighbouring_rows() {
+        // Row 0 run_ends in a run of ones and row 1 continues it; row 1 starts with a run that row 0's
+        // last pixels differ from. Neither must affect the other.
+        let bm = matrix_from_rows(&[&[0, 0, 1, 1, 1], &[1, 1, 0, 0, 0]]);
+        assert_eq!(bm.run_ends(0, 4, 0), (false, vec![1]));
+        assert_eq!(bm.run_ends(0, 4, 1), (true, vec![1]));
+        assert_eq!(bm.run_ends(3, 4, 1), (false, vec![]));
+    }
+
+    #[test]
+    fn test_run_ends_last_row_fills_last_word_exactly() {
+        // 64 * 2 bits: the last row run_ends exactly on the last word, so a run reaching the matrix's
+        // end must stop without reading past `data`.
+        let (w, h) = (64, 2);
+        let mut bm = BitMatrix::new(w, h, 1);
+        for x in 10..w {
+            bm.put(x, h - 1, 1);
+        }
+        assert_eq!(bm.run_ends(0, w - 1, h - 1), (false, vec![9]));
+        assert_eq!(bm.run_ends(10, w - 1, h - 1), (true, vec![]));
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "X end is out of bounds")]
+    fn test_run_ends_rejects_xe_out_of_bounds() {
+        let bm = BitMatrix::new(10, 2, 1);
+        bm.run_ends(0, 10, 0);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "X start is greater than X end")]
+    fn test_run_ends_rejects_reversed_span() {
+        let bm = BitMatrix::new(10, 2, 1);
+        bm.run_ends(5, 4, 0);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "Bit size should be 1")]
+    fn test_run_ends_rejects_multibit_matrix() {
+        let bm = BitMatrix::new(10, 2, 4);
+        bm.run_ends(0, 5, 0);
     }
 }
 

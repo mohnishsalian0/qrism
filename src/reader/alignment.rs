@@ -168,8 +168,13 @@ pub(super) fn locate_alignment_centres(
             if centres[r][c].is_none() {
                 let seed = provisional_alignment(r, c, ver, ff, centres);
 
-                let exact_centre =
-                    pinpoint_alignment_centre(img, Point::from(&seed), mod_size, search_span, pass);
+                let exact_centre = pinpoint_alignment_centre2(
+                    img,
+                    Point::from(&seed),
+                    mod_size,
+                    search_span,
+                    pass,
+                );
 
                 centres[r][c] = exact_centre;
             }
@@ -206,6 +211,81 @@ fn provisional_alignment(
 
     let aps = ver.alignment_pattern();
     ff.exact_map(aps[col] as f64 - 3.0, aps[row] as f64 - 3.0)
+}
+
+fn pinpoint_alignment_centre2(
+    img: &mut BinaryImage,
+    seed: Point,
+    mod_size: f64,
+    radius: i32,
+    pass: u32,
+) -> Option<PointF> {
+    let mut candidates = Vec::with_capacity(100);
+    let (w, h) = (img.w as i32, img.h as i32);
+    let (xs, xe) = ((seed.x - radius).max(0), (seed.x + radius).min(w - 1));
+    let (ys, ye) = ((seed.y - radius).max(0), (seed.y + radius).min(h - 1));
+    if xs > xe || ys > ye {
+        return None;
+    }
+
+    let (xs, xe) = (xs as u32, xe as u32);
+    for y in ys as u32..=ye as u32 {
+        let (sbit, ends) = img.run_ends(xs, xe, y);
+        let ends = ends.get(sbit as usize..).unwrap_or_default();
+        candidates.extend(ends.chunks_exact(2).map(|c| (c[0] as i32, c[1] as i32, y as i32)));
+    }
+    candidates.sort_unstable_by_key(|c| seed.x.abs_diff(c.0).pow(2) + seed.y.abs_diff(c.2).pow(2));
+
+    let max_width = (mod_size * ALIGNMENT_TRACE_SLACK).round() as u32;
+    for c in candidates {
+        let (sx, rx, y) = (c.0 as u32, c.1 as u32, c.2 as u32);
+
+        if rx - sx > (mod_size * 3.0).round() as u32 {
+            continue;
+        }
+
+        if let Some(stone) = img.get_contour_capped((sx, y), (sx, y), max_width) {
+            if stone.visited_in != pass {
+                stone.visited_in = pass;
+                let Some(stone_centre) = stone.centre() else {
+                    continue;
+                };
+                if verify_alignment_centre2(img, (rx, y), &stone_centre, mod_size) {
+                    return Some(stone_centre);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn verify_alignment_centre2(
+    img: &mut BinaryImage,
+    ring_seed: (u32, u32),
+    stone_centre: &PointF,
+    mod_size: f64,
+) -> bool {
+    debug_assert!(img.contains(ring_seed.0 as i32, ring_seed.1 as i32));
+
+    let sc = Point::from(stone_centre);
+    if img.get_bit(sc.x as u32, sc.y as u32) != Some(false) {
+        return false;
+    }
+
+    let max_width = (mod_size * 3.0 * ALIGNMENT_TRACE_SLACK).round() as u32;
+    let Some(ring) =
+        img.get_contour_capped((ring_seed.0, ring_seed.1), (sc.x as u32, sc.y as u32), max_width)
+    else {
+        return false;
+    };
+
+    if !ring.contains(&sc) {
+        return false;
+    }
+
+    // Concentricity test. The ring and stone centre should be reasonably near each other
+    let max_drift = mod_size * ALIGNMENT_CENTRE_DRIFT_TOLERANCE;
+    stone_centre.dist_sq(&ring.centre().unwrap()) <= max_drift * max_drift
 }
 
 // Locates the centre of the alignment pattern nearest `seed`, or `None` if the spiral runs out
@@ -311,7 +391,10 @@ fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &PointF, mod_siz
 
     // Concentricity test. The ring and stone centre should be reasonably near each other
     let max_drift = mod_size * ALIGNMENT_CENTRE_DRIFT_TOLERANCE;
-    stone_centre.dist_sq(&ring.centre().unwrap()) <= max_drift * max_drift
+    let Some(ring_centre) = ring.centre() else {
+        return false;
+    };
+    stone_centre.dist_sq(&ring_centre) <= max_drift * max_drift
 }
 
 pub(super) fn infer_alignment_centres(ver: Version, ff: &LocalFrame, centres: &mut Anchors) {
