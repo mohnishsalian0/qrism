@@ -1,6 +1,6 @@
 [package]
 name = "qrism"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "A Rust library for generating and reading QR codes with Reed-Solomon error correction. Supports traditional monochromatic QR codes with additional experimental multicolor QR support for enhanced storage capacity."
 license = "MIT"
@@ -18,7 +18,7 @@ authors = ["Mohnish Salian"]
 readme = "README.md"
 documentation = "https://docs.rs/qrism"
 include = [
-	"src/**/*",
+	"src/**/*.rs",
 	"Cargo.toml",
 	"README.md",
 	"LICENSE.txt",
