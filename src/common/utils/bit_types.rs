@@ -402,10 +402,12 @@ impl BitMatrix {
         Self { data: vec![0u64; cap], len: 0, w, h, elem_bits, mask }
     }
 
+    #[cfg(test)]
     pub fn width(&self) -> u32 {
         self.w
     }
 
+    #[cfg(test)]
     pub fn height(&self) -> u32 {
         self.h
     }
@@ -418,6 +420,7 @@ impl BitMatrix {
         self.elem_bits
     }
 
+    #[cfg(test)]
     pub fn data(&self) -> &[u64] {
         &self.data
     }

@@ -3,8 +3,6 @@ use std::{cmp::Ordering, marker::PhantomData};
 #[cfg(test)]
 use image::{Rgb, RgbImage};
 
-use crate::reader::binarize::BinaryImage;
-
 // Direction enum
 //------------------------------------------------------------------------------
 
@@ -121,7 +119,6 @@ pub struct Slope {
 //------------------------------------------------------------------------------
 
 pub trait Axis {
-    fn bound_check(img: &BinaryImage, pt: &Point) -> bool;
     fn shift(pt: &mut Point, dist: &(i32, i32)); // Shifts point along axis
     fn shift_cross(pt: &mut Point, dist: &(i32, i32)); // Steps point along perpendicular axis
     fn delta(m: &Slope) -> i32; // Returns delta from slope along axis
@@ -132,10 +129,6 @@ pub trait Axis {
 pub struct X;
 
 impl Axis for X {
-    fn bound_check(img: &BinaryImage, pt: &Point) -> bool {
-        0 <= pt.x && pt.x < img.w as i32
-    }
-
     fn shift(pt: &mut Point, dist: &(i32, i32)) {
         pt.x += dist.0;
     }
@@ -160,10 +153,6 @@ impl Axis for X {
 pub struct Y;
 
 impl Axis for Y {
-    fn bound_check(img: &BinaryImage, pt: &Point) -> bool {
-        0 <= pt.y && pt.y < img.h as i32
-    }
-
     fn shift(pt: &mut Point, dist: &(i32, i32)) {
         pt.y += dist.1;
     }
