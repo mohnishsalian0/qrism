@@ -65,9 +65,4 @@ impl LocalFrame {
     pub fn mod_size(&self) -> f64 {
         (self.u.0.hypot(self.u.1) + self.v.0.hypot(self.v.1)) / 2.0
     }
-
-    // Area one module covers in pixels: the parallelogram the two basis vectors span.
-    pub fn mod_area(&self) -> f64 {
-        (self.u.0 * self.v.1 - self.u.1 * self.v.0).abs()
-    }
 }

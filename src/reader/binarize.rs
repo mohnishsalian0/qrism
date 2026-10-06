@@ -94,19 +94,40 @@ impl BinaryImage {
         let (wr, hr) = (w & !mask, h & !mask);
         let bw = wr >> block_pow; // full block columns
         let bh = hr >> block_pow; // full block rows
+
+        // Rows are streamed into per-column accumulators -- plain elementwise ops over
+        // contiguous slices, which vectorize -- and each block's columns are folded once per
+        // block row. A u16 sum holds a column of 16 pixels (16 * 255 = 4080).
+        let mut col_min = vec![0u8; wr];
+        let mut col_max = vec![0u8; wr];
+        let mut col_sum = vec![0u16; wr];
         for by in 0..bh {
             let y0 = by << block_pow;
-            for bx in 0..bw {
-                let x0 = bx << block_pow;
-                let idx = by * wsteps + bx;
-                let mut local = Stat::new();
-                for y in y0..y0 + block_size {
-                    let base = y * w + x0;
-                    for &px in &raw[base..base + block_size] {
-                        local.accumulate(px);
-                    }
+
+            let first = &raw[y0 * w..y0 * w + wr];
+            col_min.copy_from_slice(first);
+            col_max.copy_from_slice(first);
+            for (s, &px) in col_sum.iter_mut().zip(first) {
+                *s = px as u16;
+            }
+
+            for y in y0 + 1..y0 + block_size {
+                let row = &raw[y * w..y * w + wr];
+                let cols = col_min.iter_mut().zip(col_max.iter_mut()).zip(col_sum.iter_mut());
+                for (((mn, mx), s), &px) in cols.zip(row) {
+                    *mn = (*mn).min(px);
+                    *mx = (*mx).max(px);
+                    *s += px as u16;
                 }
-                stats[idx] = local;
+            }
+
+            for bx in 0..bw {
+                let cols = bx << block_pow..(bx + 1) << block_pow;
+                stats[by * wsteps + bx] = Stat {
+                    avg: col_sum[cols.clone()].iter().map(|&s| s as usize).sum(),
+                    min: col_min[cols.clone()].iter().copied().min().unwrap_or(u8::MAX),
+                    max: col_max[cols].iter().copied().max().unwrap_or(u8::MIN),
+                };
             }
         }
 
@@ -186,6 +207,18 @@ impl BinaryImage {
         let (maxx, maxy) = (wsteps.saturating_sub(half_grid), hsteps.saturating_sub(half_grid));
         let mut threshold = vec![0u8; wsteps * hsteps];
 
+        // Summed-area table over block averages, padded with a leading zero row and column, so
+        // any window sum is four lookups instead of a 5x5 walk
+        let sat_w = wsteps + 1;
+        let mut sat = vec![0u32; sat_w * (hsteps + 1)];
+        for y in 0..hsteps {
+            let mut run = 0u32;
+            for x in 0..wsteps {
+                run += stats[y * wsteps + x].avg as u32;
+                sat[(y + 1) * sat_w + x + 1] = sat[y * sat_w + x + 1] + run;
+            }
+        }
+
         for y in 0..hsteps {
             let row_off = y * wsteps;
             for x in 0..wsteps {
@@ -211,16 +244,12 @@ impl BinaryImage {
                 let cy = std::cmp::max(y, half_grid);
                 let (x0, x1) = (cx.saturating_sub(half_grid), (cx + half_grid).min(wsteps - 1));
                 let (y0, y1) = (cy.saturating_sub(half_grid), (cy + half_grid).min(hsteps - 1));
-                let mut sum = 0usize;
-                for ny in y0..=y1 {
-                    let ni = ny * wsteps;
-                    for px_stat in &stats[ni + x0..=ni + x1] {
-                        sum += px_stat.avg;
-                    }
-                }
+                let sum = sat[(y1 + 1) * sat_w + x1 + 1] + sat[y0 * sat_w + x0]
+                    - sat[y0 * sat_w + x1 + 1]
+                    - sat[(y1 + 1) * sat_w + x0];
 
                 let count = (x1 - x0 + 1) * (y1 - y0 + 1);
-                threshold[i] = (sum / count) as u8;
+                threshold[i] = (sum as usize / count) as u8;
             }
         }
 
@@ -483,12 +512,6 @@ impl BinaryImage {
         Some((bit, len))
     }
 
-    // Bit at `(x, y)`, for callers that have already bounds-checked the coordinate.
-    #[inline]
-    pub(super) fn get_bit_unbounded(&self, x: u32, y: u32) -> bool {
-        self.buffer.get_bit(x, y)
-    }
-
     pub fn get_bit_bounded(&self, x: i32, y: i32) -> Option<bool> {
         if x < 0 || y < 0 {
             return None;
@@ -566,6 +589,11 @@ impl BinaryImage {
     pub fn next_pass(&mut self) -> u32 {
         self.pass += 1;
         self.pass
+    }
+
+    #[inline]
+    pub fn run_ends(&self, xs: u32, xe: u32, y: u32) -> (bool, Vec<u32>) {
+        self.buffer.run_ends(xs, xe, y)
     }
 
     #[cfg(test)]
@@ -660,16 +688,6 @@ mod bit_accessor_tests {
     }
 
     #[test]
-    fn test_get_bit_unbounded_agrees_with_get_bit() {
-        let img = sketch(&ROWS);
-        for y in 0..img.h {
-            for x in 0..img.w {
-                assert_eq!(img.get_bit_unbounded(x, y), img.get_bit(x, y).unwrap(), "({x}, {y})");
-            }
-        }
-    }
-
-    #[test]
     fn test_get_bit_bounded_rejects_negatives() {
         let img = sketch(&ROWS);
         let (w, h) = (img.w as i32, img.h as i32);
@@ -760,7 +778,6 @@ mod bit_accessor_tests {
     }
 }
 
-// Flood fill related functions
 impl BinaryImage {
     pub(crate) fn get_contour_capped(
         &mut self,

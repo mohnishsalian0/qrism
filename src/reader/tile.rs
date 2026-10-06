@@ -18,15 +18,19 @@ pub(super) struct Tile {
     h: Homography,
 
     // Half-open module rectangle this tile owns: x in [x0, x1), y in [y0, y1).
+    #[cfg_attr(not(test), allow(dead_code))]
     x0: u32,
+    #[cfg_attr(not(test), allow(dead_code))]
     y0: u32,
+    #[cfg_attr(not(test), allow(dead_code))]
     x1: u32,
+    #[cfg_attr(not(test), allow(dead_code))]
     y1: u32,
 }
 
 impl Tile {
     // `anchors` are the module-space pattern centres the mapping is fitted to, TL, TR, BR, BL,
-    // already carrying their half-module offset -- a finder centre is 3.5, an alignment centre at
+    // already carrying their half-module offset, a finder centre is 3.5, an alignment centre at
     // coord `a` is `a + 0.5`. `centres` are where those patterns were measured in the image, in
     // the same order.
     pub(super) fn new(
@@ -59,7 +63,7 @@ impl Tile {
     #[cfg(test)]
     pub(super) fn corners(&self) -> QRResult<[Point; 4]> {
         let (x0, y0) = (self.x0 as f64, self.y0 as f64);
-        let (x1, y1) = (self.x1 as f64 + 1.0, self.y1 as f64 + 1.0);
+        let (x1, y1) = (self.x1 as f64, self.y1 as f64);
         Ok([self.h.map(x0, y0)?, self.h.map(x1, y0)?, self.h.map(x1, y1)?, self.h.map(x0, y1)?])
     }
 }
@@ -101,7 +105,7 @@ fn tile_centres(centres: &Anchors, row: usize, col: usize) -> Option<[PointF; 4]
 // homography fitted to the four located centres at its own corners.
 //
 // A tile spans from one alignment coordinate to the next, but the outermost tiles run out to the
-// symbol edge rather than stopping at their anchor -- the top-left tile is anchored on a finder
+// symbol edge rather than stopping at their anchor, the top-left tile is anchored on a finder
 // centre at module 3 yet owns every module from 0. A tile with an unlocated corner is left `None`.
 //
 // Versions carrying no alignment patterns yield no tiles.
@@ -164,7 +168,7 @@ mod tile_tests {
     use super::{build_tiles, Anchors};
     use crate::metadata::Version;
     use crate::reader::alignment::MAX_ALIGN_CELLS;
-    use crate::reader::utils::geometry::PointF;
+    use crate::reader::utils::geometry::{Point, PointF};
 
     const KX: f64 = 12.0; // Pixels per module, x
     const KY: f64 = 16.0; // Pixels per module, y
@@ -174,14 +178,14 @@ mod tile_tests {
     //
     // The two axes scale differently on purpose: at equal scales a row/column transposition inside
     // `build_tiles` maps onto itself and becomes invisible. Both scales are even, so a module
-    // *centre* -- carrying its half-module offset -- still lands on a whole pixel. That keeps the
+    // *centre* carrying its half-module offset still lands on a whole pixel. That keeps the
     // fitted homography exact and lets the reprojection check below run at zero tolerance.
     fn project(x: f64, y: f64) -> (f64, f64) {
         ((x + Q) * KX, (y + Q) * KY)
     }
 
     // Module-space centre of the pattern at grid cell (row, col), restated from the spec rather
-    // than taken from `anchor_coord` -- a fixture that calls the code under test cannot catch it
+    // than taken from `anchor_coord`, a fixture that calls the code under test cannot catch it
     // being wrong. Finder cells sit on module 3 or w - 4; every other cell on its alignment
     // coordinate.
     fn cell_centre(ver: Version, row: usize, col: usize) -> (f64, f64) {
@@ -301,7 +305,7 @@ mod tile_tests {
         }
     }
 
-    // Every tile must reproduce the projection of every module it owns -- not merely at those corners.
+    // Every tile must reproduce the projection of every module it owns, not merely at those corners.
     #[test]
     fn tile_homographies_reproduce_the_projection() {
         for v in 1..=40usize {
@@ -316,7 +320,7 @@ mod tile_tests {
                         panic!("version {v}: module ({x}, {y}) is owned by no tile");
                     };
 
-                    // Module centres -- the coordinates an actual lookup passes in.
+                    // Module centres, the coordinates an actual lookup passes in.
                     let (mx, my) = (x as f64 + 0.5, y as f64 + 0.5);
                     let (ex, ey) = project(mx, my);
                     let got = tile.map(mx, my).expect("tile projection failed");
@@ -329,6 +333,44 @@ mod tile_tests {
                         got.x,
                         got.y
                     );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_tile_corners() {
+        for v in 1..=40usize {
+            let ver = Version::Normal(v);
+            let w = ver.width() as f64;
+            let tiles = build_tiles(ver, &synthetic_centres(ver));
+            let aps = ver.alignment_pattern().iter().map(|&ap| ap as f64).collect::<Vec<_>>();
+            let last_tile = aps.len().max(2) - 2;
+
+            for r in 0..=last_tile {
+                for c in 0..=last_tile {
+                    let x0 = if c == 0 { 0.0 } else { aps[c] };
+                    let x1 = if c == last_tile { w } else { aps[c + 1] };
+                    let y0 = if r == 0 { 0.0 } else { aps[r] };
+                    let y1 = if r == last_tile { w } else { aps[r + 1] };
+
+                    let corners = tiles[r][c].as_ref().unwrap().corners().unwrap();
+
+                    let tl_coord = project(x0, y0);
+                    let tl = Point { x: tl_coord.0.round() as i32, y: tl_coord.1.round() as i32 };
+                    assert_eq!(corners[0], tl, "Top left corner failed at ver {v}");
+
+                    let tr_coord = project(x1, y0);
+                    let tr = Point { x: tr_coord.0.round() as i32, y: tr_coord.1.round() as i32 };
+                    assert_eq!(corners[1], tr, "Top right corner failed at ver {v}");
+
+                    let br_coord = project(x1, y1);
+                    let br = Point { x: br_coord.0.round() as i32, y: br_coord.1.round() as i32 };
+                    assert_eq!(corners[2], br, "Bottom right corner failed at ver {v}");
+
+                    let bl_coord = project(x0, y1);
+                    let bl = Point { x: bl_coord.0.round() as i32, y: bl_coord.1.round() as i32 };
+                    assert_eq!(corners[3], bl, "Bottom left corner failed at ver {v}");
                 }
             }
         }
