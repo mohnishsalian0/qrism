@@ -1,8 +1,8 @@
 mod alignment;
-pub mod binarize;
+pub(crate) mod binarize;
 mod finder;
 mod locate;
-pub mod symbol;
+mod symbol;
 mod tile;
 mod utils;
 
@@ -13,7 +13,7 @@ use finder::{group_finders, locate_finders, FinderGroup};
 use binarize::BinaryImage;
 use image::DynamicImage;
 use locate::SymbolLocation;
-use symbol::Symbol;
+pub use symbol::Symbol;
 
 use crate::reader::finder::Finder;
 

@@ -18,8 +18,24 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    pub fn new(ver: Option<Version>, ecl: Option<ECLevel>, mask: Option<MaskPattern>) -> Self {
+    pub(crate) fn new(
+        ver: Option<Version>,
+        ecl: Option<ECLevel>,
+        mask: Option<MaskPattern>,
+    ) -> Self {
         Self { ver, ecl, mask }
+    }
+
+    pub fn version(&self) -> Option<Version> {
+        self.ver
+    }
+
+    pub fn ec_level(&self) -> Option<ECLevel> {
+        self.ecl
+    }
+
+    pub fn mask(&self) -> Option<MaskPattern> {
+        self.mask
     }
 }
 

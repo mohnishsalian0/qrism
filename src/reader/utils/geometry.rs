@@ -94,6 +94,7 @@ impl PointF {
         dx * dx + dy * dy
     }
 
+    #[cfg(test)]
     pub fn approx_eq(&self, other: &PointF) -> bool {
         (self.x - other.x).abs() < SUBPIXEL_TOLERANCE
             && (self.y - other.y).abs() < SUBPIXEL_TOLERANCE

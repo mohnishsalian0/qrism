@@ -22,7 +22,7 @@ pub struct Symbol {
 }
 
 impl Symbol {
-    pub fn new(img: Arc<BinaryImage>, loc: SymbolLocation) -> Self {
+    pub(crate) fn new(img: Arc<BinaryImage>, loc: SymbolLocation) -> Self {
         Self { img, loc }
     }
 
@@ -53,7 +53,7 @@ impl Symbol {
         Ok((meta, msg))
     }
 
-    pub fn get(&self, x: i32, y: i32) -> QRResult<Color> {
+    pub(crate) fn get(&self, x: i32, y: i32) -> QRResult<Color> {
         let (xp, yp) = self.wrap_coord(x, y);
         let tile = self.loc.tile_at(xp as usize, yp as usize)?;
         let pt = tile.map(xp as f64 + 0.5, yp as f64 + 0.5)?;
@@ -80,7 +80,7 @@ impl Symbol {
 //------------------------------------------------------------------------------
 
 impl Symbol {
-    pub fn read_format_info(&self) -> QRResult<(ECLevel, MaskPattern)> {
+    pub(crate) fn read_format_info(&self) -> QRResult<(ECLevel, MaskPattern)> {
         // Parse main format area
         if let Some(main) = self.get_number(&FORMAT_INFO_COORDS_QR_MAIN) {
             if let Ok((format, _)) = rectify_info(main, &FORMAT_INFOS_QR, FORMAT_ERROR_CAPACITY) {
@@ -102,7 +102,7 @@ impl Symbol {
         Err(QRError::InvalidFormatInfo)
     }
 
-    pub fn read_capacity_info(&self) -> QRResult<bool> {
+    pub(crate) fn read_capacity_info(&self) -> QRResult<bool> {
         if let Ok(color) = self.get(8, -8) {
             if color == Color::Black {
                 return Ok(false); // Standard capacity
@@ -114,7 +114,7 @@ impl Symbol {
         Err(QRError::InvalidCapacityInfo)
     }
 
-    pub fn get_number(&self, coords: &[(i32, i32)]) -> Option<u32> {
+    pub(crate) fn get_number(&self, coords: &[(i32, i32)]) -> Option<u32> {
         let mut num = 0;
         for &(x, y) in coords {
             let color = self.get(x, y).ok()?;
@@ -220,7 +220,7 @@ mod symbol_infos_tests {
 //------------------------------------------------------------------------------
 
 impl Symbol {
-    pub fn extract_payload(&self, mask: &MaskPattern) -> QRResult<BitArray> {
+    pub(crate) fn extract_payload(&self, mask: &MaskPattern) -> QRResult<BitArray> {
         let ver = self.loc.ver;
         let mask_fn = mask.mask_functions();
         let chan_bits = ver.channel_codewords() << 3;

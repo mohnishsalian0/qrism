@@ -7,7 +7,7 @@ use std::time::Instant;
 use walkdir::WalkDir;
 
 use qrism::detect_qr;
-use qrism::symbol::Symbol;
+use qrism::Symbol;
 
 #[path = "utils.rs"]
 mod utils;
