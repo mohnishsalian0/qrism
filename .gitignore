@@ -4,6 +4,7 @@ Cargo.lock
 *.swo
 .DS_Store
 /runs
+/benches/dataset/high_capacity
 
 
 # Added by cargo
