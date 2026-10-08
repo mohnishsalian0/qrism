@@ -2,6 +2,7 @@ mod alignment;
 pub(crate) mod binarize;
 mod finder;
 mod locate;
+mod mahalanobis;
 mod symbol;
 mod tile;
 mod utils;
