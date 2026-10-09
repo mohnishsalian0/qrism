@@ -127,8 +127,8 @@ impl Homography {
     pub fn map(&self, x: f64, y: f64) -> QRResult<Point> {
         let (xp, yp) = self.exact_map(x, y)?;
 
-        let x = f64_to_i32(&xp)?;
-        let y = f64_to_i32(&yp)?;
+        let x = f64_to_i32(&xp.round())?;
+        let y = f64_to_i32(&yp.round())?;
 
         Ok(Point { x, y })
     }
