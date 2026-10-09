@@ -10,7 +10,7 @@ use crate::{
         parse_format_info_qr, Color, Metadata, FORMAT_ERROR_CAPACITY, FORMAT_INFOS_QR,
         FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK,
     },
-    reader::{mahalanobis::Mahalanobis, utils::geometry::Point},
+    reader::mahalanobis::Mahalanobis,
     utils::{BitArray, BitStream, EncRegionIter, QRError, QRResult},
     ECLevel, MaskPattern,
 };
@@ -70,19 +70,14 @@ impl Symbol {
     }
 
     fn get_rgb(&self, x: i32, y: i32) -> QRResult<[u8; 3]> {
-        let rgb_img = self.rgb.as_ref().ok_or(QRError::RgbImageMissing)?;
-
-        let pt = self.get_pt(x, y)?;
-        let x = u32::try_from(pt.x).map_err(|_| QRError::PixelOutOfBounds)?;
-        let y = u32::try_from(pt.y).map_err(|_| QRError::PixelOutOfBounds)?;
-
-        rgb_img.get_pixel_checked(x, y).map(|p| p.0).ok_or(QRError::PixelOutOfBounds)
+        let (xp, yp) = self.get_pt(x, y)?;
+        self.deblurred(xp, yp)
     }
 
     /// Whether the pixel in binary image is dark
     pub(crate) fn is_dark(&self, x: i32, y: i32) -> QRResult<bool> {
         let pt = self.get_pt(x, y)?;
-        self.bin.get_bit_at_point(&pt).map(|b| !b).ok_or(QRError::PixelOutOfBounds)
+        self.bin.get_bit(pt.0, pt.1).map(|b| !b).ok_or(QRError::PixelOutOfBounds)
     }
 
     pub(crate) fn get_color(&self, x: i32, y: i32) -> QRResult<Color> {
@@ -91,7 +86,7 @@ impl Symbol {
         Ok(self.clf.as_ref().ok_or(QRError::ClassifierMissing)?.classify(&rgb))
     }
 
-    fn get_pt(&self, x: i32, y: i32) -> QRResult<Point> {
+    fn get_pt(&self, x: i32, y: i32) -> QRResult<(u32, u32)> {
         let (xp, yp) = self.wrap_coord(x, y);
         let tile = self.loc.tile_at(xp as usize, yp as usize)?;
         tile.map(xp as f64 + 0.5, yp as f64 + 0.5)
@@ -105,6 +100,32 @@ impl Symbol {
         let x = if x < 0 { x + w } else { x };
         let y = if y < 0 { y + w } else { y };
         (x, y)
+    }
+
+    fn deblurred(&self, x: u32, y: u32) -> QRResult<[u8; 3]> {
+        let rgb_img = self.rgb.as_ref().ok_or(QRError::RgbImageMissing)?;
+
+        let (w, h) = (rgb_img.width() as i32, rgb_img.height() as i32);
+        let px_clr = rgb_img.get_pixel_checked(x, y).ok_or(QRError::PixelOutOfBounds)?.0;
+        let mut deblurred_clr: [f64; 3] = std::array::from_fn(|i| px_clr[i] as f64);
+
+        let mut n = 0;
+        let (x, y) = (x as i32, y as i32);
+        for (dx, dy) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
+            let (nx, ny) = (x + dx, y + dy);
+            if nx < 0 || w <= nx || ny < 0 || h <= ny {
+                continue;
+            }
+            let ng_clr = rgb_img.get_pixel(nx as u32, ny as u32);
+            for i in 0..3 {
+                deblurred_clr[i] -= BLUR_BETA * ng_clr[i] as f64;
+            }
+            n += 1;
+        }
+
+        let denom = 1.0 - BLUR_BETA * n as f64;
+
+        Ok(std::array::from_fn(|i| (deblurred_clr[i] / denom).round() as u8))
     }
 
     #[inline]
@@ -363,3 +384,8 @@ mod reader_tests {
         assert_eq!(blks, exp_blks);
     }
 }
+
+// Global constants
+//------------------------------------------------------------------------------
+
+const BLUR_BETA: f64 = 0.06;

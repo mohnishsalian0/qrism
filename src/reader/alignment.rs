@@ -85,7 +85,7 @@ fn quiet_zone_score(img: &BinaryImage, ver: Version, h: &Homography) -> u32 {
     let my = w as f64 + 0.5;
     for mx in 0..w + 1 {
         let Ok(px) = h.map(mx as f64 + 0.5, my) else { continue };
-        let Some(bit) = img.get_bit_at_point(&px) else { continue };
+        let Some(bit) = img.get_bit(px.0, px.1) else { continue };
         white_score += bit as u32;
     }
 
@@ -93,7 +93,7 @@ fn quiet_zone_score(img: &BinaryImage, ver: Version, h: &Homography) -> u32 {
     let mx = w as f64 + 0.5;
     for my in 0..w {
         let Ok(px) = h.map(mx, my as f64 + 0.5) else { continue };
-        let Some(bit) = img.get_bit_at_point(&px) else { continue };
+        let Some(bit) = img.get_bit(px.0, px.1) else { continue };
         white_score += bit as u32;
     }
 

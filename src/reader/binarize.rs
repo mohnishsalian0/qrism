@@ -1,4 +1,4 @@
-use image::{GrayImage, Pixel as ImgPixel};
+use image::GrayImage;
 
 use crate::metadata::Color;
 use crate::reader::utils::contour::{trace, Contour};
@@ -341,191 +341,6 @@ impl BinaryImage {
         let contours = Vec::with_capacity(100);
         Self { buffer, px_cont, contours, w: w as u32, h: h as u32, pass: 0 }
     }
-
-    pub fn prepare_discard<P>(img: &image::ImageBuffer<P, Vec<u8>>) -> Self
-    where
-        P: ImgPixel<Subpixel = u8>,
-    {
-        let (w, h) = img.dimensions();
-        let chan_count = P::CHANNEL_COUNT as usize;
-        let raw: &[u8] = img.as_raw();
-        let px = |x: u32, y: u32, c: usize| raw[((y * w + x) as usize) * chan_count + c];
-        let block_pow = (std::cmp::min(w, h) as f64 / BLOCK_COUNT).log2() as usize;
-        let block_size = 1 << block_pow;
-        let mask = (1 << block_pow) - 1;
-
-        let wsteps = (w + mask) >> block_pow;
-        let hsteps = (h + mask) >> block_pow;
-        let len = (wsteps * hsteps) as usize;
-
-        let mut stats = vec![[Stat::new(); 4]; len];
-
-        // Calculate sum of 8x8 pixels for each block
-        // Skip last few pixels which form fractional blocks. The last block will be computed later
-        // Round w and h to skips these pixels
-        let (wr, hr) = (w & !mask, h & !mask);
-        let bw = wr >> block_pow; // full block columns
-        let bh = hr >> block_pow; // full block rows
-        for by in 0..bh {
-            let y0 = by << block_pow;
-            for bx in 0..bw {
-                let x0 = bx << block_pow;
-                let idx = (by * wsteps + bx) as usize;
-                let mut local = [Stat::new(); 4];
-                for yy in 0..block_size {
-                    let y = y0 + yy;
-                    let base = ((y * w + x0) as usize) * chan_count;
-                    for xx in 0..block_size as usize {
-                        let poff = base + xx * chan_count;
-                        for i in 0..chan_count {
-                            local[i].accumulate(raw[poff + i]);
-                        }
-                    }
-                }
-                stats[idx] = local;
-            }
-        }
-
-        // Sum of 8x8 pixels for fractional blocks (if exists) on the right edge
-        if w & mask != 0 {
-            for y in 0..hr {
-                let idx = (((y >> block_pow) + 1) * wsteps - 1) as usize;
-                for x in w - block_size..w {
-                    for i in 0..chan_count {
-                        stats[idx][i].accumulate(px(x, y, i));
-                    }
-                }
-            }
-        }
-
-        // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom edge
-        if h & mask != 0 {
-            let last_row = wsteps * (hsteps - 1);
-            for y in h - block_size..h {
-                for x in 0..wr {
-                    let idx = (last_row + (x >> block_pow)) as usize;
-
-                    for i in 0..chan_count {
-                        stats[idx][i].accumulate(px(x, y, i));
-                    }
-                }
-            }
-        }
-
-        // Sum of 8x8 pixels for fractional blocks (if exists) on the bottom right corner
-        if w & mask != 0 && h & mask != 0 {
-            for y in h - block_size..h {
-                for x in w - block_size..w {
-                    for i in 0..chan_count {
-                        stats[len - 1][i].accumulate(px(x, y, i));
-                    }
-                }
-            }
-        }
-
-        // Take average from the sum calculated for each block
-        // If variance is low (<= 25), assume the block is white. Because there is a high chance
-        // that the block is outside the qr. Unless the block has top/left neighbors, in which
-        // case take average of them.
-        let wsteps = wsteps as usize;
-        let hsteps = hsteps as usize;
-        let block_area_pow = 2 * block_pow;
-        #[allow(clippy::needless_range_loop)]
-        for i in 0..len {
-            for j in 0..chan_count {
-                // FIXME:
-                // if stats[i][j].max - stats[i][j].min <= 25 {
-                //     stats[i][j].avg = (stats[i][j].min as usize) / 2;
-                //     if i > wsteps && i % wsteps > 0 {
-                //         // Average of neighbors 2 * (x-1, y), (x, y-1), (x-1, y-1)
-                //         let left = stats[i - 1][j].avg;
-                //         let top = stats[i - wsteps][j].avg;
-                //         let top_left = stats[i - wsteps - 1][j].avg;
-                //         let ng_avg = (2 * left + top + top_left) / 4;
-                //         if stats[i][j].min < ng_avg as u8 {
-                //             stats[i][j].avg = ng_avg;
-                //         }
-                //     }
-                // } else {
-                //     // Convert block sum to average (divide by 64)
-                //     stats[i][j].avg >>= block_area_pow;
-                // }
-                stats[i][j].avg >>= block_area_pow;
-            }
-        }
-
-        // Calculates threshold for blocks
-        let half_grid = BLOCK_GRID_SIZE / 2;
-        let grid_area = BLOCK_GRID_SIZE * BLOCK_GRID_SIZE;
-        let (maxx, maxy) = (wsteps.saturating_sub(half_grid), hsteps.saturating_sub(half_grid));
-        let mut threshold = vec![[0u8; 4]; wsteps * hsteps];
-
-        for y in 0..hsteps {
-            let row_off = y * wsteps;
-            for x in 0..wsteps {
-                let i = row_off + x;
-
-                // If y is near any boundary then copy the threshold above
-                if y > 0 && (y <= half_grid || y >= maxy) {
-                    threshold[i] = threshold[i - wsteps];
-                    continue;
-                }
-
-                // If x is near any boundary then copy the left threshold
-                if x > 0 && (x <= half_grid || x >= maxx) {
-                    threshold[i] = threshold[i - 1];
-                    continue;
-                }
-
-                let cx = std::cmp::max(x, half_grid);
-                let cy = std::cmp::max(y, half_grid);
-                let mut sum = [0usize; 4];
-                for ny in cy - half_grid..=cy + half_grid {
-                    let ni = ny * wsteps + cx;
-                    for px_stat in &stats[ni - half_grid..=ni + half_grid] {
-                        for (i, chan_stat) in px_stat.iter().take(chan_count).enumerate() {
-                            sum[i] += chan_stat.avg;
-                        }
-                    }
-                }
-
-                for (c, t) in threshold[i].iter_mut().take(chan_count).enumerate() {
-                    *t = (sum[c] / grid_area) as u8;
-                }
-            }
-        }
-
-        // Initially mark all pixels as unvisited; will be used for flood fill later.
-        // Colour plane packs `color_size` bits per pixel; the matrix strides columns by it.
-        let color_size = chan_count.next_power_of_two() as u32;
-        let mut buffer = BitMatrix::new(w, h, color_size);
-        for by in 0..hsteps {
-            let y0 = (by << block_pow) as u32;
-            let y_end = std::cmp::min(y0 + block_size, h);
-            for bx in 0..wsteps {
-                let x0 = (bx << block_pow) as u32;
-                let x_end = std::cmp::min(x0 + block_size, w);
-                let t = threshold[by * wsteps + bx];
-
-                for y in y0..y_end {
-                    for x in x0..x_end {
-                        let mut color_byte = 0u64;
-                        for (i, &th) in t.iter().take(chan_count).enumerate() {
-                            color_byte = (color_byte << 1) | u64::from(px(x, y, i) > th);
-                        }
-
-                        if color_byte != 0 {
-                            buffer.put(x, y, color_byte);
-                        }
-                    }
-                }
-            }
-        }
-
-        let px_cont = vec![u16::MAX; (w * h) as usize];
-        let contours = Vec::with_capacity(100);
-        Self { buffer, px_cont, contours, w, h, pass: 0 }
-    }
 }
 
 // Util functions
@@ -567,16 +382,6 @@ impl BinaryImage {
 
         let (x, y) = (x as u32, y as u32);
         self.get_bit(x, y)
-    }
-
-    pub fn get_at_point(&self, pt: &Point) -> Option<Color> {
-        let (x, y) = self.wrap_coords(pt.x, pt.y)?;
-        let bits = self.buffer.get(x, y);
-        Some(if self.buffer.elem_bits() == 1 {
-            Color::from(bits != 0)
-        } else {
-            bits.try_into().ok()?
-        })
     }
 
     pub fn get_bit_at_point(&self, pt: &Point) -> Option<bool> {
@@ -720,7 +525,7 @@ mod bit_accessor_tests {
                 let pt = Point { x: x as i32, y: y as i32 };
                 assert_eq!(
                     img.get_bit_at_point(&pt),
-                    Some(img.get_at_point(&pt) == Some(Color::White)),
+                    Some(expected),
                     "get_bit_at_point disagrees with get_at_point at ({x}, {y})"
                 );
             }

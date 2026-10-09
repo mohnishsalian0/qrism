@@ -1,8 +1,6 @@
 use std::ops::{Index, IndexMut};
 
-use crate::utils::{f64_to_i32, QRError, QRResult};
-
-use super::geometry::Point;
+use crate::utils::{f64_to_u32, QRError, QRResult};
 
 // Homographic projection matrix to map logical qr onto image qr
 //------------------------------------------------------------------------------
@@ -95,14 +93,15 @@ impl Homography {
 
             // Normalize row
             let pivot = a[i][i];
-            for c in i..8 {
-                a[i][c] /= pivot;
+            for ac in a[i].iter_mut().skip(i) {
+                *ac /= pivot;
             }
             b[i] /= pivot;
 
             // Eliminate other rows
             for r in (i + 1)..8 {
                 let factor = a[r][i];
+                #[allow(clippy::needless_range_loop)]
                 for c in i..8 {
                     a[r][c] -= factor * a[i][c];
                 }
@@ -124,13 +123,13 @@ impl Homography {
     }
 
     /// Map a point (x,y) using homography H (3x3)
-    pub fn map(&self, x: f64, y: f64) -> QRResult<Point> {
+    pub fn map(&self, x: f64, y: f64) -> QRResult<(u32, u32)> {
         let (xp, yp) = self.exact_map(x, y)?;
 
-        let x = f64_to_i32(&xp.round())?;
-        let y = f64_to_i32(&yp.round())?;
+        let x = f64_to_u32(&xp.round())?;
+        let y = f64_to_u32(&yp.round())?;
 
-        Ok(Point { x, y })
+        Ok((x, y))
     }
 
     pub fn exact_map(&self, x: f64, y: f64) -> QRResult<(f64, f64)> {
@@ -148,7 +147,6 @@ impl Homography {
 
 #[cfg(test)]
 mod homography_tests {
-    use crate::reader::utils::geometry::Point;
 
     use super::Homography;
 
@@ -161,7 +159,7 @@ mod homography_tests {
         let expected = [(110, 110), (290, 40), (290, 290), (40, 290)];
         for (i, pt) in pts.iter().enumerate() {
             let proj_pt = h.map(pt.0, pt.1).unwrap();
-            let exp_pt = Point { x: expected[i].0, y: expected[i].1 };
+            let exp_pt = (expected[i].0, expected[i].1);
             assert_eq!(proj_pt, exp_pt);
         }
     }

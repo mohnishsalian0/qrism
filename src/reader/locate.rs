@@ -388,6 +388,7 @@ fn estimate_mod_count(c1: &PointF, m1: &PointF, c2: &PointF, m2: &PointF) -> f64
     (d12 * 9.0 / avg_d).sqrt()
 }
 
+/// Gives version and error distance
 fn read_version_info(img: &BinaryImage, fr: LocalFrame) -> Option<(u32, u32)> {
     let mut vinfo = 0;
     for x in (-3..3).rev() {
@@ -637,7 +638,7 @@ impl SymbolLocation {
                     Ok(v) => v,
                     Err(_) => return 0,
                 };
-                if let Some(bit) = img.get_bit_at_point(&pt) {
+                if let Some(bit) = img.get_bit(pt.0, pt.1) {
                     if bit {
                         score -= 1;
                     } else {
