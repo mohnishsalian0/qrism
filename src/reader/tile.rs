@@ -354,19 +354,19 @@ mod tile_tests {
                     let corners = tiles[r][c].as_ref().unwrap().corners().unwrap();
 
                     let tl_coord = project(x0, y0);
-                    let tl = (tl_coord.0 as u32, tl_coord.1 as u32);
+                    let tl = (tl_coord.0.round() as u32, tl_coord.1.round() as u32);
                     assert_eq!(corners[0], tl, "Top left corner failed at ver {v}");
 
                     let tr_coord = project(x1, y0);
-                    let tr = (tr_coord.0 as u32, tr_coord.1 as u32);
+                    let tr = (tr_coord.0.round() as u32, tr_coord.1.round() as u32);
                     assert_eq!(corners[1], tr, "Top right corner failed at ver {v}");
 
                     let br_coord = project(x1, y1);
-                    let br = (br_coord.0 as u32, br_coord.1 as u32);
+                    let br = (br_coord.0.round() as u32, br_coord.1.round() as u32);
                     assert_eq!(corners[2], br, "Bottom right corner failed at ver {v}");
 
                     let bl_coord = project(x0, y1);
-                    let bl = (bl_coord.0 as u32, bl_coord.1 as u32);
+                    let bl = (bl_coord.0.round() as u32, bl_coord.1.round() as u32);
                     assert_eq!(corners[3], bl, "Bottom left corner failed at ver {v}");
                 }
             }
