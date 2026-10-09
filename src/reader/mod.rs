@@ -175,7 +175,11 @@ mod reader_tests {
 
         let finders = locate_finders(&mut bin_img);
         dbg!(finders.len());
-        finders.iter().for_each(|f| Point::from(&f.c).highlight(&mut img, image::Rgb([255, 0, 0])));
+        finders.iter().for_each(|f| {
+            if let Ok(p) = Point::try_from(&f.c) {
+                p.highlight(&mut img, image::Rgb([255, 0, 0]));
+            }
+        });
 
         let groups = group_finders(&finders);
         dbg!(groups.len());

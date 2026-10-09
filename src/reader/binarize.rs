@@ -362,45 +362,12 @@ impl BinaryImage {
         Some((bit, len))
     }
 
-    pub fn get_bit_bounded(&self, x: i32, y: i32) -> Option<bool> {
-        if x < 0 || y < 0 {
-            return None;
-        }
-
-        let (x, y) = (x as u32, y as u32);
-        self.get_bit(x, y)
-    }
-
-    pub fn get_bit_at_point(&self, pt: &Point) -> Option<bool> {
-        let (x, y) = self.wrap_coords(pt.x, pt.y)?;
-        let bit = self.buffer.get_bit(x, y);
-        Some(bit)
-    }
-
-    fn wrap_coords(&self, x: i32, y: i32) -> Option<(u32, u32)> {
-        let w = self.w as i32;
-        let h = self.h as i32;
-
-        if x < -w || w <= x || y < -h || h <= y {
-            return None;
-        }
-
-        let x = if x < 0 { x + w } else { x };
-        let y = if y < 0 { y + h } else { y };
-
-        Some((x as u32, y as u32))
-    }
-
-    pub fn contains(&self, x: i32, y: i32) -> bool {
-        0 <= x && (x as u32) < self.w && 0 <= y && (y as u32) < self.h
+    pub fn contains(&self, x: u32, y: u32) -> bool {
+        x < self.w && y < self.h
     }
 
     pub fn matches_bit(&self, x: i32, y: i32, bit: bool) -> bool {
-        if x < 0 || y < 0 {
-            return false;
-        }
-        let (x, y) = (x as u32, y as u32);
-        x < self.w && y < self.h && self.buffer.get_bit(x, y) == bit
+        x >= 0 && y >= 0 && self.get_bit(x as u32, y as u32) == Some(bit)
     }
 
     pub fn get_px_contour(&self, x: u32, y: u32) -> Option<u16> {
@@ -420,7 +387,12 @@ impl BinaryImage {
         &mut self.contours
     }
 
-    pub fn set_px_contour(&mut self, x: u32, y: u32, cont_id: u16) {
+    pub fn set_px_contour(&mut self, x: i32, y: i32, cont_id: u16) {
+        if x < 0 || y < 0 {
+            return;
+        }
+
+        let (x, y) = (x as u32, y as u32);
         if x < self.w && y < self.h {
             self.px_cont[(y * self.w + x) as usize] = cont_id;
         }
@@ -453,7 +425,7 @@ impl BinaryImage {
 
 #[cfg(test)]
 mod bit_accessor_tests {
-    use super::{BinaryImage, BitMatrix, Contour, Point, UNLABELED};
+    use super::{BinaryImage, BitMatrix, Contour, UNLABELED};
 
     fn sketch(rows: &[&str]) -> BinaryImage {
         let h = rows.len() as u32;
@@ -493,12 +465,6 @@ mod bit_accessor_tests {
             for x in 0..img.w {
                 let expected = light(x, y);
                 assert_eq!(img.get_bit(x, y), Some(expected), "bit at ({x}, {y})");
-                let pt = Point { x: x as i32, y: y as i32 };
-                assert_eq!(
-                    img.get_bit_at_point(&pt),
-                    Some(expected),
-                    "get_bit_at_point disagrees with get_at_point at ({x}, {y})"
-                );
             }
         }
     }
@@ -509,47 +475,6 @@ mod bit_accessor_tests {
         assert_eq!(img.get_bit(img.w, 0), None, "one past the right edge");
         assert_eq!(img.get_bit(0, img.h), None, "one past the bottom edge");
         assert_eq!(img.get_bit(img.w - 1, img.h - 1), Some(false), "the last pixel is in bounds");
-    }
-
-    #[test]
-    fn test_get_bit_bounded_rejects_negatives() {
-        let img = sketch(&ROWS);
-        let (w, h) = (img.w as i32, img.h as i32);
-
-        assert_eq!(img.get_bit_bounded(-1, 0), None);
-        assert_eq!(img.get_bit_bounded(0, -1), None);
-        assert_eq!(img.get_bit_bounded(-1, -1), None);
-        assert_eq!(img.get_bit_bounded(w, 0), None);
-        assert_eq!(img.get_bit_bounded(0, h), None);
-
-        assert_eq!(img.get_bit_bounded(0, 0), Some(true));
-        assert_eq!(img.get_bit_bounded(w - 1, h - 1), Some(false));
-    }
-
-    #[test]
-    fn test_get_bit_at_point_wraps_negatives() {
-        let img = sketch(&ROWS);
-        let (w, h) = (img.w as i32, img.h as i32);
-        let at = |x, y| img.get_bit_at_point(&Point { x, y });
-
-        assert_eq!(at(-1, -1), img.get_bit(img.w - 1, img.h - 1), "(-1, -1) is the last pixel");
-        assert_eq!(at(-1, -1), Some(false), "and that pixel is dark");
-        assert_eq!(at(-w, -h), img.get_bit(0, 0), "(-w, -h) is the first pixel");
-        assert_eq!(at(-w, -h), Some(true));
-        assert_eq!(at(-3, 0), img.get_bit(img.w - 3, 0), "wraps per axis, independently");
-
-        // One step past the wrap window on either side is out of bounds.
-        assert_eq!(at(-w - 1, 0), None);
-        assert_eq!(at(0, -h - 1), None);
-        assert_eq!(at(w, 0), None);
-        assert_eq!(at(0, h), None);
-    }
-
-    #[test]
-    fn test_signed_accessors_disagree_on_negatives() {
-        let img = sketch(&ROWS);
-        assert_eq!(img.get_bit_bounded(-1, -1), None);
-        assert_eq!(img.get_bit_at_point(&Point { x: -1, y: -1 }), Some(false));
     }
 
     #[test]
@@ -613,8 +538,8 @@ impl BinaryImage {
             return None;
         }
 
-        let seed = Point { x: src.0 as i32, y: src.1 as i32 };
-        let probe = Point { x: probe.0 as i32, y: probe.1 as i32 };
+        let seed = Point { x: src.0, y: src.1 };
+        let probe = Point { x: probe.0, y: probe.1 };
         let max_perimeter = max_width * 4;
 
         match self.get_px_contour(src.0, src.1) {

@@ -188,7 +188,7 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
         return None;
     }
 
-    let seed = Point { x: sx as i32, y: datum.y as i32 };
+    let seed = Point { x: sx, y: datum.y };
     let pattern = [1.0, 1.0, 3.0, 1.0, 1.0];
     let max_run = (rr - rl) * 2; // Setting a loose upper limit on the run
 
@@ -199,7 +199,7 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
     // crosscheck but are mostly not finders. Confirms the 1:1:3:1:1 ratio along the main diagonal
     // through the centre — a third independent axis a spurious candidate almost never satisfies.
     // This keeps the two traces below off candidates a pixel walk can already rule out.
-    let centre = Point { x: sx as i32, y: ((t + b) / 2) as i32 };
+    let centre = Point { x: sx, y: ((t + b) / 2) };
     if !verify_finder_diagonal(img, &centre, max_run) {
         return None;
     }
@@ -313,12 +313,14 @@ pub struct FinderGroup {
 
 impl FinderGroup {
     #[cfg(test)]
-    pub fn highlight(&self, img: &mut RgbImage, finders: &Vec<Finder>) {
+    pub fn highlight(&self, img: &mut RgbImage, finders: &[Finder]) {
         use super::utils::rnd_rgb;
 
         let color = rnd_rgb();
         for f in self.ids.iter() {
-            Point::from(&finders[*f].c).highlight(img, color);
+            if let Ok(p) = Point::try_from(&finders[*f].c) {
+                p.highlight(img, color)
+            };
         }
     }
 }

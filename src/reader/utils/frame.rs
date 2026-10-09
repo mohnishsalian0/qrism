@@ -1,3 +1,5 @@
+use crate::QRResult;
+
 use super::geometry::{Point, PointF};
 
 // Local frame
@@ -47,8 +49,8 @@ impl LocalFrame {
 
     // Maps module coordinates, relative to the origin, onto image pixels. Offsets are counted
     // in modules and the basis is already per-module, so they scale it directly.
-    pub fn map(&self, x: f64, y: f64) -> Point {
-        Point::from(&self.exact_map(x, y))
+    pub fn map(&self, x: f64, y: f64) -> QRResult<Point> {
+        Point::try_from(&self.exact_map(x, y))
     }
 
     // Maps module coordinates onto image pixels with sub pixel precision.

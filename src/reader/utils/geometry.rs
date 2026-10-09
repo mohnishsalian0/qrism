@@ -3,6 +3,8 @@ use std::{cmp::Ordering, marker::PhantomData};
 #[cfg(test)]
 use image::{Rgb, RgbImage};
 
+use crate::{utils::f64_to_u32, QRError};
+
 // Direction enum
 //------------------------------------------------------------------------------
 
@@ -39,35 +41,20 @@ impl Direction {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Default, Hash)]
 pub struct Point {
-    pub x: i32,
-    pub y: i32,
+    pub x: u32,
+    pub y: u32,
 }
 
 impl Point {
-    pub fn dist_sq(&self, other: &Point) -> u32 {
-        let dx = other.x - self.x;
-        let dy = other.y - self.y;
-        (dx * dx + dy * dy) as _
-    }
-
     #[cfg(test)]
     pub fn highlight(&self, img: &mut RgbImage, color: Rgb<u8>) {
         let (w, h) = img.dimensions();
         for i in [-1, 0, 1] {
             for j in [-1, 0, 1] {
-                let nx = ((self.x - i) as u32).min(w - 1);
-                let ny = ((self.y - j) as u32).min(h - 1);
+                let nx = ((self.x as i32 - i) as u32).min(w - 1);
+                let ny = ((self.y as i32 - j) as u32).min(h - 1);
                 img.put_pixel(nx, ny, color);
             }
-        }
-    }
-
-    pub fn advance(&mut self, d: Direction) {
-        match d {
-            Direction::Right => self.x += 1,
-            Direction::Down => self.y += 1,
-            Direction::Left => self.x -= 1,
-            Direction::Up => self.y -= 1,
         }
     }
 }
@@ -101,9 +88,11 @@ impl PointF {
     }
 }
 
-impl From<&PointF> for Point {
-    fn from(value: &PointF) -> Self {
-        Self { x: value.x.round() as i32, y: value.y.round() as i32 }
+impl TryFrom<&PointF> for Point {
+    type Error = QRError;
+
+    fn try_from(value: &PointF) -> Result<Self, Self::Error> {
+        Ok(Self { x: f64_to_u32(&value.x)?, y: f64_to_u32(&value.y)? })
     }
 }
 
@@ -131,11 +120,13 @@ pub struct X;
 
 impl Axis for X {
     fn shift(pt: &mut Point, dist: &(i32, i32)) {
-        pt.x += dist.0;
+        debug_assert!(pt.x.checked_add_signed(dist.0).is_some());
+        pt.x = pt.x.wrapping_add_signed(dist.0);
     }
 
     fn shift_cross(pt: &mut Point, dist: &(i32, i32)) {
-        pt.y += dist.1;
+        debug_assert!(pt.y.checked_add_signed(dist.1).is_some());
+        pt.y = pt.y.wrapping_add_signed(dist.1);
     }
 
     fn delta(m: &Slope) -> i32 {
@@ -155,11 +146,13 @@ pub struct Y;
 
 impl Axis for Y {
     fn shift(pt: &mut Point, dist: &(i32, i32)) {
-        pt.y += dist.1;
+        debug_assert!(pt.y.checked_add_signed(dist.1).is_some());
+        pt.y = pt.y.wrapping_add_signed(dist.1);
     }
 
     fn shift_cross(pt: &mut Point, dist: &(i32, i32)) {
-        pt.x += dist.0;
+        debug_assert!(pt.x.checked_add_signed(dist.0).is_some());
+        pt.x = pt.x.wrapping_add_signed(dist.0);
     }
 
     fn delta(m: &Slope) -> i32 {
@@ -194,8 +187,8 @@ impl<A: Axis> BresenhamLine<A> {
         let end = *to;
 
         // Computing slope
-        let dx = (to.x - from.x).abs();
-        let dy = (to.y - from.y).abs();
+        let dx = to.x.abs_diff(from.x) as i32;
+        let dy = to.y.abs_diff(from.y) as i32;
         let m = Slope { dx: 2 * dx, dy: 2 * dy };
 
         // Computing increment

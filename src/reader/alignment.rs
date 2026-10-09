@@ -5,7 +5,7 @@ use super::{
         geometry::{Point, PointF},
     },
 };
-use crate::{reader::utils::homography::Homography, Version};
+use crate::{reader::utils::homography::Homography, utils::f64_to_u32, Version};
 
 // The alignment grid is at most 7x7 -- version 40 carries 7 alignment coordinates per axis.
 pub(super) const MAX_ALIGN_CELLS: usize = 7;
@@ -53,11 +53,12 @@ pub(super) fn locate_br_anchor(
     let mut best_dist_sq = (c1.x - seed.x).powi(2) + (c1.y - seed.y).powi(2);
 
     let mod_size = ff.mod_size();
-    let reach = (mod_size * BR_ANCHOR_SEARCH_RADIUS).round() as i32;
+    let reach = (mod_size * BR_ANCHOR_SEARCH_RADIUS).round();
 
-    let seedr = (seed.x.round() as i32, seed.y.round() as i32);
-    let (l, r) = (seedr.0 - reach, seedr.0 + reach);
-    let (t, b) = (seedr.1 - reach, seedr.1 + reach);
+    let l = (seed.x - reach).round().max(0.0) as u32;
+    let r = (seed.x + reach).round().max(0.0) as u32;
+    let t = (seed.y - reach).round().max(0.0) as u32;
+    let b = (seed.y + reach).round().max(0.0) as u32;
     for cx in l..=r {
         for cy in t..=b {
             if img.contains(cx, cy) {
@@ -157,7 +158,7 @@ pub(super) fn locate_alignment_centres(
     let n = aps.len();
 
     let mod_size = ff.mod_size();
-    let search_span = (mod_size * ALIGNMENT_SEARCH_RADIUS).round() as i32;
+    let search_span = f64_to_u32(&(mod_size * ALIGNMENT_SEARCH_RADIUS)).unwrap();
     let pass = img.next_pass();
 
     for r in 0..n {
@@ -165,10 +166,9 @@ pub(super) fn locate_alignment_centres(
             if centres[r][c].is_none() {
                 let seed = provisional_alignment(r, c, ver, ff, centres);
 
-                let exact_centre =
-                    pinpoint_alignment_centre(img, Point::from(&seed), mod_size, search_span, pass);
-
-                centres[r][c] = exact_centre;
+                if let Ok(s) = Point::try_from(&seed) {
+                    centres[r][c] = pinpoint_alignment_centre(img, s, mod_size, search_span, pass);
+                }
             }
         }
     }
@@ -215,28 +215,27 @@ fn pinpoint_alignment_centre(
     img: &mut BinaryImage,
     seed: Point,
     mod_size: f64,
-    radius: i32,
+    radius: u32,
     pass: u32,
 ) -> Option<PointF> {
     let mut candidates = Vec::with_capacity(100);
-    let (w, h) = (img.w as i32, img.h as i32);
-    let (xs, xe) = ((seed.x - radius).max(0), (seed.x + radius).min(w - 1));
-    let (ys, ye) = ((seed.y - radius).max(0), (seed.y + radius).min(h - 1));
+    let (w, h) = (img.w, img.h);
+    let (xs, xe) = (seed.x.saturating_sub(radius), (seed.x + radius).min(w - 1));
+    let (ys, ye) = (seed.y.saturating_sub(radius), (seed.y + radius).min(h - 1));
     if xs > xe || ys > ye {
         return None;
     }
 
-    let (xs, xe) = (xs as u32, xe as u32);
-    for y in ys as u32..=ye as u32 {
+    for y in ys..=ye {
         let (sbit, ends) = img.run_ends(xs, xe, y);
         let ends = ends.get(sbit as usize..).unwrap_or_default();
-        candidates.extend(ends.iter().step_by(2).map(|&e| (e as i32, y as i32)));
+        candidates.extend(ends.iter().step_by(2).map(|&e| (e, y)));
     }
     candidates.sort_unstable_by_key(|c| seed.x.abs_diff(c.0).pow(2) + seed.y.abs_diff(c.1).pow(2));
 
     let max_width = (mod_size * ALIGNMENT_TRACE_SLACK).round() as u32;
     for c in candidates {
-        let (x, y) = (c.0 as u32, c.1 as u32);
+        let (x, y) = (c.0, c.1);
 
         if let Some(stone) = img.get_contour_capped((x, y), (x, y), max_width) {
             if stone.visited_in != pass {
@@ -256,12 +255,12 @@ fn pinpoint_alignment_centre(
 // Whether the stone centred at `stone_centre` is the middle of an alignment pattern: a white ring
 // must enclose it, and the ring's centroid must sit within the drift tolerance of the stone's.
 fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &PointF, mod_size: f64) -> bool {
-    let sc = Point::from(stone_centre);
+    let Ok(sc) = Point::try_from(stone_centre) else { return false };
     if !img.contains(sc.x, sc.y) {
         return false;
     }
 
-    let (x, y) = (sc.x as u32, sc.y as u32);
+    let (x, y) = (sc.x, sc.y);
     let Some(ring_seed) = find_ring_seed(img, (x, y), mod_size) else {
         return false;
     };

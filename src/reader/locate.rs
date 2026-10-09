@@ -81,10 +81,10 @@ impl SymbolLocation {
         let dx = c2.x - c1.x;
         let dy = c2.y - c1.y;
         let align = PointF { x: c0.x + dx, y: c0.y + dy };
-        let alignr = Point::from(&align);
+        let alignr = Point::try_from(&align).ok()?;
 
         // Skip if intersection pt is outside the image
-        if alignr.x < 0 || alignr.x as u32 >= img.w || alignr.y < 0 || alignr.y as u32 >= img.h {
+        if alignr.x >= img.w || alignr.y >= img.h {
             return None;
         }
 
@@ -95,7 +95,8 @@ impl SymbolLocation {
         }
 
         let finders = [c0, c1, c2];
-        let (c0r, c1r, c2r) = (Point::from(&c0), Point::from(&c1), Point::from(&c2));
+        let (c0r, c1r, c2r) =
+            (Point::try_from(&c0).ok()?, Point::try_from(&c1).ok()?, Point::try_from(&c2).ok()?);
 
         // Locating midpoints for finder edges which cross the lines connecting the centres. In
         // other words the edges which don't lie on the boundary. These will be used as endpoints
@@ -172,24 +173,27 @@ impl SymbolLocation {
 
         for &a in self._anchors.iter().flatten() {
             if let Some(pt) = a {
-                Point::from(&pt).highlight(img, color);
+                if let Ok(p) = Point::try_from(&pt) {
+                    p.highlight(img, color)
+                };
             }
         }
 
         let (w, h) = img.dimensions();
         let Ok(corners) = self.outline() else { return };
-        let bounds = corners.map(|(x, y)| Point { x: x.round() as i32, y: y.round() as i32 });
+        let bounds = corners
+            .map(|(x, y)| Point { x: x.round().max(0.0) as u32, y: y.round().max(0.0) as u32 });
 
         for i in 0..4 {
             let mut a = bounds[i % 4];
             let mut b = bounds[(i + 1) % 4];
-            let dx = (b.x - a.x).abs();
-            let dy = (b.y - a.y).abs();
+            let dx = b.x.abs_diff(a.x);
+            let dy = b.y.abs_diff(a.y);
 
-            a.x = (a.x.max(0) as u32).min(w - 1) as i32;
-            a.y = (a.y.max(0) as u32).min(h - 1) as i32;
-            b.x = (b.x.max(0) as u32).min(w - 1) as i32;
-            b.y = (b.y.max(0) as u32).min(h - 1) as i32;
+            a.x = a.x.min(w - 1);
+            a.y = a.y.min(h - 1);
+            b.x = b.x.min(w - 1);
+            b.y = b.y.min(h - 1);
 
             if dx > dy {
                 let line = BresenhamLine::<X>::new(&a, &b);
@@ -244,7 +248,8 @@ fn verify_symbol_size(img: &BinaryImage, finders: &[PointF; 3], mids: &[PointF; 
     // For version 7 (size 45) or above, use version info bits
     let size = if est_size < 45 {
         // Measure timing pattern from c1 to c2
-        let t12 = measure_timing_patterns(img, &Point::from(m10), &Point::from(m23));
+        let t12 =
+            measure_timing_patterns(img, &Point::try_from(m10).ok()?, &Point::try_from(m23).ok()?);
         let mod_score12 = ((mc12 / (t12 + 6) as f64) - 1.0).abs();
 
         // Skip if one is more than twice as long as the other
@@ -253,7 +258,8 @@ fn verify_symbol_size(img: &BinaryImage, finders: &[PointF; 3], mids: &[PointF; 
         }
 
         // Measure timing pattern from c1 to c3
-        let t10 = measure_timing_patterns(img, &Point::from(m12), &Point::from(m03));
+        let t10 =
+            measure_timing_patterns(img, &Point::try_from(m12).ok()?, &Point::try_from(m03).ok()?);
         let mod_score10 = ((mc10 / (t10 + 6) as f64) - 1.0).abs();
 
         // Skip if one is more than twice as long as the other
@@ -312,8 +318,8 @@ fn nearest_valid_size(mod_count: f64) -> (i32, i32) {
 }
 
 fn find_ring_mid(img: &BinaryImage, from: &Point, to: &Point) -> Option<PointF> {
-    let dx = (to.x - from.x).abs();
-    let dy = (to.y - from.y).abs();
+    let dx = to.x.abs_diff(from.x);
+    let dy = to.y.abs_diff(from.y);
     if dx > dy {
         mid_scan::<X>(img, from, to)
     } else {
@@ -327,11 +333,11 @@ where
 {
     let mut flips = 0;
     let mut buffer = Vec::with_capacity(100);
-    let mut last = img.get_bit_at_point(from).unwrap();
+    let mut last = img.get_bit(from.x, from.y).unwrap();
     let line = BresenhamLine::<A>::new(from, to);
 
     for p in line {
-        let color = img.get_bit_at_point(&p).unwrap();
+        let color = img.get_bit(p.x, p.y).unwrap();
 
         if color != last {
             flips += 1;
@@ -349,8 +355,8 @@ where
 }
 
 fn measure_timing_patterns(img: &BinaryImage, from: &Point, to: &Point) -> u32 {
-    let dx = (to.x - from.x).abs();
-    let dy = (to.y - from.y).abs();
+    let dx = to.x.abs_diff(from.x);
+    let dy = to.y.abs_diff(from.y);
 
     if dx > dy {
         timing_scan::<X>(img, from, to)
@@ -364,11 +370,11 @@ where
     BresenhamLine<A>: Iterator<Item = Point>,
 {
     let mut transitions = 0;
-    let mut last = img.get_bit_at_point(from).unwrap() as u8;
+    let mut last = img.get_bit(from.x, from.y).unwrap() as u8;
     let line = BresenhamLine::<A>::new(from, to);
 
     for p in line {
-        let clr_bit = img.get_bit_at_point(&p).unwrap() as u8;
+        let clr_bit = img.get_bit(p.x, p.y).unwrap() as u8;
         if clr_bit != last {
             transitions += 1;
             last = clr_bit;
@@ -393,8 +399,8 @@ fn read_version_info(img: &BinaryImage, fr: LocalFrame) -> Option<(u32, u32)> {
     let mut vinfo = 0;
     for x in (-3..3).rev() {
         for y in 5..8 {
-            let pt = fr.map(x as f64, y as f64);
-            let bit = img.get_bit_at_point(&pt)?;
+            let pt = fr.map(x as f64, y as f64).ok()?;
+            let bit = img.get_bit(pt.x, pt.y)?;
             vinfo = (vinfo << 1) | !bit as u32;
         }
     }

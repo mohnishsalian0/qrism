@@ -25,16 +25,17 @@ pub fn verify_finder_pattern(
     // Count upward
     let mut pos = *seed;
     let mut flips = pat_len / 2;
-    let mut initial = img.get_bit_at_point(seed).unwrap();
+    let mut initial = img.get_bit(seed.x, seed.y).unwrap();
     while run_len[flips] <= max_run {
-        pos.y -= 1;
-        if pos.y < 0 {
+        let Some(y) = pos.y.checked_sub(1) else {
             break;
-        }
+        };
+        pos.y = y;
 
-        let color = img.get_bit_at_point(&pos).unwrap();
+        let color = img.get_bit(pos.x, pos.y).unwrap();
         if initial != color {
             if flips == 0 {
+                pos.y += 1;
                 break;
             }
             initial = color;
@@ -42,21 +43,22 @@ pub fn verify_finder_pattern(
         }
         run_len[flips] += 1;
     }
-    let top = (pos.y + 1) as u32;
+    let top = pos.y;
 
     // Count downward
     let mut pos = *seed;
     let mut flips = pat_len / 2;
-    let mut initial = img.get_bit_at_point(seed).unwrap();
+    let mut initial = img.get_bit(seed.x, seed.y).unwrap();
     while run_len[flips] <= max_run {
-        pos.y += 1;
-        if img.h == pos.y as u32 {
+        if pos.y + 1 == img.h {
             break;
         }
+        pos.y += 1;
 
-        let color = img.get_bit_at_point(&pos).unwrap();
+        let color = img.get_bit(pos.x, pos.y).unwrap();
         if initial != color {
             if flips == pat_len - 1 {
+                pos.y -= 1;
                 break;
             }
             initial = color;
@@ -64,7 +66,7 @@ pub fn verify_finder_pattern(
         }
         run_len[flips] += 1;
     }
-    let bottom = (pos.y - 1) as u32;
+    let bottom = pos.y;
 
     if !matches_finder_ratio(&run_len) {
         return None;
@@ -74,29 +76,33 @@ pub fn verify_finder_pattern(
 }
 
 // Verifies the 1:1:3:1:1 finder ratio along the main (top-left to bottom-right) diagonal through
-// `center`. A spurious 1:1:3:1:1 that survives the horizontal scan and vertical crosscheck (e.g. a
+// `centre`. A spurious 1:1:3:1:1 that survives the horizontal scan and vertical crosscheck (e.g. a
 // dark cross or a thin diagonal streak) rarely also shows the ratio diagonally, so this is a cheap
 // third-axis confirmation — O(module size) pixel walk, run before the expensive stone flood fill.
-pub fn verify_finder_diagonal(img: &BinaryImage, center: &Point, max_run: u32) -> bool {
+pub fn verify_finder_diagonal(img: &BinaryImage, centre: &Point, max_run: u32) -> bool {
     let mut run_len = [0u32; 5];
     run_len[2] = 1;
-    let seed_color = match img.get_bit_at_point(center) {
+    let seed_color = match img.get_bit(centre.x, centre.y) {
         Some(c) => c,
         None => return false,
     };
-    let (w, h) = (img.w as i32, img.h as i32);
+    let (w, h) = (img.w, img.h);
 
     // Count up-left along (-1, -1)
-    let mut pos = *center;
+    let mut pos = *centre;
     let mut flips = 2;
     let mut initial = seed_color;
     while run_len[flips] <= max_run {
-        pos.x -= 1;
-        pos.y -= 1;
-        if pos.x < 0 || pos.y < 0 {
+        let Some(x) = pos.x.checked_sub(1) else {
             break;
-        }
-        let color = img.get_bit_at_point(&pos).unwrap();
+        };
+        let Some(y) = pos.y.checked_sub(1) else {
+            break;
+        };
+        pos.x = x;
+        pos.y = y;
+
+        let color = img.get_bit(pos.x, pos.y).unwrap();
         if initial != color {
             if flips == 0 {
                 break;
@@ -108,7 +114,7 @@ pub fn verify_finder_diagonal(img: &BinaryImage, center: &Point, max_run: u32) -
     }
 
     // Count down-right along (1, 1)
-    let mut pos = *center;
+    let mut pos = *centre;
     let mut flips = 2;
     let mut initial = seed_color;
     while run_len[flips] <= max_run {
@@ -117,7 +123,7 @@ pub fn verify_finder_diagonal(img: &BinaryImage, center: &Point, max_run: u32) -
         if pos.x >= w || pos.y >= h {
             break;
         }
-        let color = img.get_bit_at_point(&pos).unwrap();
+        let color = img.get_bit(pos.x, pos.y).unwrap();
         if initial != color {
             if flips == 4 {
                 break;
