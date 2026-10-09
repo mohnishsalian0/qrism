@@ -349,7 +349,7 @@ mod sampler_tests {
             sample_finder(x, y, &sampler, &mut samples, ring, stone);
 
             // 8x8 block: 24 ring, 9 stone, 16 inner white ring + 15 separator
-            for c in 0..8 {
+            for (c, sample) in samples.iter().enumerate() {
                 let clr = Color::try_from(c as u8).unwrap();
                 let exp_len = match clr {
                     _ if clr == ring => 24,
@@ -360,7 +360,7 @@ mod sampler_tests {
                 assert_eq!(samples[c].len(), exp_len, "Finder ({x}, {y}): {clr:?} count");
 
                 let exp_rgb = Rgb::<u8>::from(clr).0;
-                for s in &samples[c] {
+                for s in sample {
                     assert_eq!(*s, exp_rgb, "Finder ({x}, {y}): {clr:?} colour");
                 }
             }
@@ -394,7 +394,7 @@ mod sampler_tests {
                     sample_alignment(x, y, &sampler, &mut samples);
 
                     // 5x5 block: 16 outer ring + 1 centre black, 8 inner white ring
-                    for c in 0..8 {
+                    for (c, sample) in samples.iter().enumerate() {
                         let clr = Color::try_from(c as u8).unwrap();
                         let exp_len = match clr {
                             Color::Black => 17,
@@ -408,7 +408,7 @@ mod sampler_tests {
                         );
 
                         let exp_rgb = Rgb::<u8>::from(clr).0;
-                        for s in &samples[c] {
+                        for s in sample {
                             assert_eq!(
                                 *s, exp_rgb,
                                 "Version {v}, alignment ({x}, {y}): {clr:?} colour"
@@ -440,7 +440,7 @@ mod sampler_tests {
                 sample_timing(8, w - 9, 6, hor, &sampler, &mut samples);
 
                 // w - 16 modules from 8 to w - 9, both ends black
-                for c in 0..8 {
+                for (c, sample) in samples.iter().enumerate() {
                     let clr = Color::try_from(c as u8).unwrap();
                     let exp_len = match clr {
                         Color::Black => (w - 15) / 2,
@@ -454,7 +454,7 @@ mod sampler_tests {
                     );
 
                     let exp_rgb = Rgb::<u8>::from(clr).0;
-                    for s in &samples[c] {
+                    for s in sample {
                         assert_eq!(*s, exp_rgb, "Version {v}, horizontal {hor}: {clr:?} colour");
                     }
                 }
