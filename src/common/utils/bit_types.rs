@@ -377,29 +377,21 @@ impl BitArray {
 // Bit matrix
 //------------------------------------------------------------------------------
 
-/// A packed grid of `w`×`h` elements, each `elem_bits` wide. `get`/`put` address an element by its
-/// column/row and stride by `elem_bits` internally, so callers never multiply the column by hand.
-/// `elem_bits` is required to be a factor of 64, so every element sits wholly within one 64-bit
-/// word, no element ever straddles a word boundary. Elements are arranged right to left within a
-/// word. Which means an element at x=0, y=0 will be placed at right end of first word in the
-/// matrix.
+/// A packed grid of `w`×`h` bits, stored row-major in 64-bit words. `get_bit`/`put` address a bit
+/// by its column/row. Bits are arranged right to left within a word, which means the bit at x=0,
+/// y=0 is the lowest bit of the first word in the matrix.
 #[derive(Debug, Clone)]
 pub struct BitMatrix {
     data: Vec<u64>,
     len: usize,
     w: u32,
     h: u32,
-    elem_bits: u32,
-    mask: u64,
 }
 
 impl BitMatrix {
-    pub fn new(w: u32, h: u32, elem_bits: u32) -> Self {
-        debug_assert!((1..=64).contains(&elem_bits), "elem_bits must be 1..=64: {elem_bits}");
-        debug_assert!(64 % elem_bits == 0, "elem_bits must be a factor of 64: {elem_bits}");
-        let cap = ((w * h * elem_bits + 63) >> 6) as usize;
-        let mask = if elem_bits == 64 { u64::MAX } else { (1u64 << elem_bits) - 1 };
-        Self { data: vec![0u64; cap], len: 0, w, h, elem_bits, mask }
+    pub fn new(w: u32, h: u32) -> Self {
+        let cap = ((w * h + 63) >> 6) as usize;
+        Self { data: vec![0u64; cap], len: 0, w, h }
     }
 
     #[cfg(test)]
@@ -413,11 +405,7 @@ impl BitMatrix {
     }
 
     pub fn capacity(&self) -> usize {
-        (self.w * self.h * self.elem_bits) as usize
-    }
-
-    pub fn elem_bits(&self) -> u32 {
-        self.elem_bits
+        (self.w * self.h) as usize
     }
 
     #[cfg(test)]
@@ -430,25 +418,7 @@ impl BitMatrix {
 //------------------------------------------------------------------------------
 
 impl BitMatrix {
-    pub fn get(&self, x: u32, y: u32) -> u64 {
-        debug_assert!(x < self.w, "X coordinate is out of bounds: Width {}, X {}", self.w, x);
-        debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
-
-        let (idx, off) = self.elem_pos(x, y);
-
-        debug_assert!(
-            idx < self.data.len(),
-            "Out of bit matrix bounds: Len {}, Index {}",
-            self.data.len(),
-            idx
-        );
-
-        // `elem_bits` divides 64, so the element never crosses into the next word.
-        (self.data[idx] >> off) & self.mask
-    }
-
     pub fn get_bit(&self, x: u32, y: u32) -> bool {
-        debug_assert!(self.elem_bits == 1);
         debug_assert!(x < self.w, "X coordinate is out of bounds: Width {}, X {}", self.w, x);
         debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
 
@@ -470,7 +440,6 @@ impl BitMatrix {
     /// zeroes the lanes that match, so `trailing_zeros` of the result names the first differing lane
     /// directly.
     pub fn run(&self, x: u32, y: u32) -> (bool, u32) {
-        debug_assert!(self.elem_bits == 1, "Bit size should be 1, but is {}", self.elem_bits);
         debug_assert!(x < self.w, "X coordinate is out of bounds: Width {}, X {}", self.w, x);
         debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
 
@@ -502,14 +471,9 @@ impl BitMatrix {
         (elem != 0, run.min(remaining))
     }
 
-    pub fn put(&mut self, x: u32, y: u32, bits: u64) {
+    pub fn put(&mut self, x: u32, y: u32, bit: bool) {
         debug_assert!(x < self.w, "X coordinate is out of bounds: Width {}, X {}", self.w, x);
         debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
-        debug_assert!(
-            self.elem_bits == 64 || bits >> self.elem_bits == 0,
-            "bits {bits} do not fit in elem_bits {}",
-            self.elem_bits
-        );
 
         let (idx, off) = self.elem_pos(x, y);
 
@@ -520,8 +484,7 @@ impl BitMatrix {
             idx
         );
 
-        // `elem_bits` divides 64, so the element sits wholly within word `idx`.
-        self.data[idx] = (self.data[idx] & !(self.mask << off)) | (bits << off);
+        self.data[idx] = (self.data[idx] & !(1 << off)) | (u64::from(bit) << off);
     }
 
     // Push bits of length n to the end
@@ -547,7 +510,7 @@ impl BitMatrix {
     }
 
     fn elem_pos(&self, x: u32, y: u32) -> (usize, u32) {
-        let flat_pos = (y * self.w + x) * self.elem_bits;
+        let flat_pos = y * self.w + x;
         let idx = (flat_pos >> 6) as usize;
         let off = flat_pos & 63;
 
@@ -557,7 +520,6 @@ impl BitMatrix {
     /// Returns the bit at `xs` and every `e` in `xs..xe` where the bit at `e` differs from the bit
     /// at `e + 1`, i.e. the last x of each run. The final run's end at `xe` is not included.
     pub fn run_ends(&self, xs: u32, xe: u32, y: u32) -> (bool, Vec<u32>) {
-        debug_assert!(self.elem_bits == 1, "Bit size should be 1, but is {}", self.elem_bits);
         debug_assert!(y < self.h, "Y coordinate is out of bounds: Height {}, Y {}", self.h, y);
         debug_assert!(xs <= xe, "X start is greater than X end: X start {}, X end {}", xs, xe);
         debug_assert!(xe < self.w, "X end is out of bounds: Width {}, X end {}", self.w, xe);
@@ -603,31 +565,22 @@ mod bit_matrix_tests {
     #[test]
     fn test_new_is_all_zero() {
         let (w, h) = (10, 7);
-        let bm = BitMatrix::new(w, h, 1);
+        let bm = BitMatrix::new(w, h);
         assert_eq!(bm.width(), w);
         assert_eq!(bm.height(), h);
-        assert_eq!(bm.elem_bits(), 1);
         // ceil(70 / 64) = 2 words
         assert_eq!(bm.data().len(), 2);
         for y in 0..h {
             for x in 0..w {
-                assert_eq!(bm.get(x, y), 0, "fresh matrix should be all zero at ({x}, {y})");
+                assert!(!bm.get_bit(x, y), "fresh matrix should be all zero at ({x}, {y})");
             }
         }
     }
 
     #[test]
-    fn test_new_multibit_capacity() {
-        let bm = BitMatrix::new(10, 7, 4);
-        assert_eq!(bm.elem_bits(), 4);
-        // 10 * 7 * 4 = 280 bits -> ceil(280 / 64) = 5 words
-        assert_eq!(bm.data().len(), 5);
-    }
-
-    #[test]
     fn test_run_matches_naive_scan() {
         for &(w, h) in &[(1u32, 1u32), (7, 5), (63, 3), (64, 3), (65, 3), (130, 4)] {
-            let mut bm = BitMatrix::new(w, h, 1);
+            let mut bm = BitMatrix::new(w, h);
             let max = 1;
 
             // A deterministic mix of long runs and rapid flips.
@@ -635,12 +588,12 @@ mod bit_matrix_tests {
             for y in 0..h {
                 for x in 0..w {
                     seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-                    let v = if (seed >> 33) % 3 == 0 {
+                    let v = if (seed >> 33).is_multiple_of(3) {
                         (seed >> 17) & max
                     } else {
                         (x as u64 / 5) & max
                     };
-                    bm.put(x, y, v);
+                    bm.put(x, y, v != 0);
                 }
             }
 
@@ -662,10 +615,10 @@ mod bit_matrix_tests {
     #[test]
     fn test_run_spans_whole_uniform_row() {
         let (w, h) = (200, 3);
-        let mut bm = BitMatrix::new(w, h, 1);
+        let mut bm = BitMatrix::new(w, h);
         for y in 0..h {
             for x in 0..w {
-                bm.put(x, y, 1);
+                bm.put(x, y, true);
             }
         }
         for y in 0..h {
@@ -675,179 +628,25 @@ mod bit_matrix_tests {
     }
 
     #[test]
-    fn test_put_get_roundtrip() {
-        let mut bm = BitMatrix::new(10, 7, 1);
-        bm.put(3, 2, 1);
-        assert_eq!(bm.get(3, 2), 1);
-        // Clearing a set element
-        bm.put(3, 2, 0);
-        assert_eq!(bm.get(3, 2), 0);
-    }
-
-    #[test]
-    fn test_put_get_roundtrip_multibit() {
-        let mut bm = BitMatrix::new(10, 7, 4);
-        bm.put(3, 2, 0b1011);
-        assert_eq!(bm.get(3, 2), 0b1011);
-        bm.put(3, 2, 0b0110);
-        assert_eq!(bm.get(3, 2), 0b0110, "overwrite must replace the element wholesale");
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_put_oversized_element_panics() {
-        let mut bm = BitMatrix::new(10, 1, 4);
-        bm.put(0, 0, 0b1_0000); // needs 5 bits, only 4 allowed
-    }
-
-    #[test]
-    fn test_not_transposed() {
-        let mut bm = BitMatrix::new(10, 7, 1);
-        bm.put(6, 2, 1);
-        assert_eq!(bm.get(6, 2), 1, "the exact cell that was set must read back");
-        // The mirror cell is a different location and must stay zero.
-        assert_eq!(bm.get(2, 6), 0, "mirror cell must be unaffected");
-    }
-
-    #[test]
-    fn test_elements_are_independent() {
-        let mut bm = BitMatrix::new(10, 7, 4);
-        bm.put(4, 3, 0b1010);
-        // Every 4-neighbour stays zero.
-        assert_eq!(bm.get(3, 3), 0);
-        assert_eq!(bm.get(5, 3), 0);
-        assert_eq!(bm.get(4, 2), 0);
-        assert_eq!(bm.get(4, 4), 0);
-        // Writing a neighbour doesn't disturb the set element.
-        bm.put(5, 3, 0b0101);
-        assert_eq!(bm.get(4, 3), 0b1010);
-    }
-
-    #[test]
-    fn test_word_boundary() {
-        let mut bm = BitMatrix::new(100, 2, 4);
-        bm.put(15, 0, 0b1111); // last element of word 0 (bits 60..64)
-        bm.put(16, 0, 0b1111); // first element of word 1 (bits 64..68)
-        assert_eq!(bm.get(15, 0), 0b1111);
-        assert_eq!(bm.get(16, 0), 0b1111);
-        assert_eq!(bm.data()[0].count_ones(), 4);
-        assert_eq!(bm.data()[1].count_ones(), 4);
-        // They are genuinely distinct cells.
-        bm.put(15, 0, 0);
-        assert_eq!(bm.get(15, 0), 0);
-        assert_eq!(bm.get(16, 0), 0b1111);
-    }
-
-    #[test]
-    fn test_full_coverage() {
-        let (w, h, elem_bits) = (13u32, 9u32, 4u32);
-        let mut bm = BitMatrix::new(w, h, elem_bits);
-        let val = |x: u32, y: u32| ((x + y) & 0b1111) as u64;
-        for y in 0..h {
-            for x in 0..w {
-                bm.put(x, y, val(x, y));
-            }
-        }
-        for y in 0..h {
-            for x in 0..w {
-                assert_eq!(bm.get(x, y), val(x, y), "mismatch at ({x}, {y})");
-            }
-        }
-    }
-
-    #[test]
-    fn test_last_cell() {
-        let (w, h) = (10, 7);
-        let mut bm = BitMatrix::new(w, h, 1);
-        bm.put(w - 1, h - 1, 1);
-        assert_eq!(bm.get(w - 1, h - 1), 1);
-        assert_eq!(bm.data().iter().map(|word| word.count_ones()).sum::<u32>(), 1);
-    }
-
-    #[test]
-    fn test_full_word_element() {
-        let mut bm = BitMatrix::new(3, 1, 64);
-        let pattern = 0xF0F0_F0F0_0F0F_0F0Fu64;
-        bm.put(1, 0, pattern);
-        assert_eq!(bm.get(1, 0), pattern);
-        assert_eq!(bm.get(0, 0), 0, "neighbouring word must stay zero");
-        assert_eq!(bm.get(2, 0), 0);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_get_x_out_of_bounds() {
-        let bm = BitMatrix::new(10, 7, 1);
-        bm.get(10, 0);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_get_y_out_of_bounds() {
-        let bm = BitMatrix::new(10, 7, 1);
-        bm.get(0, 7);
-    }
-
-    #[test]
     #[should_panic]
     fn test_put_x_out_of_bounds() {
-        let mut bm = BitMatrix::new(10, 7, 1);
-        bm.put(10, 0, 1);
+        let mut bm = BitMatrix::new(10, 7);
+        bm.put(10, 0, true);
     }
 
     #[test]
-    #[should_panic]
-    fn test_new_non_factor_elem_bits_panics() {
-        BitMatrix::new(10, 7, 3);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_new_zero_elem_bits_panics() {
-        BitMatrix::new(10, 7, 0);
-    }
-
-    #[test]
-    fn test_put_get_round_trip_sweep() {
-        // Deterministic pseudo-random payloads via a small LCG.
-        let mut seed = 0x9E37_79B9_7F4A_7C15u64;
-        let mut next = || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            seed
-        };
-
-        for elem_bits in [1u32, 2, 4, 8, 16, 32, 64] {
-            let mask = if elem_bits == 64 { u64::MAX } else { (1u64 << elem_bits) - 1 };
-            // Wide enough to span several words for the smaller element widths.
-            let w = 200u32;
-            let mut bm = BitMatrix::new(w, 1, elem_bits);
-
-            let mut expected = vec![0u64; w as usize];
-            for x in 0..w {
-                let v = next() & mask;
-                expected[x as usize] = v;
-                bm.put(x, 0, v);
-            }
-            for x in 0..w {
-                assert_eq!(
-                    bm.get(x, 0),
-                    expected[x as usize],
-                    "round trip failed at x={x}, elem_bits={elem_bits}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_get_bit_matches_get() {
+    fn test_put_get_bit_round_trip() {
         for &(w, h) in &[(1u32, 1u32), (7, 5), (63, 3), (64, 3), (65, 3), (130, 4)] {
-            let mut bm = BitMatrix::new(w, h, 1);
+            let mut bm = BitMatrix::new(w, h);
 
             let mut seed = 0x9e3779b9u64;
+            let mut expected = vec![false; (w * h) as usize];
             for y in 0..h {
                 for x in 0..w {
                     seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-                    bm.put(x, y, (seed >> 33) & 1);
+                    let bit = (seed >> 33) & 1 != 0;
+                    expected[(y * w + x) as usize] = bit;
+                    bm.put(x, y, bit);
                 }
             }
 
@@ -855,8 +654,8 @@ mod bit_matrix_tests {
                 for x in 0..w {
                     assert_eq!(
                         bm.get_bit(x, y),
-                        bm.get(x, y) != 0,
-                        "get_bit disagrees with get at ({x}, {y}) w={w} h={h}"
+                        expected[(y * w + x) as usize],
+                        "round trip failed at ({x}, {y}) w={w} h={h}"
                     );
                 }
             }
@@ -865,25 +664,34 @@ mod bit_matrix_tests {
 
     #[test]
     fn test_get_bit_reads_exact_cell() {
-        let mut bm = BitMatrix::new(10, 7, 1);
-        bm.put(6, 2, 1);
+        let mut bm = BitMatrix::new(10, 7);
+        bm.put(6, 2, true);
         assert!(bm.get_bit(6, 2), "the exact cell that was set must read back");
         assert!(!bm.get_bit(2, 6), "mirror cell must be unaffected");
         assert!(!bm.get_bit(5, 2), "row neighbours must be unaffected");
         assert!(!bm.get_bit(7, 2));
+        assert!(!bm.get_bit(6, 1), "column neighbours must be unaffected");
+        assert!(!bm.get_bit(6, 3));
+
+        // Writing a neighbour doesn't disturb the set cell.
+        bm.put(7, 2, true);
+        bm.put(6, 3, true);
+        assert!(bm.get_bit(6, 2), "set cell must survive writes to its neighbours");
+        bm.put(7, 2, false);
+        assert!(bm.get_bit(6, 2), "and clearing a neighbour must not clear it");
     }
 
     #[test]
     fn test_get_bit_across_word_boundary() {
-        let mut bm = BitMatrix::new(200, 2, 1);
-        bm.put(63, 0, 1);
-        bm.put(64, 0, 1);
+        let mut bm = BitMatrix::new(200, 2);
+        bm.put(63, 0, true);
+        bm.put(64, 0, true);
         assert!(bm.get_bit(63, 0), "last bit of word 0");
         assert!(bm.get_bit(64, 0), "first bit of word 1");
         assert!(!bm.get_bit(62, 0));
         assert!(!bm.get_bit(65, 0));
         // They are genuinely distinct cells in distinct words.
-        bm.put(63, 0, 0);
+        bm.put(63, 0, false);
         assert!(!bm.get_bit(63, 0));
         assert!(bm.get_bit(64, 0));
     }
@@ -891,17 +699,22 @@ mod bit_matrix_tests {
     #[test]
     fn test_get_bit_last_cell() {
         let (w, h) = (10, 7);
-        let mut bm = BitMatrix::new(w, h, 1);
+        let mut bm = BitMatrix::new(w, h);
         assert!(!bm.get_bit(w - 1, h - 1), "a fresh matrix reads zero");
-        bm.put(w - 1, h - 1, 1);
+        bm.put(w - 1, h - 1, true);
         assert!(bm.get_bit(w - 1, h - 1));
+        assert_eq!(
+            bm.data().iter().map(|word| word.count_ones()).sum::<u32>(),
+            1,
+            "only one bit set"
+        );
     }
 
     #[test]
     #[cfg(debug_assertions)]
     #[should_panic]
     fn test_get_bit_x_out_of_bounds() {
-        let bm = BitMatrix::new(10, 7, 1);
+        let bm = BitMatrix::new(10, 7);
         bm.get_bit(10, 0);
     }
 
@@ -909,36 +722,21 @@ mod bit_matrix_tests {
     #[cfg(debug_assertions)]
     #[should_panic]
     fn test_get_bit_y_out_of_bounds() {
-        let bm = BitMatrix::new(10, 7, 1);
+        let bm = BitMatrix::new(10, 7);
         bm.get_bit(0, 7);
-    }
-
-    #[test]
-    #[cfg(debug_assertions)]
-    #[should_panic]
-    fn test_get_bit_rejects_multibit_matrix() {
-        let bm = BitMatrix::new(10, 7, 4);
-        bm.get_bit(0, 0);
-    }
-
-    #[test]
-    #[cfg(debug_assertions)]
-    #[should_panic(expected = "Bit size should be 1")]
-    fn test_run_rejects_multibit_matrix() {
-        let bm = BitMatrix::new(10, 7, 4);
-        bm.run(0, 0);
     }
 
     #[test]
     fn test_run_stops_at_flip_and_row_edge() {
         let (w, h) = (8u32, 2u32);
-        let mut bm = BitMatrix::new(w, h, 1);
+        let mut bm = BitMatrix::new(w, h);
         // Row 0: 0 0 1 1 1 0 1 1. Row 1 is all ones, so a run overrunning row 0 would keep going.
-        for (x, bit) in [0u64, 0, 1, 1, 1, 0, 1, 1].into_iter().enumerate() {
+        for (x, bit) in [false, false, true, true, true, false, true, true].into_iter().enumerate()
+        {
             bm.put(x as u32, 0, bit);
         }
         for x in 0..w {
-            bm.put(x, 1, 1);
+            bm.put(x, 1, true);
         }
 
         assert_eq!(bm.run(0, 0), (false, 2), "two zeroes, then a flip");
@@ -951,25 +749,25 @@ mod bit_matrix_tests {
     }
 
     // `push_bits` fills the matrix as one sequential bitstream, LSB first: the nth bit pushed
-    // lands at flat element n, which for `elem_bits == 1` is the element at (n % w, n / w).
+    // lands at flat position n, which is the bit at (n % w, n / w).
     // Callers must push bits whose value fits in `n`, into a matrix nothing has `put` into.
 
     #[test]
     fn test_push_bits_one_at_a_time_matches_put() {
         let (w, h) = (13u32, 5u32);
-        let pattern = |x: u32, y: u32| ((x * 7 + y * 3) % 5 == 0) as u64;
+        let pattern = |x: u32, y: u32| ((x * 7 + y * 3).is_multiple_of(5)) as u64;
 
-        let mut pushed = BitMatrix::new(w, h, 1);
+        let mut pushed = BitMatrix::new(w, h);
         for y in 0..h {
             for x in 0..w {
                 pushed.push_bits(pattern(x, y), 1);
             }
         }
 
-        let mut put = BitMatrix::new(w, h, 1);
+        let mut put = BitMatrix::new(w, h);
         for y in 0..h {
             for x in 0..w {
-                put.put(x, y, pattern(x, y));
+                put.put(x, y, pattern(x, y) != 0);
             }
         }
 
@@ -978,7 +776,7 @@ mod bit_matrix_tests {
 
     #[test]
     fn test_push_bits_word_aligned_chunks() {
-        let mut bm = BitMatrix::new(128, 1, 1);
+        let mut bm = BitMatrix::new(128, 1);
         bm.push_bits(0xDEAD_BEEF_0123_4567, 64);
         bm.push_bits(0x0FED_CBA9_8765_4321, 64);
         assert_eq!(bm.data(), [0xDEAD_BEEF_0123_4567, 0x0FED_CBA9_8765_4321].as_slice());
@@ -989,7 +787,7 @@ mod bit_matrix_tests {
         let lo = 0x0000_00AB_CDEF_1234 & ((1u64 << 40) - 1);
         let hi = 0x0000_0056_789A_BCDE & ((1u64 << 40) - 1);
 
-        let mut bm = BitMatrix::new(80, 1, 1);
+        let mut bm = BitMatrix::new(80, 1);
         bm.push_bits(lo, 40);
         bm.push_bits(hi, 40);
 
@@ -1011,7 +809,7 @@ mod bit_matrix_tests {
                 seed
             };
 
-            let mut bm = BitMatrix::new(w, h, 1);
+            let mut bm = BitMatrix::new(w, h);
             let mut expect: Vec<bool> = Vec::with_capacity(total);
 
             while expect.len() < total {
@@ -1039,7 +837,7 @@ mod bit_matrix_tests {
             let h = 5u32;
             let pattern = |x: u32, y: u32| ((x ^ y).count_ones() % 2) as u64;
 
-            let mut pushed = BitMatrix::new(w, h, 1);
+            let mut pushed = BitMatrix::new(w, h);
             for y in 0..h {
                 let mut x = 0;
                 while x < w {
@@ -1053,10 +851,10 @@ mod bit_matrix_tests {
                 }
             }
 
-            let mut put = BitMatrix::new(w, h, 1);
+            let mut put = BitMatrix::new(w, h);
             for y in 0..h {
                 for x in 0..w {
-                    put.put(x, y, pattern(x, y));
+                    put.put(x, y, pattern(x, y) != 0);
                 }
             }
 
@@ -1068,7 +866,7 @@ mod bit_matrix_tests {
     fn test_push_bits_fills_exact_capacity() {
         // 70 bits: the last word is partial, and the padding above it must stay zero.
         let (w, h) = (10u32, 7u32);
-        let mut bm = BitMatrix::new(w, h, 1);
+        let mut bm = BitMatrix::new(w, h);
         for _ in 0..(w * h) {
             bm.push_bits(1, 1);
         }
@@ -1085,7 +883,7 @@ mod bit_matrix_tests {
 
     #[test]
     fn test_push_bits_zero_length_is_a_noop() {
-        let mut bm = BitMatrix::new(64, 2, 1);
+        let mut bm = BitMatrix::new(64, 2);
         bm.push_bits(0b1011, 4);
         let before = bm.data().to_vec();
 
@@ -1101,14 +899,14 @@ mod bit_matrix_tests {
     #[cfg(debug_assertions)]
     #[should_panic(expected = "Bit matrix capacity overflow")]
     fn test_push_bits_past_capacity_panics() {
-        let mut bm = BitMatrix::new(8, 1, 1);
+        let mut bm = BitMatrix::new(8, 1);
         bm.push_bits(0xFF, 8);
         bm.push_bits(1, 1);
     }
 
     #[test]
     fn test_bit_run_ends_returns_all_ends() {
-        let mut bm = BitMatrix::new(128, 10, 1);
+        let mut bm = BitMatrix::new(128, 10);
         bm.push_bits(0b11111111, 8);
         bm.push_bits(0b00000000, 56);
         let (sbit, ends) = bm.run_ends(0, 64, 0);
@@ -1120,7 +918,7 @@ mod bit_matrix_tests {
 
     #[test]
     fn test_bit_run_ends_returns_flip_at_word_end() {
-        let mut bm = BitMatrix::new(128, 10, 1);
+        let mut bm = BitMatrix::new(128, 10);
         bm.push_bits(0b0, 64);
         bm.push_bits(0b11, 2);
         let (sbit, ends) = bm.run_ends(0, 64, 0);
@@ -1137,10 +935,10 @@ mod bit_matrix_tests {
     }
 
     fn matrix_from_rows(rows: &[&[u8]]) -> BitMatrix {
-        let mut bm = BitMatrix::new(rows[0].len() as u32, rows.len() as u32, 1);
+        let mut bm = BitMatrix::new(rows[0].len() as u32, rows.len() as u32);
         for (y, row) in rows.iter().enumerate() {
             for (x, &b) in row.iter().enumerate() {
-                bm.put(x as u32, y as u32, b as u64);
+                bm.put(x as u32, y as u32, b != 0);
             }
         }
         bm
@@ -1152,7 +950,7 @@ mod bit_matrix_tests {
         for &(w, h) in &[(1u32, 3u32), (7, 5), (63, 4), (64, 3), (65, 4), (100, 3), (130, 4)] {
             // Patterns: random mix of long runs and rapid flips, all zero, all one, alternating.
             for pattern in 0..4 {
-                let mut bm = BitMatrix::new(w, h, 1);
+                let mut bm = BitMatrix::new(w, h);
                 let mut seed = 0x9e3779b9u64;
                 for y in 0..h {
                     for x in 0..w {
@@ -1160,13 +958,13 @@ mod bit_matrix_tests {
                             .wrapping_mul(6364136223846793005)
                             .wrapping_add(1442695040888963407);
                         let v = match pattern {
-                            0 if (seed >> 33) % 3 == 0 => (seed >> 17) & 1,
+                            0 if (seed >> 33).is_multiple_of(3) => (seed >> 17) & 1,
                             0 => (x as u64 / 5) & 1,
                             1 => 0,
                             2 => 1,
                             _ => ((x + y) & 1) as u64,
                         };
-                        bm.put(x, y, v);
+                        bm.put(x, y, v != 0);
                     }
                 }
 
@@ -1189,13 +987,13 @@ mod bit_matrix_tests {
     fn test_ends_zero_run_to_word_end_from_mid_word() {
         // Regression: a zero run starting mid-word and reaching the word's end must not count the
         // zeros shifted in by `>> off` as pixels.
-        let mut bm = BitMatrix::new(128, 1, 1);
-        bm.put(70, 0, 1);
+        let mut bm = BitMatrix::new(128, 1);
+        bm.put(70, 0, true);
         assert_eq!(bm.run_ends(10, 100, 0), (false, vec![69, 70]));
 
         // Same, but the zero run follows a flip inside the first word.
         for x in 0..8 {
-            bm.put(x, 0, 1);
+            bm.put(x, 0, true);
         }
         assert_eq!(bm.run_ends(0, 100, 0), (true, vec![7, 69, 70]));
     }
@@ -1227,9 +1025,9 @@ mod bit_matrix_tests {
     #[test]
     fn test_run_ends_uniform_row_spanning_words() {
         let (w, h) = (200, 3);
-        let mut bm = BitMatrix::new(w, h, 1);
+        let mut bm = BitMatrix::new(w, h);
         for x in 0..w {
-            bm.put(x, 1, 1);
+            bm.put(x, 1, true);
         }
         assert_eq!(bm.run_ends(0, w - 1, 0), (false, vec![]), "all-zero row");
         assert_eq!(bm.run_ends(0, w - 1, 1), (true, vec![]), "all-one row");
@@ -1240,19 +1038,19 @@ mod bit_matrix_tests {
     fn test_run_ends_flips_on_both_sides_of_word_boundary() {
         // Row 1 of a 100-wide matrix starts at flat bit 100, so x=27 is the last bit of word 1 and
         // x=28 the first bit of word 2.
-        let mut bm = BitMatrix::new(100, 2, 1);
-        bm.put(27, 1, 1);
+        let mut bm = BitMatrix::new(100, 2);
+        bm.put(27, 1, true);
         assert_eq!(bm.run_ends(0, 99, 1), (false, vec![26, 27]), "lone one at the word's last bit");
 
-        bm.put(27, 1, 0);
-        bm.put(28, 1, 1);
+        bm.put(27, 1, false);
+        bm.put(28, 1, true);
         assert_eq!(
             bm.run_ends(0, 99, 1),
             (false, vec![27, 28]),
             "lone one at the next word's first bit"
         );
 
-        bm.put(27, 1, 1);
+        bm.put(27, 1, true);
         assert_eq!(bm.run_ends(0, 99, 1), (false, vec![26, 28]), "run straddling the boundary");
     }
 
@@ -1271,9 +1069,9 @@ mod bit_matrix_tests {
         // 64 * 2 bits: the last row run_ends exactly on the last word, so a run reaching the matrix's
         // end must stop without reading past `data`.
         let (w, h) = (64, 2);
-        let mut bm = BitMatrix::new(w, h, 1);
+        let mut bm = BitMatrix::new(w, h);
         for x in 10..w {
-            bm.put(x, h - 1, 1);
+            bm.put(x, h - 1, true);
         }
         assert_eq!(bm.run_ends(0, w - 1, h - 1), (false, vec![9]));
         assert_eq!(bm.run_ends(10, w - 1, h - 1), (true, vec![]));
@@ -1283,7 +1081,7 @@ mod bit_matrix_tests {
     #[cfg(debug_assertions)]
     #[should_panic(expected = "X end is out of bounds")]
     fn test_run_ends_rejects_xe_out_of_bounds() {
-        let bm = BitMatrix::new(10, 2, 1);
+        let bm = BitMatrix::new(10, 2);
         bm.run_ends(0, 10, 0);
     }
 
@@ -1291,16 +1089,8 @@ mod bit_matrix_tests {
     #[cfg(debug_assertions)]
     #[should_panic(expected = "X start is greater than X end")]
     fn test_run_ends_rejects_reversed_span() {
-        let bm = BitMatrix::new(10, 2, 1);
+        let bm = BitMatrix::new(10, 2);
         bm.run_ends(5, 4, 0);
-    }
-
-    #[test]
-    #[cfg(debug_assertions)]
-    #[should_panic(expected = "Bit size should be 1")]
-    fn test_run_ends_rejects_multibit_matrix() {
-        let bm = BitMatrix::new(10, 2, 4);
-        bm.run_ends(0, 5, 0);
     }
 }
 

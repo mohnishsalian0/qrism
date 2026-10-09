@@ -1,6 +1,5 @@
 use image::GrayImage;
 
-use crate::metadata::Color;
 use crate::reader::utils::contour::{trace, Contour};
 use crate::utils::BitMatrix;
 
@@ -114,8 +113,8 @@ pub struct BinaryImage {
 // Binarizing functions
 impl BinaryImage {
     // Steps:
-    // 1. Divides image into blocks of 8x8 pixels. Note: For the last fractional block, the
-    //    last 8 pixels are considered. So few pixels might overlap with last 2 blocks
+    // 1. Divides image into blocks of 16x16 pixels. Note: For the last fractional block, the
+    //    last 16 pixels are considered. So few pixels might overlap with last 2 blocks
     // 2. Calculates average of each block
     // 3. Calculates the threshold for each block by averaging 5x5 block around the current block if
     //    the block is near an edge or a corner, the window is shifted accordingly.
@@ -143,8 +142,8 @@ impl BinaryImage {
         let bw = wr >> block_pow; // full block columns
         let bh = hr >> block_pow; // full block rows
 
-        // Rows are streamed into per-column accumulators -- plain elementwise ops over
-        // contiguous slices, which vectorize -- and each block's columns are folded once per
+        // Rows are streamed into per-column accumulators, plain elementwise ops over
+        // contiguous slices, which vectorize and each block's columns are folded once per
         // block row. A u16 sum holds a column of 16 pixels (16 * 255 = 4080).
         let mut col_min = vec![0u8; wr];
         let mut col_max = vec![0u8; wr];
@@ -245,7 +244,7 @@ impl BinaryImage {
                     }
                 }
             } else {
-                // Convert block sum to average (divide by 64)
+                // Convert block sum to average (divide by 256)
                 stats[i].avg >>= block_area_pow;
             }
         }
@@ -302,7 +301,7 @@ impl BinaryImage {
         }
 
         let mut trow = vec![0u8; w];
-        let mut buffer = BitMatrix::new(w as u32, h as u32, 1);
+        let mut buffer = BitMatrix::new(w as u32, h as u32);
         for by in 0..hsteps {
             for (bx, &t) in threshold[by * wsteps..(by + 1) * wsteps].iter().enumerate() {
                 let x0 = bx << block_pow;
@@ -345,18 +344,6 @@ impl BinaryImage {
 
 // Util functions
 impl BinaryImage {
-    pub fn get(&self, x: u32, y: u32) -> Option<Color> {
-        if x >= self.w || y >= self.h {
-            return None;
-        }
-        let bits = self.buffer.get(x, y);
-        Some(if self.buffer.elem_bits() == 1 {
-            Color::from(bits != 0)
-        } else {
-            bits.try_into().ok()?
-        })
-    }
-
     pub fn get_bit(&self, x: u32, y: u32) -> Option<bool> {
         if x >= self.w || y >= self.h {
             return None;
@@ -454,18 +441,8 @@ impl BinaryImage {
         let mut img = RgbImage::new(self.w, self.h);
         for y in 0..self.h {
             for x in 0..self.w {
-                let bits = self.buffer.get(x, y);
-                let rgb = if self.buffer.elem_bits() == 1 {
-                    // B&W: 1 = light/white, 0 = dark/black
-                    if bits == 0 {
-                        image::Rgb([0, 0, 0])
-                    } else {
-                        image::Rgb([255, 255, 255])
-                    }
-                } else {
-                    // Multicolor: low 3 bits are R<<2 | G<<1 | B, i.e. a Color
-                    Color::try_from(bits as u8).unwrap_or(Color::White).into()
-                };
+                let bit = self.buffer.get_bit(x, y);
+                let rgb = if bit { image::Rgb([255, 255, 255]) } else { image::Rgb([0, 0, 0]) };
                 img.put_pixel(x, y, rgb);
             }
         }
@@ -476,12 +453,12 @@ impl BinaryImage {
 
 #[cfg(test)]
 mod bit_accessor_tests {
-    use super::{BinaryImage, BitMatrix, Color, Contour, Point, UNLABELED};
+    use super::{BinaryImage, BitMatrix, Contour, Point, UNLABELED};
 
     fn sketch(rows: &[&str]) -> BinaryImage {
         let h = rows.len() as u32;
         let w = rows[0].len() as u32;
-        let mut buffer = BitMatrix::new(w, h, 1);
+        let mut buffer = BitMatrix::new(w, h);
         for (y, row) in rows.iter().enumerate() {
             assert_eq!(row.len() as u32, w, "sketch rows must all be the same width");
             for (x, c) in row.chars().enumerate() {
@@ -490,7 +467,7 @@ mod bit_accessor_tests {
                     '#' => false,
                     other => panic!("sketch takes '.' and '#', got {other:?}"),
                 };
-                buffer.put(x as u32, y as u32, light as u64);
+                buffer.put(x as u32, y as u32, light);
             }
         }
         let px_cont = vec![UNLABELED; (w * h) as usize];
@@ -516,12 +493,6 @@ mod bit_accessor_tests {
             for x in 0..img.w {
                 let expected = light(x, y);
                 assert_eq!(img.get_bit(x, y), Some(expected), "bit at ({x}, {y})");
-                assert_eq!(
-                    img.get(x, y),
-                    Some(if expected { Color::White } else { Color::Black }),
-                    "colour at ({x}, {y})"
-                );
-                // The bit accessors and the colour accessors must never disagree.
                 let pt = Point { x: x as i32, y: y as i32 };
                 assert_eq!(
                     img.get_bit_at_point(&pt),
@@ -679,9 +650,6 @@ impl BinaryImage {
 
 // Constants
 //------------------------------------------------------------------------------
-
-// Number of blocks the shorter dimension of image should be divided into
-const BLOCK_COUNT: f64 = 20.0;
 
 pub const UNLABELED: u16 = u16::MAX;
 
