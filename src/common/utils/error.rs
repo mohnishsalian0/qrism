@@ -33,7 +33,9 @@ pub enum QRError {
     InvalidUTF8Encoding,
     InvalidCharacterEncoding,
     TileNotFound,
+    RgbImageMissing,
     InsufficientSamples,
+    ClassifierMissing,
 }
 
 impl Display for QRError {
@@ -67,7 +69,9 @@ impl Display for QRError {
             Self::InvalidUTF8Encoding => "Invalid UTF8 sequence",
             Self::InvalidCharacterEncoding => "Character sequence is neither utf8 nor shift jis",
             Self::TileNotFound => "Module has no tile to map it onto the image",
+            Self::RgbImageMissing => "Rgb image is missing",
             Self::InsufficientSamples => "Insufficient color samples",
+            Self::ClassifierMissing => "Classifier is missing",
         };
         f.write_str(msg)
     }

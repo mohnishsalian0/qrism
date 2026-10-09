@@ -5,6 +5,7 @@ use std::debug_assert_matches;
 
 use crate::{metadata::Color, QRError, QRResult, Version};
 
+#[derive(Debug, Clone)]
 pub(crate) struct Mahalanobis {
     centroid: [[f64; 3]; 8],
     inv: [[f64; 9]; 8],

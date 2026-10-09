@@ -16,7 +16,7 @@ use image::DynamicImage;
 use locate::SymbolLocation;
 pub use symbol::Symbol;
 
-use crate::reader::finder::Finder;
+use crate::{binarize::min_channel, reader::finder::Finder};
 
 // Decode result
 //------------------------------------------------------------------------------
@@ -44,14 +44,16 @@ pub fn detect_qr(img: &DynamicImage) -> DecodeResult {
     let sym_locs = locate_symbols(&mut img, finders, groups);
 
     let img = Arc::new(img);
-    let symbols = sym_locs.into_iter().map(|sl| Symbol::new(img.clone(), sl)).collect::<_>();
+    let symbols = sym_locs.into_iter().map(|sl| Symbol::new(img.clone(), None, sl)).collect::<_>();
 
     DecodeResult { symbols }
 }
 
 // Detect high capacity QR
 pub fn detect_hc_qr(img: &DynamicImage) -> DecodeResult {
-    let gray_img = img.to_luma8();
+    let rgb_img = Arc::new(img.to_rgb8());
+
+    let gray_img = min_channel(&rgb_img);
     let mut gray_bin = BinaryImage::prepare(&gray_img);
 
     let finders = locate_finders(&mut gray_bin);
@@ -59,9 +61,11 @@ pub fn detect_hc_qr(img: &DynamicImage) -> DecodeResult {
 
     let sym_locs = locate_symbols(&mut gray_bin, finders, groups);
 
-    let rgb_img = img.to_rgb8();
-    let rgb_bin = Arc::new(BinaryImage::prepare_discard(&rgb_img));
-    let symbols = sym_locs.into_iter().map(|sl| Symbol::new(rgb_bin.clone(), sl)).collect::<_>();
+    let gray_bin = Arc::new(gray_bin);
+    let symbols = sym_locs
+        .into_iter()
+        .map(|sl| Symbol::new(gray_bin.clone(), Some(rgb_img.clone()), sl))
+        .collect::<_>();
 
     DecodeResult { symbols }
 }
@@ -183,7 +187,7 @@ mod reader_tests {
 
         let bin_img = Arc::new(bin_img);
         let mut symbols: Vec<Symbol> =
-            sym_locs.into_iter().map(|sl| Symbol::new(bin_img.clone(), sl)).collect::<_>();
+            sym_locs.into_iter().map(|sl| Symbol::new(bin_img.clone(), None, sl)).collect::<_>();
 
         symbols.iter_mut().for_each(|s| {
             let _ = dbg!(s.decode());

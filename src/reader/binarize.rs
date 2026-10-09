@@ -12,20 +12,68 @@ use std::path::Path;
 #[cfg(test)]
 use image::ImageResult;
 
-#[cfg(test)]
 use image::RgbImage;
 
-// Region
+// Grayscale projection
 //------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Region {
-    pub id: usize,
-    pub src: (u32, u32),
-    pub centre: Point,
-    pub area: u32,
-    pub color: Color,
-    pub is_finder: bool,
+// Projects RGB to grayscale by taking the darkest channel, for locating symbol in colored qr.
+// In colored qr, every pixel is black except white.
+pub fn min_channel(img: &RgbImage) -> GrayImage {
+    let (w, h) = img.dimensions();
+    let mut out = GrayImage::new(w, h);
+    for (px, dst) in img.as_raw().as_chunks::<3>().0.iter().zip(out.iter_mut()) {
+        *dst = px[0].min(px[1]).min(px[2]);
+    }
+    out
+}
+
+#[cfg(test)]
+mod min_channel_tests {
+    use super::min_channel;
+    use crate::metadata::Color;
+    use image::{Rgb, RgbImage};
+
+    const PALETTE: [Color; 8] = [
+        Color::Black,
+        Color::Red,
+        Color::Green,
+        Color::Blue,
+        Color::Yellow,
+        Color::Magenta,
+        Color::Cyan,
+        Color::White,
+    ];
+
+    #[test]
+    fn test_white_is_the_only_light_palette_colour() {
+        let mut img = RgbImage::new(PALETTE.len() as u32, 1);
+        for (x, &c) in PALETTE.iter().enumerate() {
+            img.put_pixel(x as u32, 0, c.into());
+        }
+
+        let gray = min_channel(&img);
+        for (x, &c) in PALETTE.iter().enumerate() {
+            let v = gray.get_pixel(x as u32, 0)[0];
+            let expected = if c == Color::White { 255 } else { 0 };
+            assert_eq!(v, expected, "{c:?} projected to {v}");
+        }
+    }
+
+    #[test]
+    fn test_projection_is_the_per_pixel_channel_minimum() {
+        // Off-palette pixels: printed colour, a warm-lit white and a mid gray.
+        let px = [Rgb([238, 221, 60]), Rgb([252, 248, 214]), Rgb([128, 128, 128])];
+        let mut img = RgbImage::new(px.len() as u32, 1);
+        for (x, &p) in px.iter().enumerate() {
+            img.put_pixel(x as u32, 0, p);
+        }
+
+        let gray = min_channel(&img);
+        for (x, &Rgb([r, g, b])) in px.iter().enumerate() {
+            assert_eq!(gray.get_pixel(x as u32, 0)[0], r.min(g).min(b));
+        }
+    }
 }
 
 // Block stats
