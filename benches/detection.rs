@@ -9,7 +9,7 @@ use walkdir::WalkDir;
 use qrism::detect_qr;
 use qrism::Symbol;
 
-#[path = "utils.rs"]
+#[path = "utils/mod.rs"]
 mod utils;
 use utils::{get_parent, is_image_file, parse_expected_bounds_result, print_table};
 

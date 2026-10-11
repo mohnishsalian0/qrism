@@ -41,9 +41,9 @@ impl Symbol {
         let hi_cap = self.read_capacity_info()?;
 
         let pld = if self.rgb.is_some() {
-            let sampler = |x: i32, y: i32| self.get_rgb(x, y);
-            let clf = Mahalanobis::fit(ver, sampler)?;
-            self.clf = Some(clf);
+            if self.clf.is_none() {
+                self.build_classifier()?;
+            }
             self.extract_payload_hc(&mask)?
         } else {
             self.extract_payload(&mask)?
@@ -67,6 +67,13 @@ impl Symbol {
         let meta = Metadata::new(Some(ver), Some(ecl), Some(mask));
 
         Ok((meta, msg))
+    }
+
+    fn build_classifier(&mut self) -> QRResult<()> {
+        let sampler = |x: i32, y: i32| self.get_rgb(x, y);
+        let clf = Mahalanobis::fit(self.loc.ver, sampler)?;
+        self.clf = Some(clf);
+        Ok(())
     }
 
     /// Module colour at (x, y), with blur from its 4 neighbouring modules removed.
@@ -133,6 +140,24 @@ impl Symbol {
     #[inline]
     pub fn outline(&self) -> QRResult<[(f64, f64); 4]> {
         self.loc.outline()
+    }
+
+    #[cfg(feature = "benchmark")]
+    pub fn reconstruct(&mut self) -> QRResult<Vec<Vec<u8>>> {
+        let w = self.loc.ver.width();
+        let mut qr = vec![vec![0; w]; w];
+
+        if self.clf.is_none() {
+            self.build_classifier()?;
+        }
+
+        for (x, row) in qr.iter_mut().enumerate() {
+            for (y, item) in row.iter_mut().enumerate() {
+                *item = self.get_color(x as i32, y as i32)? as u8;
+            }
+        }
+
+        Ok(qr)
     }
 }
 

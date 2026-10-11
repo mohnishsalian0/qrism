@@ -7,7 +7,7 @@ use walkdir::WalkDir;
 
 use qrism::reader::detect_qr;
 
-#[path = "utils.rs"]
+#[path = "utils/mod.rs"]
 mod utils;
 use utils::{get_parent, is_image_file, parse_expected_decode_result, print_table};
 

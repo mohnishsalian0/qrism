@@ -164,7 +164,7 @@ mod reader_tests {
         #[allow(unused_imports)]
         use std::sync::Arc;
 
-        let img_path = std::path::Path::new("./assets/test.jpg");
+        let img_path = std::path::Path::new("./assets/test1.jpeg");
 
         let img = image::open(img_path).unwrap().to_luma8();
 

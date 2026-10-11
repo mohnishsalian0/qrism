@@ -366,8 +366,8 @@ impl BinaryImage {
         x < self.w && y < self.h
     }
 
-    pub fn matches_bit(&self, x: i32, y: i32, bit: bool) -> bool {
-        x >= 0 && y >= 0 && self.get_bit(x as u32, y as u32) == Some(bit)
+    pub fn matches_bit(&self, x: u32, y: u32, bit: bool) -> bool {
+        self.get_bit(x, y) == Some(bit)
     }
 
     pub fn get_px_contour(&self, x: u32, y: u32) -> Option<u16> {
@@ -387,12 +387,7 @@ impl BinaryImage {
         &mut self.contours
     }
 
-    pub fn set_px_contour(&mut self, x: i32, y: i32, cont_id: u16) {
-        if x < 0 || y < 0 {
-            return;
-        }
-
-        let (x, y) = (x as u32, y as u32);
+    pub fn set_px_contour(&mut self, x: u32, y: u32, cont_id: u16) {
         if x < self.w && y < self.h {
             self.px_cont[(y * self.w + x) as usize] = cont_id;
         }
@@ -480,14 +475,14 @@ mod bit_accessor_tests {
     #[test]
     fn test_matches_bit() {
         let img = sketch(&ROWS);
-        let (w, h) = (img.w as i32, img.h as i32);
+        let (w, h) = (img.w, img.h);
 
         assert!(img.matches_bit(0, 0, true), "(0, 0) is light");
         assert!(!img.matches_bit(0, 0, false));
         assert!(img.matches_bit(0, 1, false), "(0, 1) is dark");
         assert!(!img.matches_bit(0, 1, true));
 
-        for (x, y) in [(-1, 0), (0, -1), (-1, -1), (w, 0), (0, h), (w, h)] {
+        for (x, y) in [(u32::MAX, 0), (0, u32::MAX), (u32::MAX, u32::MAX), (w, 0), (0, h), (w, h)] {
             assert!(!img.matches_bit(x, y, true), "({x}, {y}) is outside and must not match true");
             assert!(
                 !img.matches_bit(x, y, false),

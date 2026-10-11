@@ -46,6 +46,15 @@ pub struct Point {
 }
 
 impl Point {
+    pub(crate) fn advance(&mut self, dir: Direction) {
+        match dir {
+            Direction::Right => self.x += 1,
+            Direction::Down => self.y += 1,
+            Direction::Left => self.x -= 1,
+            Direction::Up => self.y -= 1,
+        }
+    }
+
     #[cfg(test)]
     pub fn highlight(&self, img: &mut RgbImage, color: Rgb<u8>) {
         let (w, h) = img.dimensions();

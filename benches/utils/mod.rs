@@ -15,6 +15,10 @@ pub fn get_parent(path: &Path) -> String {
     path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()).unwrap().to_string()
 }
 
+pub fn get_file_name(path: &Path) -> String {
+    path.file_prefix().and_then(|s| s.to_str()).unwrap().to_string()
+}
+
 pub fn parse_expected_decode_result(path: &Path) -> Vec<String> {
     let exp_msg = std::fs::read_to_string(path).unwrap();
     exp_msg.lines().map(String::from).collect()

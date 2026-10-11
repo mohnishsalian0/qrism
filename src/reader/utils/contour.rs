@@ -76,19 +76,15 @@ impl Contour {
             && (self.bounds.1..self.bounds.3).contains(&p.y)
     }
 
-    pub fn accumulate(&mut self, pt: &(i32, i32), d: Direction) {
-        // Corners of a blob touching the top/left image edge sit at 0, so 0 is in range; the walk
-        // never leaves [0, w] x [0, h], which is what makes the cast below safe.
-        debug_assert!(pt.0 >= 0 && pt.1 >= 0);
-
-        let (x, y) = (pt.0 as u32, pt.1 as u32);
+    pub fn accumulate(&mut self, pt: &Point, d: Direction) {
+        let (x, y) = (pt.x, pt.y);
         self.bounds.0 = self.bounds.0.min(x);
         self.bounds.1 = self.bounds.1.min(y);
         self.bounds.2 = self.bounds.2.max(x);
         self.bounds.3 = self.bounds.3.max(y);
 
         // Cross = x * dy - y * dx
-        let (x, y) = (pt.0 as i64, pt.1 as i64);
+        let (x, y) = (pt.x as i64, pt.y as i64);
         let (cross, dx, dy) = match d {
             Direction::Right => (-y, 1, 0),
             Direction::Down => (x, 0, 1),
@@ -136,12 +132,12 @@ pub fn trace(
 
     // Start on the crack down the seed pixel's right edge, heading down. Travelling down with the
     // blob on the right (the -x side) is the invariant the whole walk maintains.
-    let start = (seed.x as i32 + 1, seed.y as i32);
+    let start = Point { x: seed.x + 1, y: seed.y };
     let start_dir = Direction::Down;
 
     // Pixel neighboring the boundary should not be the same color
     debug_assert!(
-        !img.matches_bit(start.0, start.1, clr_bit),
+        !img.matches_bit(start.x, start.y, clr_bit),
         "Seed must be the last pixel of its horizontal run"
     );
 
@@ -156,9 +152,9 @@ pub fn trace(
         // flank, the blob pixel that crack runs along.
         img.set_px_contour(walked_in.0, walked_in.1, id);
 
-        let last_y = cursor.1;
+        let last_y = cursor.y;
 
-        advance(&mut cursor, dir);
+        cursor.advance(dir);
         contour.accumulate(&cursor, dir);
 
         if contour.perimeter > max_perimeter || contour.extent() > max_width {
@@ -169,8 +165,8 @@ pub fn trace(
         // (probe + 0.5). Only vertical cracks can cross a horizontal ray, and one does when it spans
         // the probe's row and lies to its right; an odd total means the probe is inside.
         contour.encloses ^= (dir == Direction::Down || dir == Direction::Up)
-            && cursor.0 as u32 > probe.x
-            && cursor.1.min(last_y) as u32 == probe.y;
+            && cursor.x > probe.x
+            && cursor.y.min(last_y) == probe.y;
 
         // Where to head next, and the blob pixel that crack runs along. Both come off the flanks of
         // the crack straight ahead, which `next_step` reads for itself.
@@ -190,15 +186,6 @@ pub fn trace(
         .then_some(contour)
 }
 
-fn advance(cursor: &mut (i32, i32), dir: Direction) {
-    match dir {
-        Direction::Right => cursor.0 += 1,
-        Direction::Down => cursor.1 += 1,
-        Direction::Left => cursor.0 -= 1,
-        Direction::Up => cursor.1 -= 1,
-    }
-}
-
 // Direction to leave `cursor`, keeping the blob on the right of travel, paired with the blob pixel
 // the crack leaving in that direction runs along.
 // Both flanks filled means the blob wraps around the corner: hug it by turning in.
@@ -211,9 +198,9 @@ fn next_step(
     img: &BinaryImage,
     dir: Direction,
     blob_bit: bool,
-    blob_px: (i32, i32),
-    cursor: &(i32, i32),
-) -> (Direction, (i32, i32)) {
+    blob_px: (u32, u32),
+    cursor: &Point,
+) -> (Direction, (u32, u32)) {
     let (ahead_left, ahead_right) = flanks(cursor, dir);
     if !img.matches_bit(ahead_right.0, ahead_right.1, blob_bit) {
         (dir.turn_right(), blob_px)
@@ -225,13 +212,16 @@ fn next_step(
 }
 
 // Pixels flanking the crack that leaves `cursor` in direction `dir`.
-// `right` is the blob-side pixel — the one this contour runs along.
-fn flanks(cursor: &(i32, i32), dir: Direction) -> ((i32, i32), (i32, i32)) {
+// `right` is the blob-side pixel, the one this contour runs along.
+// x - 1 / y - 1 wrap to u32::MAX at the image edge, which get_bit treats as out of bounds,
+// so pixels beyond the top/left edge read as background just like those beyond bottom/right.
+fn flanks(cursor: &Point, dir: Direction) -> ((u32, u32), (u32, u32)) {
+    let (xl, yu) = (cursor.x.wrapping_sub(1), cursor.y.wrapping_sub(1));
     match dir {
-        Direction::Right => ((cursor.0, cursor.1 - 1), (cursor.0, cursor.1)),
-        Direction::Down => ((cursor.0, cursor.1), (cursor.0 - 1, cursor.1)),
-        Direction::Left => ((cursor.0 - 1, cursor.1), (cursor.0 - 1, cursor.1 - 1)),
-        Direction::Up => ((cursor.0 - 1, cursor.1 - 1), (cursor.0, cursor.1 - 1)),
+        Direction::Right => ((cursor.x, yu), (cursor.x, cursor.y)),
+        Direction::Down => ((cursor.x, cursor.y), (xl, cursor.y)),
+        Direction::Left => ((xl, cursor.y), (xl, yu)),
+        Direction::Up => ((xl, yu), (cursor.x, yu)),
     }
 }
 
