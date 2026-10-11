@@ -77,7 +77,7 @@ impl Symbol {
     }
 
     /// Module colour at (x, y), with blur from its 4 neighbouring modules removed.
-    fn get_rgb(&self, x: i32, y: i32) -> QRResult<[u8; 3]> {
+    fn get_rgb(&self, x: i32, y: i32) -> QRResult<[f64; 3]> {
         let rgb_img = self.rgb.as_ref().ok_or(QRError::RgbImageMissing)?;
         let (x, y) = self.wrap_coord(x, y);
 
@@ -106,7 +106,8 @@ impl Symbol {
 
         let denom = 1.0 - BLUR_BETA * n as f64;
 
-        Ok(acc.map(|v| (v / denom).round() as u8))
+        // Unclamped: deblur overshoots past 0 and 255 on the modules blur hit hardest
+        Ok(acc.map(|v| v / denom))
     }
 
     /// Whether the pixel in binary image is dark

@@ -15,13 +15,13 @@ pub(crate) struct Mahalanobis {
 impl Mahalanobis {
     pub(crate) fn fit<F>(ver: Version, sampler: F) -> QRResult<Self>
     where
-        F: Fn(i32, i32) -> QRResult<[u8; 3]>,
+        F: Fn(i32, i32) -> QRResult<[f64; 3]>,
     {
         debug_assert_matches!(ver, Version::Normal(_));
 
         let aps = ver.alignment_pattern();
         let w = ver.width() as i32;
-        let mut samples: [Vec<[u8; 3]>; 8] = std::array::from_fn(|_| Vec::new());
+        let mut samples: [Vec<[f64; 3]>; 8] = std::array::from_fn(|_| Vec::new());
 
         // Sampling finders
         sample_finder(-4, 3, &sampler, &mut samples, Color::Red, Color::Cyan);
@@ -57,7 +57,7 @@ impl Mahalanobis {
         let mut centroid: [[f64; 3]; 8] = [[f64::default(); 3]; 8];
         for c in 0..8 {
             for k in 0..3 {
-                let mut channel_samples: Vec<u8> = samples[c].iter().map(|s| s[k]).collect();
+                let mut channel_samples: Vec<f64> = samples[c].iter().map(|s| s[k]).collect();
                 centroid[c][k] = median(&mut channel_samples);
             }
         }
@@ -109,7 +109,7 @@ impl Mahalanobis {
         Ok(Self { centroid, inv, logdet })
     }
 
-    pub(crate) fn classify(&self, color: &[u8; 3]) -> Color {
+    pub(crate) fn classify(&self, color: &[f64; 3]) -> Color {
         let (mut clr_idx, mut min_score) = (0, f64::INFINITY);
         for i in 0..8 {
             let dist_sq = self.dist_squared(color, i);
@@ -122,9 +122,9 @@ impl Mahalanobis {
         Color::try_from(clr_idx as u8).unwrap()
     }
 
-    fn dist_squared(&self, color: &[u8; 3], class: usize) -> f64 {
+    fn dist_squared(&self, color: &[f64; 3], class: usize) -> f64 {
         // Centre channel values
-        let clr: [f64; 3] = std::array::from_fn(|i| color[i] as f64 - self.centroid[class][i]);
+        let clr: [f64; 3] = std::array::from_fn(|i| color[i] - self.centroid[class][i]);
         let covi = &self.inv[class];
 
         (clr[0] * covi[0] + clr[1] * covi[3] + clr[2] * covi[6]) * clr[0]
@@ -153,14 +153,14 @@ mod mahalanobis_tests {
                 .build()
                 .unwrap();
 
-            let sampler = |x: i32, y: i32| Ok(Rgb::<u8>::from(*qr.get(x, y)).0);
+            let sampler = |x: i32, y: i32| Ok(Rgb::<u8>::from(*qr.get(x, y)).0.map(f64::from));
             let maha = Mahalanobis::fit(ver, sampler).expect("Failed to fit classifier");
 
             let w = ver.width() as i32;
             for y in 0..w {
                 for x in 0..w {
                     let exp = *qr.get(x, y);
-                    let rgb = Rgb::<u8>::from(exp).0;
+                    let rgb = Rgb::<u8>::from(exp).0.map(f64::from);
                     assert_eq!(maha.classify(&rgb), exp, "Version {v}: mismatch at ({x}, {y})");
                 }
             }
@@ -199,7 +199,7 @@ mod mahalanobis_tests {
             let sampler = |x: i32, y: i32| {
                 let x = if x < 0 { x + w } else { x };
                 let y = if y < 0 { y + w } else { y };
-                Ok(grid[(y * w + x) as usize])
+                Ok(grid[(y * w + x) as usize].map(f64::from))
             };
             let maha = Mahalanobis::fit(ver, sampler).expect("Failed to fit classifier");
 
@@ -243,11 +243,11 @@ fn sample_finder<F>(
     x: i32,
     y: i32,
     sampler: &F,
-    samples: &mut [Vec<[u8; 3]>; 8],
+    samples: &mut [Vec<[f64; 3]>; 8],
     ring_clr: Color,
     stone_clr: Color,
 ) where
-    F: Fn(i32, i32) -> QRResult<[u8; 3]>,
+    F: Fn(i32, i32) -> QRResult<[f64; 3]>,
 {
     let ring_idx = ring_clr as usize;
     let stone_idx = stone_clr as usize;
@@ -270,9 +270,9 @@ fn sample_finder<F>(
     }
 }
 
-fn sample_alignment<F>(x: i32, y: i32, sampler: &F, samples: &mut [Vec<[u8; 3]>; 8])
+fn sample_alignment<F>(x: i32, y: i32, sampler: &F, samples: &mut [Vec<[f64; 3]>; 8])
 where
-    F: Fn(i32, i32) -> QRResult<[u8; 3]>,
+    F: Fn(i32, i32) -> QRResult<[f64; 3]>,
 {
     let black_idx = Color::Black as usize;
     let white_idx = Color::White as usize;
@@ -295,9 +295,9 @@ fn sample_timing<F>(
     fixed: i32,
     hor: bool,
     sampler: &F,
-    samples: &mut [Vec<[u8; 3]>; 8],
+    samples: &mut [Vec<[f64; 3]>; 8],
 ) where
-    F: Fn(i32, i32) -> QRResult<[u8; 3]>,
+    F: Fn(i32, i32) -> QRResult<[f64; 3]>,
 {
     let black_idx = Color::Black as usize;
     let white_idx = Color::White as usize;
@@ -335,7 +335,7 @@ mod sampler_tests {
             .build()
             .unwrap();
 
-        let sampler = |x: i32, y: i32| Ok(Rgb::<u8>::from(*qr.get(x, y)).0);
+        let sampler = |x: i32, y: i32| Ok(Rgb::<u8>::from(*qr.get(x, y)).0.map(f64::from));
 
         // Finder centre, ring colour, stone colour
         let finders = [
@@ -345,7 +345,7 @@ mod sampler_tests {
         ];
 
         for (x, y, ring, stone) in finders {
-            let mut samples: [Vec<[u8; 3]>; 8] = std::array::from_fn(|_| Vec::new());
+            let mut samples: [Vec<[f64; 3]>; 8] = std::array::from_fn(|_| Vec::new());
             sample_finder(x, y, &sampler, &mut samples, ring, stone);
 
             // 8x8 block: 24 ring, 9 stone, 16 inner white ring + 15 separator
@@ -359,7 +359,7 @@ mod sampler_tests {
                 };
                 assert_eq!(samples[c].len(), exp_len, "Finder ({x}, {y}): {clr:?} count");
 
-                let exp_rgb = Rgb::<u8>::from(clr).0;
+                let exp_rgb = Rgb::<u8>::from(clr).0.map(f64::from);
                 for s in sample {
                     assert_eq!(*s, exp_rgb, "Finder ({x}, {y}): {clr:?} colour");
                 }
@@ -379,7 +379,7 @@ mod sampler_tests {
                 .build()
                 .unwrap();
 
-            let sampler = |x: i32, y: i32| Ok(Rgb::<u8>::from(*qr.get(x, y)).0);
+            let sampler = |x: i32, y: i32| Ok(Rgb::<u8>::from(*qr.get(x, y)).0.map(f64::from));
 
             let aps = ver.alignment_pattern();
             let w = ver.width() as i32;
@@ -390,7 +390,7 @@ mod sampler_tests {
                         continue;
                     }
 
-                    let mut samples: [Vec<[u8; 3]>; 8] = std::array::from_fn(|_| Vec::new());
+                    let mut samples: [Vec<[f64; 3]>; 8] = std::array::from_fn(|_| Vec::new());
                     sample_alignment(x, y, &sampler, &mut samples);
 
                     // 5x5 block: 16 outer ring + 1 centre black, 8 inner white ring
@@ -407,7 +407,7 @@ mod sampler_tests {
                             "Version {v}, alignment ({x}, {y}): {clr:?} count"
                         );
 
-                        let exp_rgb = Rgb::<u8>::from(clr).0;
+                        let exp_rgb = Rgb::<u8>::from(clr).0.map(f64::from);
                         for s in sample {
                             assert_eq!(
                                 *s, exp_rgb,
@@ -432,11 +432,11 @@ mod sampler_tests {
                 .build()
                 .unwrap();
 
-            let sampler = |x: i32, y: i32| Ok(Rgb::<u8>::from(*qr.get(x, y)).0);
+            let sampler = |x: i32, y: i32| Ok(Rgb::<u8>::from(*qr.get(x, y)).0.map(f64::from));
 
             let w = ver.width() as i32;
             for hor in [true, false] {
-                let mut samples: [Vec<[u8; 3]>; 8] = std::array::from_fn(|_| Vec::new());
+                let mut samples: [Vec<[f64; 3]>; 8] = std::array::from_fn(|_| Vec::new());
                 sample_timing(8, w - 9, 6, hor, &sampler, &mut samples);
 
                 // w - 16 modules from 8 to w - 9, both ends black
@@ -453,7 +453,7 @@ mod sampler_tests {
                         "Version {v}, horizontal {hor}: {clr:?} count"
                     );
 
-                    let exp_rgb = Rgb::<u8>::from(clr).0;
+                    let exp_rgb = Rgb::<u8>::from(clr).0.map(f64::from);
                     for s in sample {
                         assert_eq!(*s, exp_rgb, "Version {v}, horizontal {hor}: {clr:?} colour");
                     }
@@ -467,7 +467,7 @@ mod sampler_tests {
 //------------------------------------------------------------------------------
 
 fn compute_covariance(
-    samples: &[[u8; 3]],
+    samples: &[[f64; 3]],
     centroid: &[f64; 3],
     class_cov: &mut [f64; 9],
     pool_cov: &mut [f64; 9],
@@ -482,7 +482,7 @@ fn compute_covariance(
     for px in samples {
         for (i, (cv, pool_cv)) in class_cov.iter_mut().zip(pool_cov.iter_mut()).enumerate() {
             let (r, c) = (i / 3, i % 3);
-            let val = (px[r] as f64 - centroid[r]) * (px[c] as f64 - centroid[c]);
+            let val = (px[r] - centroid[r]) * (px[c] - centroid[c]);
             *cv += val;
             *pool_cv += val;
         }
@@ -494,7 +494,7 @@ fn compute_covariance(
 }
 
 // 0.0 median is overwritten in fit by inferring from black/white
-fn median(data: &mut [u8]) -> f64 {
+fn median(data: &mut [f64]) -> f64 {
     if data.is_empty() {
         return f64::default();
     }
@@ -503,12 +503,12 @@ fn median(data: &mut [u8]) -> f64 {
     let mid = len / 2;
 
     if len & 1 == 1 {
-        let (_, &mut median, _) = data.select_nth_unstable(mid);
-        median as f64
+        let (_, &mut median, _) = data.select_nth_unstable_by(mid, f64::total_cmp);
+        median
     } else {
-        let (left_arr, &mut mid_right, _) = data.select_nth_unstable(mid);
-        let mid_left = *left_arr.iter().max().unwrap();
-        (mid_left as f64 + mid_right as f64) / 2.0
+        let (left_arr, &mut mid_right, _) = data.select_nth_unstable_by(mid, f64::total_cmp);
+        let mid_left = left_arr.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        (mid_left + mid_right) / 2.0
     }
 }
 
@@ -591,13 +591,13 @@ mod math_tests {
     #[test]
     fn test_median() {
         assert_eq!(median(&mut []), 0.0);
-        assert_eq!(median(&mut [7]), 7.0);
-        assert_eq!(median(&mut [3, 1, 2]), 2.0);
-        assert_eq!(median(&mut [4, 1, 3, 2]), 2.5);
-        assert_eq!(median(&mut [9, 9, 1, 9]), 9.0);
+        assert_eq!(median(&mut [7.0]), 7.0);
+        assert_eq!(median(&mut [3.0, 1.0, 2.0]), 2.0);
+        assert_eq!(median(&mut [4.0, 1.0, 3.0, 2.0]), 2.5);
+        assert_eq!(median(&mut [9.0, 9.0, 1.0, 9.0]), 9.0);
 
-        // Sum of middle pair exceeds u8
-        assert_eq!(median(&mut [255, 0, 255, 200]), 227.5);
+        // Deblurred values can fall outside the u8 range
+        assert_eq!(median(&mut [-12.5, 0.0, 270.0, 255.0]), 127.5);
     }
 }
 
