@@ -178,7 +178,7 @@ pub fn benchmark_high_capacity(dataset_dir: &Path) {
     let stats: Vec<Stat> =
         image_paths.par_iter().map(|img_path| Stat::evaluate(img_path, &source)).collect();
 
-    let heuristic_pivot = pivot(&stats, |stat: &Stat| stat.heuristic.clone());
+    let mut heuristic_pivot = pivot(&stats, |stat: &Stat| stat.heuristic.clone());
 
     let total_agg = heuristic_pivot.values().fold(Aggregate::default(), |mut acc, a| {
         acc.merge(a);
@@ -187,6 +187,8 @@ pub fn benchmark_high_capacity(dataset_dir: &Path) {
 
     let conf_table = confusion_matrix_to_table(&total_agg.conf);
 
+    heuristic_pivot.insert("Ţotal".to_string(), total_agg);
+
     let cols = ["Heuristics", "total", "detected", "decoded", "red", "green", "blue"];
 
     let table: HashMap<String, HashMap<String, f64>> =
@@ -194,10 +196,6 @@ pub fn benchmark_high_capacity(dataset_dir: &Path) {
     let mut rows = table.keys().map(|s| s.as_str()).collect::<Vec<_>>();
     rows.sort_unstable();
     print_table(&table, &rows, &cols);
-
-    let mut total_table: HashMap<String, HashMap<String, f64>> = HashMap::new();
-    total_table.insert("total".to_string(), total_agg.to_table_row());
-    print_table(&total_table, &["total"], &cols);
 
     let cols: Vec<_> = std::iter::once("Confusion").chain(COLORS).collect();
     print_table(&conf_table, &COLORS, &cols);

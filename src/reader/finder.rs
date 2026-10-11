@@ -2,7 +2,7 @@ use super::{
     binarize::BinaryImage,
     utils::{
         geometry::{Point, PointF},
-        matches_finder_ratio, verify_finder_diagonal, verify_finder_pattern,
+        matches_finder_ratio, verify_finder_pattern,
     },
 };
 
@@ -193,14 +193,7 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
     let max_run = (rr - rl) * 2; // Setting a loose upper limit on the run
 
     // Verify 1:1:3:1:1 pattern along Y axis. Returns the top and bottom pts if valid
-    let (t, b) = verify_finder_pattern(img, &seed, &pattern, max_run)?;
-
-    // Cheap reject before the stone trace, run on the ~1 in 6 candidates that clear the vertical
-    // crosscheck but are mostly not finders. Confirms the 1:1:3:1:1 ratio along the main diagonal
-    // through the centre — a third independent axis a spurious candidate almost never satisfies.
-    // This keeps the two traces below off candidates a pixel walk can already rule out.
-    let centre = Point { x: sx, y: ((t + b) / 2) };
-    if !verify_finder_diagonal(img, &centre, max_run) {
+    if !verify_finder_pattern(img, &seed, &pattern, max_run) {
         return None;
     }
 

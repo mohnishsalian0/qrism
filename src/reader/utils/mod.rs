@@ -16,7 +16,7 @@ pub fn verify_finder_pattern(
     seed: &Point,
     pattern: &[f64],
     max_run: u32,
-) -> Option<(u32, u32)> {
+) -> bool {
     let pat_len = pattern.len();
 
     let mut run_len = vec![0; pat_len];
@@ -35,7 +35,6 @@ pub fn verify_finder_pattern(
         let color = img.get_bit(pos.x, pos.y).unwrap();
         if initial != color {
             if flips == 0 {
-                pos.y += 1;
                 break;
             }
             initial = color;
@@ -43,7 +42,6 @@ pub fn verify_finder_pattern(
         }
         run_len[flips] += 1;
     }
-    let top = pos.y;
 
     // Count downward
     let mut pos = *seed;
@@ -58,74 +56,6 @@ pub fn verify_finder_pattern(
         let color = img.get_bit(pos.x, pos.y).unwrap();
         if initial != color {
             if flips == pat_len - 1 {
-                pos.y -= 1;
-                break;
-            }
-            initial = color;
-            flips += 1;
-        }
-        run_len[flips] += 1;
-    }
-    let bottom = pos.y;
-
-    if !matches_finder_ratio(&run_len) {
-        return None;
-    }
-
-    Some((top, bottom))
-}
-
-// Verifies the 1:1:3:1:1 finder ratio along the main (top-left to bottom-right) diagonal through
-// `centre`. A spurious 1:1:3:1:1 that survives the horizontal scan and vertical crosscheck (e.g. a
-// dark cross or a thin diagonal streak) rarely also shows the ratio diagonally, so this is a cheap
-// third-axis confirmation — O(module size) pixel walk, run before the expensive stone flood fill.
-pub fn verify_finder_diagonal(img: &BinaryImage, centre: &Point, max_run: u32) -> bool {
-    let mut run_len = [0u32; 5];
-    run_len[2] = 1;
-    let seed_color = match img.get_bit(centre.x, centre.y) {
-        Some(c) => c,
-        None => return false,
-    };
-    let (w, h) = (img.w, img.h);
-
-    // Count up-left along (-1, -1)
-    let mut pos = *centre;
-    let mut flips = 2;
-    let mut initial = seed_color;
-    while run_len[flips] <= max_run {
-        let Some(x) = pos.x.checked_sub(1) else {
-            break;
-        };
-        let Some(y) = pos.y.checked_sub(1) else {
-            break;
-        };
-        pos.x = x;
-        pos.y = y;
-
-        let color = img.get_bit(pos.x, pos.y).unwrap();
-        if initial != color {
-            if flips == 0 {
-                break;
-            }
-            initial = color;
-            flips -= 1;
-        }
-        run_len[flips] += 1;
-    }
-
-    // Count down-right along (1, 1)
-    let mut pos = *centre;
-    let mut flips = 2;
-    let mut initial = seed_color;
-    while run_len[flips] <= max_run {
-        pos.x += 1;
-        pos.y += 1;
-        if pos.x >= w || pos.y >= h {
-            break;
-        }
-        let color = img.get_bit(pos.x, pos.y).unwrap();
-        if initial != color {
-            if flips == 4 {
                 break;
             }
             initial = color;
@@ -134,23 +64,15 @@ pub fn verify_finder_diagonal(img: &BinaryImage, centre: &Point, max_run: u32) -
         run_len[flips] += 1;
     }
 
-    matches_finder_ratio_scaled(&run_len, DIAGONAL_TOLERANCE_SCALE)
+    matches_finder_ratio(&run_len)
 }
 
 // Verifies 5 run lengths against the finder's 1:1:3:1:1 ratio using decoupled bar/space
 // module sizes. Bars (indices 0, 2, 4) span 5 modules and spaces (indices 1, 3) span 2, and
 // each gets an independent module-size estimate and tolerance. This lets ink bleed widen the
-// dark bars relative to the light spaces without failing the ratio — a case that a single
+// dark bars relative to the light spaces without failing the ratio, a case that a single
 // shared average (avg = sum / 7) structurally cannot express.
 pub fn matches_finder_ratio(runs: &[u32]) -> bool {
-    matches_finder_ratio_scaled(runs, 1.0)
-}
-
-// As `matches_finder_ratio`, but scales both per-module tolerances by `tol_scale`. Diagonal scans
-// register noisier run lengths than axis-aligned ones (a module spans `√2` px along the diagonal and
-// anti-aliasing/quantization on the slope is worse), so the diagonal crosscheck passes a scale > 1
-// to avoid rejecting real finders — mirroring rxing's looser `foundPatternDiagonal` tolerance.
-pub fn matches_finder_ratio_scaled(runs: &[u32], tol_scale: f64) -> bool {
     debug_assert!(runs.len() >= 5);
 
     let bar_mod = (runs[0] + runs[2] + runs[4]) as f64 / 5.0;
@@ -162,8 +84,8 @@ pub fn matches_finder_ratio_scaled(runs: &[u32], tol_scale: f64) -> bool {
         return false;
     }
 
-    let bar_tol = (bar_mod * BAR_TOLERANCE + 0.5) * tol_scale;
-    let space_tol = (space_mod * SPACE_TOLERANCE + 0.5) * tol_scale;
+    let bar_tol = bar_mod * BAR_TOLERANCE + 0.5;
+    let space_tol = space_mod * SPACE_TOLERANCE + 0.5;
 
     const RATIO: [f64; 5] = [1.0, 1.0, 3.0, 1.0, 1.0];
     for i in 0..5 {
