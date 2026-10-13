@@ -1,6 +1,9 @@
 use std::ops::{Index, IndexMut};
 
-use crate::utils::{f64_to_u32, QRError, QRResult};
+use crate::{
+    reader::utils::geometry::Point,
+    utils::{f64_to_u32, QRError, QRResult},
+};
 
 // Homographic projection matrix to map logical qr onto image qr
 //------------------------------------------------------------------------------
@@ -123,13 +126,13 @@ impl Homography {
     }
 
     /// Map a point (x,y) using homography H (3x3)
-    pub fn map(&self, x: f64, y: f64) -> QRResult<(u32, u32)> {
+    pub fn map(&self, x: f64, y: f64) -> QRResult<Point> {
         let (xp, yp) = self.exact_map(x, y)?;
 
         let x = f64_to_u32(&xp)?;
         let y = f64_to_u32(&yp)?;
 
-        Ok((x, y))
+        Ok(Point { x, y })
     }
 
     pub fn exact_map(&self, x: f64, y: f64) -> QRResult<(f64, f64)> {
@@ -148,6 +151,8 @@ impl Homography {
 #[cfg(test)]
 mod homography_tests {
 
+    use crate::reader::utils::geometry::Point;
+
     use super::Homography;
 
     #[test]
@@ -159,7 +164,7 @@ mod homography_tests {
         let expected = [(110, 110), (290, 40), (290, 290), (40, 290)];
         for (i, pt) in pts.iter().enumerate() {
             let proj_pt = h.map(pt.0, pt.1).unwrap();
-            let exp_pt = (expected[i].0, expected[i].1);
+            let exp_pt = Point { x: expected[i].0, y: expected[i].1 };
             assert_eq!(proj_pt, exp_pt);
         }
     }

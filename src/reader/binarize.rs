@@ -525,19 +525,19 @@ mod bit_accessor_tests {
 impl BinaryImage {
     pub(crate) fn get_contour_capped(
         &mut self,
-        src: (u32, u32),
-        probe: (u32, u32),
+        src: &Point,
+        probe: &Point,
         max_width: u32,
     ) -> Option<&mut Contour> {
-        if self.w <= src.0 || self.h <= src.1 || self.w <= probe.0 || self.h <= probe.1 {
+        if self.w <= src.x || self.h <= src.y || self.w <= probe.x || self.h <= probe.y {
             return None;
         }
 
-        let seed = Point { x: src.0, y: src.1 };
-        let probe = Point { x: probe.0, y: probe.1 };
+        let seed = Point { x: src.x, y: src.y };
+        let probe = Point { x: probe.x, y: probe.y };
         let max_perimeter = max_width * 4;
 
-        match self.get_px_contour(src.0, src.1) {
+        match self.get_px_contour(src.x, src.y) {
             None => trace(self, None, seed, probe, max_width),
             Some(id) => {
                 let contour =

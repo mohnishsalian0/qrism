@@ -2,7 +2,7 @@ use super::{
     alignment::Anchors,
     utils::{geometry::PointF, homography::Homography},
 };
-use crate::{utils::QRResult, Version};
+use crate::{reader::utils::geometry::Point, utils::QRResult, Version};
 
 // One rectangular patch of the symbol, bounded by four located centres -- alignment patterns,
 // finder centres, or a mix of the two at the symbol's edges. Each tile carries a homography
@@ -48,7 +48,7 @@ impl Tile {
     }
 
     #[inline]
-    pub(super) fn map(&self, x: f64, y: f64) -> QRResult<(u32, u32)> {
+    pub(super) fn map(&self, x: f64, y: f64) -> QRResult<Point> {
         self.h.map(x, y)
     }
 
@@ -58,7 +58,7 @@ impl Tile {
 
     // The tile's outline in image space, TL, TR, BR, BL
     #[cfg(test)]
-    pub(super) fn corners(&self) -> QRResult<[(u32, u32); 4]> {
+    pub(super) fn corners(&self) -> QRResult<[Point; 4]> {
         let (x0, y0) = (self.x0 as f64, self.y0 as f64);
         let (x1, y1) = (self.x1 as f64, self.y1 as f64);
         Ok([self.h.map(x0, y0)?, self.h.map(x1, y0)?, self.h.map(x1, y1)?, self.h.map(x0, y1)?])
@@ -165,7 +165,7 @@ mod tile_tests {
     use super::{build_tiles, Anchors};
     use crate::metadata::Version;
     use crate::reader::alignment::MAX_ALIGN_CELLS;
-    use crate::reader::utils::geometry::PointF;
+    use crate::reader::utils::geometry::{Point, PointF};
 
     const KX: f64 = 12.0; // Pixels per module, x
     const KY: f64 = 16.0; // Pixels per module, y
@@ -324,11 +324,11 @@ mod tile_tests {
 
                     assert_eq!(
                         got,
-                        (ex as u32, ey as u32),
+                        Point { x: ex as u32, y: ey as u32 },
                         "version {v}: module ({x}, {y}) projects to ({}, {}) but should sit at \
                          ({ex}, {ey})",
-                        got.0,
-                        got.1
+                        got.x,
+                        got.y
                     );
                 }
             }
@@ -343,6 +343,7 @@ mod tile_tests {
             let tiles = build_tiles(ver, &synthetic_centres(ver));
             let aps = ver.alignment_pattern().iter().map(|&ap| ap as f64).collect::<Vec<_>>();
             let last_tile = aps.len().max(2) - 2;
+            let pt = |x: u32, y: u32| Point { x, y };
 
             for r in 0..=last_tile {
                 for c in 0..=last_tile {
@@ -354,19 +355,19 @@ mod tile_tests {
                     let corners = tiles[r][c].as_ref().unwrap().corners().unwrap();
 
                     let tl_coord = project(x0, y0);
-                    let tl = (tl_coord.0.round() as u32, tl_coord.1.round() as u32);
+                    let tl = pt(tl_coord.0.round() as u32, tl_coord.1.round() as u32);
                     assert_eq!(corners[0], tl, "Top left corner failed at ver {v}");
 
                     let tr_coord = project(x1, y0);
-                    let tr = (tr_coord.0.round() as u32, tr_coord.1.round() as u32);
+                    let tr = pt(tr_coord.0.round() as u32, tr_coord.1.round() as u32);
                     assert_eq!(corners[1], tr, "Top right corner failed at ver {v}");
 
                     let br_coord = project(x1, y1);
-                    let br = (br_coord.0.round() as u32, br_coord.1.round() as u32);
+                    let br = pt(br_coord.0.round() as u32, br_coord.1.round() as u32);
                     assert_eq!(corners[2], br, "Bottom right corner failed at ver {v}");
 
                     let bl_coord = project(x0, y1);
-                    let bl = (bl_coord.0.round() as u32, bl_coord.1.round() as u32);
+                    let bl = pt(bl_coord.0.round() as u32, bl_coord.1.round() as u32);
                     assert_eq!(corners[3], bl, "Bottom left corner failed at ver {v}");
                 }
             }

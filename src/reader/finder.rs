@@ -160,9 +160,8 @@ pub fn locate_finders(img: &mut BinaryImage) -> Vec<Finder> {
 }
 
 // Verifies a finder candidate by walking the outer boundary of its stone and ring, which costs
-// O(perimeter) rather than O(area). Three properties of the walk shape the checks below:
-// 1. A seed must be the last pixel of a horizontal run, so `trace` starts on an outer boundary
-//    rather than a hole's, hence `w - 1` for the stone and `e` for the ring, not `s` and `r`.
+// O(perimeter). Three properties of the walk shape the checks below:
+// 1. A seed must be the last pixel of a horizontal run, so `trace` starts on an outer boundary.
 // 2. Only boundary pixels carry a contour id, so a point can be tested against a contour only if
 //    it is extreme along some axis (leftmost in its row, top/bottom-most in its column).
 // 3. A traced outline encloses its holes, so `ring.area()` is the whole 7x7 block, not the annulus.
@@ -170,7 +169,7 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
     let (rl, sl, sr, rr, y) = (datum.rl, datum.sl, datum.sr, datum.rr, datum.y);
 
     let sx = (sl + sr + 1).div_ceil(2);
-    let probe = (sx, y);
+    let probe = Point { x: sx, y };
 
     // Both caps are estimated from this row's stone run, so they shift slightly row to row. A
     // square stone of side n has a crack perimeter of 4n, so the 8x here is 2x the ideal, leaving
@@ -182,8 +181,9 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
     // accepted. `w - 1` is the stone's rightmost pixel on this row, which the outer walk always
     // touches, so its contour id is the memo. `get_contour_capped` returns None for a stone that
     // bailed or that this row's caps reject; that is not an accept, so fall through and re-check.
+    let srp = Point { x: sr - 1, y };
     if img.get_px_contour(sr - 1, y).is_some()
-        && img.get_contour_capped((sr - 1, y), probe, max_width).is_some_and(|st| st.is_finder)
+        && img.get_contour_capped(&srp, &probe, max_width).is_some_and(|st| st.is_finder)
     {
         return None;
     }
@@ -201,7 +201,7 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
     // rejected after a few hundred steps rather than walking the blob's whole outline. A stone
     // fused to its ring is caught separately, by `trace`: it has no outer boundary of its own, so
     // the walk closes on the hole and the negative area is rejected there.
-    let stone = img.get_contour_capped((sr - 1, y), probe, max_width)?.clone();
+    let stone = img.get_contour_capped(&srp, &probe, max_width)?.clone();
     let sc = stone.compactness();
     if !(MIN_COMPACTNESS_THRESHOLD..MAX_COMPACTNESS_THRESHOLD).contains(&sc) {
         return None;
@@ -210,8 +210,9 @@ fn verify_and_mark_finder(img: &mut BinaryImage, datum: &DatumLine) -> Option<Fi
     // A ring broken anywhere (one bleached or blurred module on its border) has no hole, so the
     // walk dives through the gap and traces the inner edge as well as the outer. This doubles the
     // perimeter
+    let rrp = Point { x: rr, y };
     let ring_max_width = stone.perimeter().saturating_mul(RING_PERIMETER_MULT).div_ceil(4);
-    let ring = img.get_contour_capped((rr, y), probe, ring_max_width)?.clone();
+    let ring = img.get_contour_capped(&rrp, &probe, ring_max_width)?.clone();
 
     // Compactness is only meaningful for a simple outline; a broken ring's doubled-back walk makes
     // it large by construction, so the check applies to closed rings alone. `ring_max_dist` is what

@@ -10,7 +10,7 @@ use crate::{
         parse_format_info_qr, Color, Metadata, FORMAT_ERROR_CAPACITY, FORMAT_INFOS_QR,
         FORMAT_INFO_COORDS_QR_MAIN, FORMAT_INFO_COORDS_QR_SIDE, FORMAT_MASK,
     },
-    reader::mahalanobis::Mahalanobis,
+    reader::{mahalanobis::Mahalanobis, utils::geometry::Point},
     utils::{BitArray, BitStream, EncRegionIter, QRError, QRResult},
     ECLevel, MaskPattern,
 };
@@ -82,8 +82,8 @@ impl Symbol {
         let (x, y) = self.wrap_coord(x, y);
 
         let raw = |x: i32, y: i32| {
-            self.get_pt(x, y).and_then(|pt| {
-                rgb_img.get_pixel_checked(pt.0, pt.1).ok_or(QRError::PixelOutOfBounds)
+            self.map(x, y).and_then(|pt| {
+                rgb_img.get_pixel_checked(pt.x, pt.y).ok_or(QRError::PixelOutOfBounds)
             })
         };
 
@@ -112,8 +112,8 @@ impl Symbol {
 
     /// Whether the pixel in binary image is dark
     pub(crate) fn is_dark(&self, x: i32, y: i32) -> QRResult<bool> {
-        let pt = self.get_pt(x, y)?;
-        self.bin.get_bit(pt.0, pt.1).map(|b| !b).ok_or(QRError::PixelOutOfBounds)
+        let pt = self.map(x, y)?;
+        self.bin.get_bit(pt.x, pt.y).map(|b| !b).ok_or(QRError::PixelOutOfBounds)
     }
 
     pub(crate) fn get_color(&self, x: i32, y: i32) -> QRResult<Color> {
@@ -122,7 +122,7 @@ impl Symbol {
         Ok(self.clf.as_ref().ok_or(QRError::ClassifierMissing)?.classify(&rgb))
     }
 
-    fn get_pt(&self, x: i32, y: i32) -> QRResult<(u32, u32)> {
+    fn map(&self, x: i32, y: i32) -> QRResult<Point> {
         let (xp, yp) = self.wrap_coord(x, y);
         let tile = self.loc.tile_at(xp as usize, yp as usize)?;
         tile.map(xp as f64 + 0.5, yp as f64 + 0.5).map_err(|_| QRError::PixelOutOfBounds)

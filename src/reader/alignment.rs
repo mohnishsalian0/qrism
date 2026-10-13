@@ -86,7 +86,7 @@ fn quiet_zone_score(img: &BinaryImage, ver: Version, h: &Homography) -> u32 {
     let my = w as f64 + 0.5;
     for mx in 0..w + 1 {
         let Ok(px) = h.map(mx as f64 + 0.5, my) else { continue };
-        let Some(bit) = img.get_bit(px.0, px.1) else { continue };
+        let Some(bit) = img.get_bit(px.x, px.y) else { continue };
         white_score += bit as u32;
     }
 
@@ -94,7 +94,7 @@ fn quiet_zone_score(img: &BinaryImage, ver: Version, h: &Homography) -> u32 {
     let mx = w as f64 + 0.5;
     for my in 0..w {
         let Ok(px) = h.map(mx, my as f64 + 0.5) else { continue };
-        let Some(bit) = img.get_bit(px.0, px.1) else { continue };
+        let Some(bit) = img.get_bit(px.x, px.y) else { continue };
         white_score += bit as u32;
     }
 
@@ -229,15 +229,13 @@ fn pinpoint_alignment_centre(
     for y in ys..=ye {
         let (sbit, ends) = img.run_ends(xs, xe, y);
         let ends = ends.get(sbit as usize..).unwrap_or_default();
-        candidates.extend(ends.iter().step_by(2).map(|&e| (e, y)));
+        candidates.extend(ends.iter().step_by(2).map(|&e| Point { x: e, y }));
     }
-    candidates.sort_unstable_by_key(|c| seed.x.abs_diff(c.0).pow(2) + seed.y.abs_diff(c.1).pow(2));
+    candidates.sort_unstable_by_key(|c| seed.x.abs_diff(c.x).pow(2) + seed.y.abs_diff(c.y).pow(2));
 
     let max_width = (mod_size * ALIGNMENT_TRACE_SLACK).round() as u32;
     for c in candidates {
-        let (x, y) = (c.0, c.1);
-
-        if let Some(stone) = img.get_contour_capped((x, y), (x, y), max_width) {
+        if let Some(stone) = img.get_contour_capped(&c, &c, max_width) {
             if stone.visited_in != pass {
                 stone.visited_in = pass;
                 let Some(stone_centre) = stone.centre() else {
@@ -260,13 +258,12 @@ fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &PointF, mod_siz
         return false;
     }
 
-    let (x, y) = (sc.x, sc.y);
-    let Some(ring_seed) = find_ring_seed(img, (x, y), mod_size) else {
+    let Some(ring_seed) = find_ring_seed(img, &sc, mod_size) else {
         return false;
     };
 
     let max_width = (mod_size * 3.0 * ALIGNMENT_TRACE_SLACK).round() as u32;
-    let Some(ring) = img.get_contour_capped((ring_seed.0, ring_seed.1), (x, y), max_width) else {
+    let Some(ring) = img.get_contour_capped(&ring_seed, &sc, max_width) else {
         return false;
     };
 
@@ -281,12 +278,8 @@ fn verify_alignment_centre(img: &mut BinaryImage, stone_centre: &PointF, mod_siz
 
 // Last white pixel of the ring on the stone centre's row, which is where tracing the ring starts.
 // `None` if the centre is light, or the ring ends more than 3 modules right of the centre.
-fn find_ring_seed(
-    img: &BinaryImage,
-    stone_centre: (u32, u32),
-    mod_size: f64,
-) -> Option<(u32, u32)> {
-    let (x, y) = (stone_centre.0, stone_centre.1);
+fn find_ring_seed(img: &BinaryImage, stone_centre: &Point, mod_size: f64) -> Option<Point> {
+    let (x, y) = (stone_centre.x, stone_centre.y);
 
     let (sbit, slen) = img.run(x, y)?;
     if sbit {
@@ -300,7 +293,7 @@ fn find_ring_seed(
         return None;
     }
 
-    Some((rx, y))
+    Some(Point { x: rx, y })
 }
 
 pub(super) fn infer_alignment_centres(ver: Version, ff: &LocalFrame, centres: &mut Anchors) {

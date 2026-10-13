@@ -150,7 +150,7 @@ pub fn trace(
     loop {
         // (cursor, dir) always name the crack about to be walked, and `walked_in` is its right
         // flank, the blob pixel that crack runs along.
-        img.set_px_contour(walked_in.0, walked_in.1, id);
+        img.set_px_contour(walked_in.x, walked_in.y, id);
 
         let last_y = cursor.y;
 
@@ -170,7 +170,7 @@ pub fn trace(
 
         // Where to head next, and the blob pixel that crack runs along. Both come off the flanks of
         // the crack straight ahead, which `next_step` reads for itself.
-        (dir, walked_in) = next_step(img, dir, clr_bit, walked_in, &cursor);
+        (dir, walked_in) = next_step(img, dir, clr_bit, &walked_in, &cursor);
 
         if cursor == start && dir == start_dir {
             contour.bailed = false;
@@ -198,13 +198,13 @@ fn next_step(
     img: &BinaryImage,
     dir: Direction,
     blob_bit: bool,
-    blob_px: (u32, u32),
+    blob_px: &Point,
     cursor: &Point,
-) -> (Direction, (u32, u32)) {
+) -> (Direction, Point) {
     let (ahead_left, ahead_right) = flanks(cursor, dir);
-    if !img.matches_bit(ahead_right.0, ahead_right.1, blob_bit) {
-        (dir.turn_right(), blob_px)
-    } else if !img.matches_bit(ahead_left.0, ahead_left.1, blob_bit) {
+    if !img.matches_bit(ahead_right.x, ahead_right.y, blob_bit) {
+        (dir.turn_right(), *blob_px)
+    } else if !img.matches_bit(ahead_left.x, ahead_left.y, blob_bit) {
         (dir, ahead_right)
     } else {
         (dir.turn_left(), ahead_left)
@@ -215,13 +215,14 @@ fn next_step(
 // `right` is the blob-side pixel, the one this contour runs along.
 // x - 1 / y - 1 wrap to u32::MAX at the image edge, which get_bit treats as out of bounds,
 // so pixels beyond the top/left edge read as background just like those beyond bottom/right.
-fn flanks(cursor: &Point, dir: Direction) -> ((u32, u32), (u32, u32)) {
+fn flanks(cursor: &Point, dir: Direction) -> (Point, Point) {
+    let pt = |x: u32, y: u32| Point { x, y };
     let (xl, yu) = (cursor.x.wrapping_sub(1), cursor.y.wrapping_sub(1));
     match dir {
-        Direction::Right => ((cursor.x, yu), (cursor.x, cursor.y)),
-        Direction::Down => ((cursor.x, cursor.y), (xl, cursor.y)),
-        Direction::Left => ((xl, cursor.y), (xl, yu)),
-        Direction::Up => ((xl, yu), (cursor.x, yu)),
+        Direction::Right => (pt(cursor.x, yu), pt(cursor.x, cursor.y)),
+        Direction::Down => (pt(cursor.x, cursor.y), pt(xl, cursor.y)),
+        Direction::Left => (pt(xl, cursor.y), pt(xl, yu)),
+        Direction::Up => (pt(xl, yu), pt(cursor.x, yu)),
     }
 }
 

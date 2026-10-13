@@ -644,12 +644,9 @@ impl SymbolLocation {
                     Ok(v) => v,
                     Err(_) => return 0,
                 };
-                if let Some(bit) = img.get_bit(pt.0, pt.1) {
-                    if bit {
-                        score -= 1;
-                    } else {
-                        score += 1;
-                    }
+                if let Some(bit) = img.get_bit(pt.x, pt.y) {
+                    // +1 for black, -1 for white
+                    score += (!bit as i32) * 2 - 1;
                 }
             }
         }
