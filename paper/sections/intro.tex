@@ -1,0 +1,61 @@
+\section{Introduction}
+\label{sec:intro}
+
+A QR code stores one bit per module~\cite{iso18004}. Printing three binary layers in the
+color channels of one symbol triples the data in the same area: each module shows one of
+eight colors, and its red, green and blue bits belong to the three
+layers~\cite{andre2014colour,blasinski2013pccc,yang2018hiq}. Polychrome codes are also
+standardized, as JAB Code~\cite{iso23634}. A multiplexed QR symbol keeps the layout of a
+standard symbol, so once the module colors are known each layer is read with standard
+Reed-Solomon decoding.
+
+Recovering those colors from a phone photograph is the difficult step. Illumination and
+white balance shift every sample, overlapping colorant and sensor spectra mix the channels
+within a module, and lens blur, ink spread and JPEG chroma subsampling mix each module with
+its neighbors~\cite{yang2018hiq}. The last effect grows with density. Blur stays roughly
+fixed in pixels while modules shrink, so in a dense symbol a larger share of each sample
+comes from neighboring modules. Small module error rates also matter: a symbol fails as soon
+as one Reed-Solomon block in one layer holds more errors than it can correct. In our
+experiments two classifiers that differ by three points in module accuracy differ by more
+than a factor of two in symbols decoded (Section~\ref{sec:results}).
+
+Earlier decoders handle these effects in several ways. Blasinski et al.\ estimate
+cross-channel mixing per image from pilot blocks or by expectation
+maximization~\cite{blasinski2013pccc,bulan2012em}. HiQ trains color classifiers offline on
+labelled photographs and learns cross-module interference terms with
+them~\cite{yang2018hiq}. Bagherinia and Manduchi decode blurred patches by iterative joint
+estimation~\cite{bagherinia2014blur}, and screen-to-camera systems train networks end to
+end~\cite{tamang2021deepd2c,tran2021deeplight}. A trained decoder depends on the printers,
+displays and phones in its training set. We look for a method that needs no training data,
+runs in time linear in the number of modules, and holds up on dense symbols.
+
+Our method fits each photograph on its own. The finder, alignment and timing patterns of a
+multiplexed QR symbol have fixed colors, so they label a few hundred samples per photograph.
+Before fitting, a closed-form inverse of a symmetric leak between edge-adjacent modules,
+with one fixed fraction $\beta=0.06$, reduces cross-module interference. The corrected
+samples are then classified by regularized discriminant analysis with shrink
+$\lambda=0.5$, fitted to the labelled samples. On the public CUHK-CQRC dataset the method
+decodes \HiqCodeChosen\% of localized symbols, against \HiqCodeRda\% without leak inversion
+and \HiqCodeEuclid\% for nearest-centroid classification; on a new dataset of qrism symbols
+it decodes \QrCodeChosen\%. On HiQ's own test split, our decoder reads \PairCommonOurs\% of
+the symbols that both it and the released HiQ decoder localize, against \PairCommonHiq\% for
+HiQ.
+
+The contributions are:
+\begin{itemize}
+\item a training-free color recovery method for multiplexed QR codes: per-photograph
+calibration from function patterns, a one-parameter inverse of inter-module leakage, and
+regularized discriminant analysis (Section~\ref{sec:method});
+\item a dataset of \QrAttempted{} photographs of qrism symbols at seven versions, four
+error-correction levels and four phones, with the source render of every symbol;
+\item an evaluation on two datasets in which both parameters are chosen on each dataset and
+checked on the other, with paired tests, and an end-to-end comparison with the released HiQ
+decoder on its test split that also corrects a defect in its CMI step
+(Sections~\ref{sec:setup} and~\ref{sec:results});
+\item an open-source Rust implementation. \todo{repository URL}
+\end{itemize}
+
+Section~\ref{sec:related} reviews related work, Section~\ref{sec:symbol} describes the
+symbol designs and decoding pipeline, Section~\ref{sec:method} the method,
+Sections~\ref{sec:setup} and~\ref{sec:results} the experiments, and
+Section~\ref{sec:limitations} the limitations.

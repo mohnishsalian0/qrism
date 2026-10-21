@@ -1,0 +1,80 @@
+\section{Experimental Setup}
+\label{sec:setup}
+
+\subsection{Datasets}
+
+\emph{CUHK-CQRC}~\cite{yang2018hiq} contains photographs of printed three-layer HiQ symbols
+at versions 21, 25, 30, 35 and 40, taken with several phones under different lighting. Our
+copy holds the \HiqAttempted{} images of the public release in eight capture folders. The
+release's metadata marks \SplitTest{} of them as HiQ's test set, \SplitTrain{} as the images
+HiQ's models were trained on, and \SplitUnused{} as unused; the HiQ paper reports 5390 test
+samples~\cite{yang2018hiq}. Our method trains nothing, so its results use every image; the
+comparison with the HiQ decoder uses the test set alone. One image appears twice under two
+names. Ground truth for each image is the clean source render of its version.
+
+The \emph{qrism dataset} is new and will be released with this paper. It contains
+\QrAttempted{} photographs of qrism symbols at versions 1, 5, 10, 15, 25, 30 and 40, each
+at all four error-correction levels. Symbols were rendered at 12 and 20 pixels per module,
+or 8 in the small-module condition, and each was photographed five times under the
+conditions of Table~\ref{tab:dataset} with four phones: Apple iPhone~13 and iPhone~16,
+Motorola Edge~50 Fusion and OnePlus Nord~CE \todo{exact OnePlus model}. \todo{print setup:
+printer, paper, printed symbol size, capture distance; display used for the on-screen
+condition; what distinguishes the close and reference captures}
+
+\input{generated/tab_dataset}
+
+\subsection{Protocol}
+
+Every color recovery pipeline receives identical input: the same localization and the
+same one sample per module, from the library's localizer (Section~\ref{sec:symbol}). Only
+stage~(3) of the pipeline differs between rows of a table. A photograph that the localizer
+misses, or reads at a version with no source render, is excluded from every color
+recovery rate and counted separately. On CUHK-CQRC \HiqLocalized{} of \HiqAttempted{}
+photographs are localized (\HiqNoSymbol{} not found, \HiqMisread{} read at a wrong version);
+on the qrism dataset \QrLocalized{} of \QrAttempted{} are (\QrNotLocalized{} not found or
+read at a wrong version). All rates on a dataset therefore share one denominator, which
+lets two settings be compared photograph by photograph.
+
+A predicted HiQ grid is split into its three layers, each layer is rendered as a
+monochrome symbol and decoded with the library's standard QR reader, and the symbol counts
+as decoded when all three messages equal those of the source. For a predicted qrism grid
+the format information must match the source; the three channels are then decoded with
+their Reed-Solomon blocks and the message compared with the source.
+
+\subsection{Metrics and statistics}
+
+\emph{Module accuracy} is the share of non-function modules whose color is right; function
+modules are left out because they overlap the calibration set. The \emph{bit error rate}
+(BER) is the share of layer bits that are wrong before Reed-Solomon correction, over the
+same modules, as reported by HiQ~\cite{yang2018hiq}. The \emph{layer decode rate} counts
+HiQ layers whose message is right. The \emph{symbol decode rate} counts symbols decoded in
+full; HiQ's decoding failure rate is 100 minus this rate.
+
+Decode rates carry 95\% Wilson intervals~\cite{wilson1927}. Two settings on the same
+photographs are compared with an exact McNemar test~\cite{mcnemar1947} on the photographs
+that one decodes and the other does not. The two parameters, $\beta$ and $\lambda$, are
+chosen by symbol decode rate on each dataset separately, and we report whether the choice
+made on one dataset holds on the other.
+
+\subsection{Baselines}
+
+The color recovery baselines all use the same calibration modules as our method.
+\emph{Nearest centroid} assigns the closest calibration median in raw RGB, in optical
+density relative to the white calibration modules, or after a per-channel stretch that
+maps the black and white medians to 0 and~1. \emph{Interference cancellation} follows
+Blasinski et al.~\cite{blasinski2013pccc}: a non-negative $3\times 3$ mixing matrix is
+fitted to the calibration samples in optical density or absorptance and inverted, and each
+recovered channel is thresholded midway between the nearest on and off calibration colors, or
+with a local block threshold. A \emph{local threshold} on the raw channels mirrors
+monochrome QR binarization. On qrism symbols we also run the hard-decision classifier of
+JAB Code~\cite{iso23634} with its image balancing, using one palette of calibration medians
+because no qrism finder carries all eight colors. \emph{LDA} and \emph{QDA} are the
+$\lambda=1$ and $\lambda=0$ ends of our classifier without leak inversion.
+
+As an end-to-end reference we run the released HiQ decoder~\cite{yang2018hiq} with its
+shipped models: QDA, QDA with cross-module interference correction (CMI), and a layered
+SVM. In the released code the CMI step keeps only the center module's term and drops the
+four neighbor terms, so QDA with and without CMI give identical results; we also report a
+corrected version that applies all five terms. HiQ uses its own localization and sampling,
+so this comparison is of complete decoders, not of color recovery alone
+(Section~\ref{sec:hiq}).

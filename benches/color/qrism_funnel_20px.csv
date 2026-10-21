@@ -1,0 +1,100 @@
+pipeline,heuristic,photos,detected%,data%,ch_r%,ch_g%,ch_b%,code%
+euclid raw,regular,560,92.3,90.7,88.0,54.7,32.7,26.9
+euclid raw,close,28,100.0,90.6,100.0,39.3,21.4,21.4
+euclid raw,daylight,140,92.9,94.0,93.8,77.7,59.2,56.2
+euclid raw,flashlight,280,83.6,87.4,81.6,39.7,34.2,27.4
+euclid raw,monitor,140,35.0,97.1,93.9,95.9,95.9,93.9
+euclid raw,perspective,32,0.0,0.0,0.0,0.0,0.0,0.0
+euclid raw,wb-cool,140,12.9,93.6,88.9,66.7,44.4,44.4
+euclid raw,wb-neutral,140,50.7,92.4,100.0,63.4,35.2,35.2
+euclid raw,wb-warm,140,59.3,82.5,88.0,47.0,2.4,2.4
+euclid intensity,regular,560,92.9,87.4,77.3,27.3,22.5,12.7
+euclid intensity,close,28,100.0,89.9,67.9,32.1,35.7,32.1
+euclid intensity,daylight,140,92.9,84.4,53.1,30.0,27.7,22.3
+euclid intensity,flashlight,280,83.2,84.6,69.5,30.0,21.9,10.7
+euclid intensity,monitor,140,35.0,87.2,30.6,34.7,49.0,12.2
+euclid intensity,perspective,32,0.0,0.0,0.0,0.0,0.0,0.0
+euclid intensity,wb-cool,140,12.9,84.9,94.4,0.0,0.0,0.0
+euclid intensity,wb-neutral,140,50.7,88.3,98.6,11.3,47.9,5.6
+euclid intensity,wb-warm,140,59.3,84.0,84.3,24.1,4.8,4.8
+black/white euclid,regular,560,92.3,90.6,88.0,54.4,32.3,26.7
+black/white euclid,close,28,100.0,90.8,100.0,35.7,28.6,25.0
+black/white euclid,daylight,140,92.9,94.0,93.8,77.7,59.2,56.2
+black/white euclid,flashlight,280,83.6,87.3,82.1,38.5,33.3,26.9
+black/white euclid,monitor,140,35.0,97.1,93.9,95.9,95.9,93.9
+black/white euclid,perspective,32,0.0,0.0,0.0,0.0,0.0,0.0
+black/white euclid,wb-cool,140,12.9,93.4,100.0,72.2,38.9,38.9
+black/white euclid,wb-neutral,140,50.7,92.3,100.0,63.4,35.2,35.2
+black/white euclid,wb-warm,140,59.3,83.1,88.0,47.0,8.4,8.4
+per-colorant int + adp,regular,560,92.9,92.2,66.2,58.8,47.1,33.1
+per-colorant int + adp,close,28,100.0,95.5,67.9,85.7,75.0,67.9
+per-colorant int + adp,daylight,140,92.9,92.5,56.9,55.4,61.5,47.7
+per-colorant int + adp,flashlight,280,83.2,87.3,63.1,42.9,39.5,29.2
+per-colorant int + adp,monitor,140,35.0,94.8,79.6,81.6,79.6,73.5
+per-colorant int + adp,perspective,32,0.0,0.0,0.0,0.0,0.0,0.0
+per-colorant int + adp,wb-cool,140,12.9,96.4,88.9,77.8,83.3,77.8
+per-colorant int + adp,wb-neutral,140,51.4,97.0,98.6,97.2,86.1,86.1
+per-colorant int + adp,wb-warm,140,59.3,90.8,88.0,74.7,22.9,22.9
+mahalanobis lda (raw),regular,560,92.9,93.4,92.1,61.7,51.9,41.2
+mahalanobis lda (raw),close,28,100.0,97.5,92.9,89.3,82.1,78.6
+mahalanobis lda (raw),daylight,140,92.9,94.6,92.3,76.2,63.1,62.3
+mahalanobis lda (raw),flashlight,280,83.9,88.6,80.4,39.6,37.4,25.1
+mahalanobis lda (raw),monitor,140,35.0,97.2,95.9,95.9,95.9,95.9
+mahalanobis lda (raw),perspective,32,0.0,0.0,0.0,0.0,0.0,0.0
+mahalanobis lda (raw),wb-cool,140,12.9,93.2,94.4,72.2,44.4,44.4
+mahalanobis lda (raw),wb-neutral,140,51.4,90.1,98.6,34.7,26.4,22.2
+mahalanobis lda (raw),wb-warm,140,57.9,85.5,90.1,19.8,8.6,3.7
+mahalanobis qda (raw),regular,560,92.7,89.8,79.4,45.5,41.2,29.9
+mahalanobis qda (raw),close,28,100.0,95.2,85.7,67.9,50.0,46.4
+mahalanobis qda (raw),daylight,140,92.9,90.1,72.3,46.2,56.9,41.5
+mahalanobis qda (raw),flashlight,280,82.9,83.9,65.1,24.6,28.0,11.6
+mahalanobis qda (raw),monitor,140,35.0,93.4,69.4,81.6,85.7,67.3
+mahalanobis qda (raw),perspective,32,0.0,0.0,0.0,0.0,0.0,0.0
+mahalanobis qda (raw),wb-cool,140,12.9,86.2,55.6,27.8,38.9,27.8
+mahalanobis qda (raw),wb-neutral,140,50.7,87.2,73.2,36.6,26.8,19.7
+mahalanobis qda (raw),wb-warm,140,56.4,82.2,91.1,24.1,10.1,3.8
+mahalanobis rda (raw),regular,560,92.9,93.7,91.0,65.4,58.1,49.0
+mahalanobis rda (raw),close,28,100.0,98.0,96.4,89.3,85.7,82.1
+mahalanobis rda (raw),daylight,140,92.9,94.4,90.8,68.5,63.1,61.5
+mahalanobis rda (raw),flashlight,280,82.9,89.5,81.5,40.1,41.4,26.3
+mahalanobis rda (raw),monitor,140,35.0,97.2,95.9,95.9,95.9,95.9
+mahalanobis rda (raw),perspective,32,0.0,0.0,0.0,0.0,0.0,0.0
+mahalanobis rda (raw),wb-cool,140,12.9,92.7,88.9,66.7,38.9,38.9
+mahalanobis rda (raw),wb-neutral,140,51.4,90.3,98.6,38.9,29.2,23.6
+mahalanobis rda (raw),wb-warm,140,57.9,85.9,91.4,24.7,13.6,8.6
+rda + deblur b=.04,regular,560,92.9,94.8,93.7,76.5,70.4,65.0
+rda + deblur b=.04,close,28,100.0,98.5,100.0,92.9,85.7,78.6
+rda + deblur b=.04,daylight,140,92.9,95.0,92.3,66.9,63.1,58.5
+rda + deblur b=.04,flashlight,280,83.2,91.5,85.4,47.2,52.4,36.9
+rda + deblur b=.04,monitor,140,35.0,97.3,93.9,95.9,95.9,93.9
+rda + deblur b=.04,perspective,32,0.0,0.0,0.0,0.0,0.0,0.0
+rda + deblur b=.04,wb-cool,140,12.9,95.7,88.9,77.8,50.0,50.0
+rda + deblur b=.04,wb-neutral,140,51.4,93.6,98.6,72.2,40.3,37.5
+rda + deblur b=.04,wb-warm,140,59.3,89.4,89.2,51.8,24.1,22.9
+rda + deblur b=.05,regular,560,92.9,94.8,93.8,76.7,70.0,64.0
+rda + deblur b=.05,close,28,100.0,98.4,100.0,92.9,85.7,78.6
+rda + deblur b=.05,daylight,140,92.9,94.9,92.3,63.1,63.1,54.6
+rda + deblur b=.05,flashlight,280,83.2,91.9,86.7,50.2,54.5,40.3
+rda + deblur b=.05,monitor,140,35.0,97.3,93.9,95.9,95.9,93.9
+rda + deblur b=.05,perspective,32,0.0,0.0,0.0,0.0,0.0,0.0
+rda + deblur b=.05,wb-cool,140,12.9,96.1,94.4,77.8,55.6,50.0
+rda + deblur b=.05,wb-neutral,140,51.4,94.4,98.6,73.6,52.8,51.4
+rda + deblur b=.05,wb-warm,140,59.3,90.1,89.2,55.4,28.9,27.7
+rda + deblur b=.06,regular,560,92.7,94.8,94.2,72.8,71.3,62.2
+rda + deblur b=.06,close,28,100.0,98.2,100.0,92.9,89.3,85.7
+rda + deblur b=.06,daylight,140,92.9,94.6,93.8,53.8,63.8,46.9
+rda + deblur b=.06,flashlight,280,83.2,92.2,87.6,53.2,55.4,42.9
+rda + deblur b=.06,monitor,140,35.0,97.3,93.9,95.9,93.9,91.8
+rda + deblur b=.06,perspective,32,0.0,0.0,0.0,0.0,0.0,0.0
+rda + deblur b=.06,wb-cool,140,12.9,96.4,94.4,77.8,66.7,61.1
+rda + deblur b=.06,wb-neutral,140,51.4,95.1,98.6,75.0,62.5,61.1
+rda + deblur b=.06,wb-warm,140,59.3,90.6,89.2,59.0,33.7,33.7
+jabcode (balanced),regular,560,92.9,88.6,79.8,22.9,39.0,20.0
+jabcode (balanced),close,28,100.0,89.9,71.4,32.1,42.9,32.1
+jabcode (balanced),daylight,140,92.9,91.9,82.3,56.2,56.2,53.8
+jabcode (balanced),flashlight,280,83.6,86.9,73.5,22.6,44.0,22.2
+jabcode (balanced),monitor,140,35.0,97.1,93.9,95.9,95.9,93.9
+jabcode (balanced),perspective,32,0.0,0.0,0.0,0.0,0.0,0.0
+jabcode (balanced),wb-cool,140,12.9,93.2,100.0,27.8,55.6,27.8
+jabcode (balanced),wb-neutral,140,51.4,90.2,97.2,12.5,37.5,8.3
+jabcode (balanced),wb-warm,140,59.3,79.7,85.5,4.8,2.4,2.4

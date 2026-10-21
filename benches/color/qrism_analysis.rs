@@ -20,6 +20,13 @@
 //! - `qrism_confusion.csv`: a truth x detected colour matrix over data modules, per pipeline.
 //! - `qrism_funnel.csv`: detected -> data-module accuracy -> channel pass -> decoded.
 //! - `qrism_ec.csv`: channel pass and decode rate by EC level.
+//! - `qrism_photos.csv`: one row per photo and pipeline, with raw counts, so tables can be
+//!   rebuilt on any subset and paired tests run between pipelines.
+//!
+//! The funnel CSV also carries raw counts after its percentage columns. `localized` counts
+//! photos the localizer found at the right version, whatever the pipeline then made of them;
+//! `loc_data_*` and `loc_bit_err_*` pool modules over those photos, format misreads
+//! included, which is the common denominator the `sweep` pass uses.
 //!
 //! [`MODULE_SIZE`] restricts the run to one module size; the CSV names then carry it as a
 //! suffix (`qrism_funnel_20px.csv`), so filtered and unfiltered reports sit side by side.
@@ -61,7 +68,7 @@ const BASE: &str = "benches/dataset/high_capacity/qrism";
 
 /// Only photos at this module size are reported; `None` takes every size. `small` holds 8 px
 /// symbols only, so it drops out of a 12 or 20 px run.
-const MODULE_SIZE: Option<usize> = Some(20);
+const MODULE_SIZE: Option<usize> = None;
 
 /// Where one of the report's CSVs goes, suffixed with the module size when filtered.
 fn csv_path(table: &str) -> String {
@@ -99,12 +106,14 @@ fn ec_level(c: char) -> ECLevel {
 // Dataset
 //------------------------------------------------------------------------------
 
-struct Photo {
-    path: PathBuf,
-    phone: String,
-    heuristic: String,
-    version: usize,
-    ec: char,
+pub(crate) struct Photo {
+    pub(crate) path: PathBuf,
+    pub(crate) phone: String,
+    pub(crate) heuristic: String,
+    pub(crate) version: usize,
+    pub(crate) ec: char,
+    /// Pixels per module in the source render, from the file name.
+    pub(crate) size: usize,
 }
 
 /// Parses `{version}-{ec}-{size}_{rep}`.
@@ -131,6 +140,11 @@ fn name_of(p: &Path) -> String {
 }
 
 fn list_photos() -> Vec<Photo> {
+    list_photos_sized(MODULE_SIZE)
+}
+
+/// Every photo in the dataset, keeping only module size `filter` when given.
+pub(crate) fn list_photos_sized(filter: Option<usize>) -> Vec<Photo> {
     let mut out = Vec::new();
     for phone_dir in list_dirs(Path::new(BASE)) {
         let phone = name_of(&phone_dir);
@@ -156,7 +170,7 @@ fn list_photos() -> Vec<Photo> {
                     println!("  skipping unparseable file name {}", path.display());
                     continue;
                 };
-                if MODULE_SIZE.is_some_and(|s| s != size) {
+                if filter.is_some_and(|s| s != size) {
                     continue;
                 }
                 out.push(Photo {
@@ -165,6 +179,7 @@ fn list_photos() -> Vec<Photo> {
                     heuristic: heuristic.clone(),
                     version,
                     ec,
+                    size,
                 });
             }
         }
@@ -186,16 +201,16 @@ fn qrism_calibration_coords(ver: Version) -> Vec<(i32, i32)> {
 }
 
 /// Ground truth for one (version, EC level) source render.
-struct Reference {
-    truth: Vec<Vec<Color>>,
-    groups: [Vec<(i32, i32)>; 8],
-    func: Vec<Vec<bool>>,
-    ecl: ECLevel,
-    mask: MaskPattern,
-    message: String,
+pub(crate) struct Reference {
+    pub(crate) truth: Vec<Vec<Color>>,
+    pub(crate) groups: [Vec<(i32, i32)>; 8],
+    pub(crate) func: Vec<Vec<bool>>,
+    pub(crate) ecl: ECLevel,
+    pub(crate) mask: MaskPattern,
+    pub(crate) message: String,
 }
 
-fn load_references() -> HashMap<(usize, char), Reference> {
+pub(crate) fn load_references() -> HashMap<(usize, char), Reference> {
     let mut refs = HashMap::new();
     for v in VERSIONS {
         for ec in ECS {
@@ -229,21 +244,25 @@ fn load_references() -> HashMap<(usize, char), Reference> {
 /// What one pipeline made of one photo. `None` when the photo was never detected: the
 /// localizer missed it, found another version, or this pipeline misread the format.
 struct Outcome {
+    /// The pipeline read the right format info off its predicted grid. Everything below is
+    /// still filled in when it did not, except that nothing can then decode.
+    format_ok: bool,
     data_correct: u32,
     data_total: u32,
+    /// Channel bits that differ from the source over data modules, indexed R, G, B.
+    bit_err: [u32; 3],
     /// Truth x detected colour counts over data modules.
     conf: [[u32; 8]; 8],
     ch_pass: [bool; 3],
     decoded: bool,
 }
 
-fn score(reference: &Reference, ver: Version, pred: &[Vec<Color>]) -> Option<Outcome> {
-    if read_grid_format(pred) != Some((reference.ecl, reference.mask)) {
-        return None;
-    }
+fn score(reference: &Reference, ver: Version, pred: &[Vec<Color>]) -> Outcome {
+    let format_ok = read_grid_format(pred) == Some((reference.ecl, reference.mask));
 
     let grid = pred.len();
     let (mut data_correct, mut data_total) = (0, 0);
+    let mut bit_err = [0u32; 3];
     let mut conf = [[0u32; 8]; 8];
     for gy in 0..grid {
         for gx in 0..grid {
@@ -254,13 +273,28 @@ fn score(reference: &Reference, ver: Version, pred: &[Vec<Color>]) -> Option<Out
             data_total += 1;
             data_correct += (t == d) as u32;
             conf[ci(t)][ci(d)] += 1;
+            let diff = t as u8 ^ d as u8;
+            for (ch, e) in bit_err.iter_mut().enumerate() {
+                *e += ((diff >> (2 - ch)) & 1) as u32;
+            }
         }
     }
 
-    let dec = decode_hc_grid(pred, ver, reference.ecl, reference.mask);
-    let ch_pass = std::array::from_fn(|ch| dec.block_ok[ch].iter().all(|&ok| ok));
-    let decoded = matches!(&dec.payload, Payload::Decoded(m) if *m == reference.message);
-    Some(Outcome { data_correct, data_total, conf, ch_pass, decoded })
+    let mut out = Outcome {
+        format_ok,
+        data_correct,
+        data_total,
+        bit_err,
+        conf,
+        ch_pass: [false; 3],
+        decoded: false,
+    };
+    if format_ok {
+        let dec = decode_hc_grid(pred, ver, reference.ecl, reference.mask);
+        out.ch_pass = std::array::from_fn(|ch| dec.block_ok[ch].iter().all(|&ok| ok));
+        out.decoded = matches!(&dec.payload, Payload::Decoded(m) if *m == reference.message);
+    }
+    out
 }
 
 fn run_pipelines(
@@ -322,9 +356,10 @@ fn run_pipelines(
     ]
 }
 
-/// One outcome per pipeline, all `None` when the localizer missed the photo.
-fn analyze(photo: &Photo, refs: &HashMap<(usize, char), Reference>) -> Vec<Option<Outcome>> {
-    let missed = || PIPELINES.iter().map(|_| None).collect();
+/// One outcome per pipeline, or `None` when the localizer missed the photo or found another
+/// version.
+fn analyze(photo: &Photo, refs: &HashMap<(usize, char), Reference>) -> Option<Vec<Outcome>> {
+    let missed = || None;
 
     let reference = refs
         .get(&(photo.version, photo.ec))
@@ -355,10 +390,12 @@ fn analyze(photo: &Photo, refs: &HashMap<(usize, char), Reference>) -> Vec<Optio
     }
     let raw = sample_groups(&reference.groups, &rgb);
 
-    run_pipelines(grid, &rgb, &raw, &reference.groups, &BalanceRgb::fit(&img))
-        .iter()
-        .map(|pred| score(reference, ver, pred))
-        .collect()
+    Some(
+        run_pipelines(grid, &rgb, &raw, &reference.groups, &BalanceRgb::fit(&img))
+            .iter()
+            .map(|pred| score(reference, ver, pred))
+            .collect(),
+    )
 }
 
 // Aggregation
@@ -367,6 +404,13 @@ fn analyze(photo: &Photo, refs: &HashMap<(usize, char), Reference>) -> Vec<Optio
 #[derive(Default)]
 struct Agg {
     photos: u32,
+    /// Found at the right version by the localizer; the common denominator across pipelines.
+    localized: u32,
+    /// Modules and bit errors pooled over localized photos, format misreads included.
+    loc_data_correct: u64,
+    loc_data_total: u64,
+    loc_bit_err: [u64; 3],
+    /// Localized and the pipeline read the right format: the funnel's denominator.
     detected: u32,
     /// Sum of per-photo data-module accuracy over detected photos, averaged in [`Agg::data`].
     data_acc: f64,
@@ -376,9 +420,18 @@ struct Agg {
 }
 
 impl Agg {
-    fn add(&mut self, o: &Option<Outcome>) {
+    fn add(&mut self, o: Option<&Outcome>) {
         self.photos += 1;
         let Some(o) = o else { return };
+        self.localized += 1;
+        self.loc_data_correct += o.data_correct as u64;
+        self.loc_data_total += o.data_total as u64;
+        for (t, &e) in self.loc_bit_err.iter_mut().zip(&o.bit_err) {
+            *t += e as u64;
+        }
+        if !o.format_ok {
+            return;
+        }
         self.detected += 1;
         self.data_acc += o.data_correct as f64 / o.data_total.max(1) as f64;
         for ch in 0..3 {
@@ -460,12 +513,14 @@ fn f1(x: f64) -> String {
 //------------------------------------------------------------------------------
 
 pub fn benchmark_qrism() {
-    let sizes = MODULE_SIZE.map(|s| format!("{s} px modules only")).unwrap_or("all module sizes".into());
+    let sizes =
+        MODULE_SIZE.map(|s| format!("{s} px modules only")).unwrap_or("all module sizes".into());
     println!("\n\n########## colour pipeline report: qrism dataset, {sizes} ##########");
     let refs = load_references();
     let photos = list_photos();
-    let outcomes: Vec<Vec<Option<Outcome>>> =
+    let outcomes: Vec<Option<Vec<Outcome>>> =
         photos.par_iter().map(|p| analyze(p, &refs)).collect();
+    write_photos(&photos, &outcomes);
 
     // `regular` first as the baseline, the rest alphabetically.
     let mut heuristics: Vec<&str> =
@@ -476,7 +531,7 @@ pub fn benchmark_qrism() {
         let mut a = Agg::default();
         for (p, o) in photos.iter().zip(&outcomes) {
             if p.heuristic == heur && ec.is_none_or(|e| p.ec == e) {
-                a.add(&o[pi]);
+                a.add(o.as_ref().map(|v| &v[pi]));
             }
         }
         a
@@ -489,16 +544,33 @@ pub fn benchmark_qrism() {
     let mut funnel_csv = PipelineCsv::new(
         csv_path("funnel"),
         &[],
-        &["photos", "detected%", "data%", "ch_r%", "ch_g%", "ch_b%", "code%"],
+        &[
+            "photos",
+            "detected%",
+            "data%",
+            "ch_r%",
+            "ch_g%",
+            "ch_b%",
+            "code%",
+            "localized",
+            "detected",
+            "decoded",
+            "ch_r",
+            "ch_g",
+            "ch_b",
+            "loc_data_correct",
+            "loc_data_total",
+            "loc_bit_err_r",
+            "loc_bit_err_g",
+            "loc_bit_err_b",
+        ],
     );
-    let mut ec_csv = PipelineCsv::new(csv_path("ec"), &["ec"], &["ch_r%", "ch_g%", "ch_b%", "code%"]);
+    let mut ec_csv =
+        PipelineCsv::new(csv_path("ec"), &["ec"], &["ch_r%", "ch_g%", "ch_b%", "code%"]);
 
     for &heur in &heuristics {
-        let phones: BTreeSet<&str> = photos
-            .iter()
-            .filter(|p| p.heuristic == heur)
-            .map(|p| p.phone.as_str())
-            .collect();
+        let phones: BTreeSet<&str> =
+            photos.iter().filter(|p| p.heuristic == heur).map(|p| p.phone.as_str()).collect();
         let n = photos.iter().filter(|p| p.heuristic == heur).count();
         println!(
             "\n\n==================== {heur} — {n} photos from {} ====================",
@@ -518,6 +590,10 @@ pub fn benchmark_qrism() {
             print_row(pipe, 26, &cells, 11);
             let mut row = vec![a.photos.to_string()];
             row.extend(cells);
+            row.extend([a.localized, a.detected, a.decoded].map(|n| n.to_string()));
+            row.extend(a.ch_pass.map(|n| n.to_string()));
+            row.extend([a.loc_data_correct, a.loc_data_total].map(|n| n.to_string()));
+            row.extend(a.loc_bit_err.map(|n| n.to_string()));
             funnel_csv.push(pi, heur, &[], &row);
         }
 
@@ -554,7 +630,11 @@ pub fn benchmark_qrism() {
 
                 let mut row: Vec<String> = a.conf[t].iter().map(|c| c.to_string()).collect();
                 row.push(tot.to_string());
-                row.push(if tot == 0 { String::new() } else { f1(100.0 * a.conf[t][t] as f64 / tot as f64) });
+                row.push(if tot == 0 {
+                    String::new()
+                } else {
+                    f1(100.0 * a.conf[t][t] as f64 / tot as f64)
+                });
                 conf_csv.push(pi, heur, &[tname], &row);
             }
         }
@@ -564,5 +644,58 @@ pub fn benchmark_qrism() {
     funnel_csv.write();
     ec_csv.write();
 
-    println!("\n  wrote {}, {} and {}", conf_csv.path, funnel_csv.path, ec_csv.path);
+    println!(
+        "\n  wrote {}, {}, {} and {}",
+        conf_csv.path,
+        funnel_csv.path,
+        ec_csv.path,
+        csv_path("photos")
+    );
+}
+
+/// One row per photo and pipeline. A photo the localizer missed still gets its rows, with
+/// `localized` 0, so the file lists every photo attempted.
+fn write_photos(photos: &[Photo], outcomes: &[Option<Vec<Outcome>>]) {
+    let path = csv_path("photos");
+    let mut f = BufWriter::new(File::create(&path).unwrap_or_else(|e| panic!("{path}: {e}")));
+    writeln!(
+        f,
+        "path,phone,heuristic,size,version,ec,pipeline,localized,format_ok,data_correct,\
+         data_total,bit_err_r,bit_err_g,bit_err_b,ch_r,ch_g,ch_b,decoded"
+    )
+    .unwrap();
+    for (p, o) in photos.iter().zip(outcomes) {
+        for (pi, pipe) in PIPELINES.iter().enumerate() {
+            let head = format!(
+                "{},{},{},{},{},{},{pipe}",
+                p.path.display(),
+                p.phone,
+                p.heuristic,
+                p.size,
+                p.version,
+                p.ec
+            );
+            match o {
+                None => writeln!(f, "{head},0,0,0,0,0,0,0,0,0,0,0").unwrap(),
+                Some(v) => {
+                    let o = &v[pi];
+                    writeln!(
+                        f,
+                        "{head},1,{},{},{},{},{},{},{},{},{},{}",
+                        o.format_ok as u8,
+                        o.data_correct,
+                        o.data_total,
+                        o.bit_err[0],
+                        o.bit_err[1],
+                        o.bit_err[2],
+                        o.ch_pass[0] as u8,
+                        o.ch_pass[1] as u8,
+                        o.ch_pass[2] as u8,
+                        o.decoded as u8
+                    )
+                    .unwrap()
+                }
+            }
+        }
+    }
 }

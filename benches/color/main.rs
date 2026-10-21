@@ -25,6 +25,8 @@
 //!   cargo bench --features benchmark --bench color -- accuracy
 //!   cargo bench --features benchmark --bench color -- timing
 //!   cargo bench --features benchmark --bench color -- qrism
+//!   cargo bench --features benchmark --bench color -- sweep    (opt-in, not run by default)
+//!   cargo bench --features benchmark --bench color -- shrink   (opt-in, not run by default)
 
 pub(crate) mod calibration;
 pub(crate) mod deblur;
@@ -35,6 +37,7 @@ pub(crate) mod thresholding;
 
 mod analysis;
 mod qrism_analysis;
+mod sweep;
 
 fn main() {
     // `cargo bench` passes its own flags (e.g. --bench); treat only bare words as pass names.
@@ -49,5 +52,12 @@ fn main() {
     }
     if run("qrism") {
         qrism_analysis::benchmark_qrism();
+    }
+    // The sweeps repeat both datasets at many settings, so they run only when named.
+    if args.iter().any(|a| a == "sweep") {
+        sweep::benchmark_sweep();
+    }
+    if args.iter().any(|a| a == "shrink") {
+        sweep::benchmark_shrink();
     }
 }

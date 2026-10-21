@@ -1,0 +1,30 @@
+\section{Multiplexed QR Symbols}
+\label{sec:symbol}
+
+Both symbol designs studied here stack three binary QR layers, one per RGB channel, so
+that each module shows one of eight colors: the color's red, green and blue bits are the
+module's bits in the three layers. A layer bit of 1 is drawn with its channel off, which
+matches the dark-module convention of a monochrome QR code~\cite{iso18004}.
+
+\emph{HiQ}~\cite{yang2018hiq} encodes three independent messages, one standard QR code per
+layer, so each layer can be decoded on its own once the colors are recovered.
+
+\emph{qrism}, the design implemented in the open-source library this work builds on,
+encodes one message. Its codeword stream is split into three equal parts, each written to
+one channel with its own Reed-Solomon blocks, so a symbol decodes only when all three
+channels do. The finder patterns use the same complementary color pairs as HiQ (green ring
+and magenta stone top left, red and cyan top right, blue and yellow bottom left). Alignment
+patterns, timing patterns, and format and version information are black and white, as in a
+monochrome QR code.
+
+\subsection{Decoding pipeline}
+
+A decoder for either design runs four stages. (1)~\emph{Localization} finds the finder
+and alignment patterns and fits a homography per region of the symbol. In the library used
+here this runs on a min-channel projection of the photograph, which keeps colored finder
+rings dark, with sub-pixel finder and alignment centers. (2)~\emph{Sampling} reads one pixel
+at the projected center of every module. (3)~\emph{Color recovery} assigns each sample one
+of the eight colors. (4)~\emph{Decoding} splits the color grid into its three layers and
+runs standard Reed-Solomon decoding on each. This paper is about stage~(3); the experiments
+in Section~\ref{sec:setup} hold stages (1), (2) and (4) fixed so that only color recovery
+varies.

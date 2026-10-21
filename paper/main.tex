@@ -1,0 +1,44 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{url}
+
+% Draft markers. Remove before submission; `grep -n todo sections/*.tex` lists what is left.
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+
+% Every number in the text and tables comes from the bench outputs through
+% scripts/make_tables.py. Edit the script, not these files.
+\input{generated/numbers}
+
+\begin{document}
+
+\title{Training-Free Color Recovery for\\ High-Density Multiplexed QR Codes}
+
+\author{\IEEEauthorblockN{Mohnish Salian}
+\IEEEauthorblockA{\todo{affiliation}\\
+mohnishsalian02@gmail.com}
+\and
+\IEEEauthorblockN{\todo{co-author}}
+\IEEEauthorblockA{\todo{affiliation}}}
+
+\maketitle
+
+\input{sections/abstract}
+\input{sections/intro}
+\input{sections/related}
+\input{sections/symbol}
+\input{sections/method}
+\input{sections/setup}
+\input{sections/results}
+\input{sections/limitations}
+\input{sections/conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}

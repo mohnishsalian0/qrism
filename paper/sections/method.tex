@@ -1,0 +1,91 @@
+\section{Color Recovery}
+\label{sec:method}
+
+Let $\mathbf{m}_p \in \mathbb{R}^3$ be the RGB value sampled at module $p$ of an
+$N \times N$ grid and $c_p \in \{0,\dots,7\}$ its color. The sample departs from the
+printed or displayed color in three ways~\cite{yang2018hiq}: illumination and white balance
+shift and scale all samples of a photograph; cross-channel interference mixes the layers
+within a module, because colorant spectra and camera sensitivities overlap; and
+cross-module interference mixes each module with its neighbors through lens blur, ink
+spread and the chroma subsampling of JPEG compression. The method handles the first two by
+fitting a class-conditional Gaussian model to each photograph, and the third by undoing a
+fixed linear leak between neighboring modules before that fit. Nothing is trained offline.
+
+\subsection{Calibration from function patterns}
+
+Every photograph supplies its own labelled samples. The QR specification fixes the
+position of the finder, alignment and timing patterns, and both symbol designs fix their
+colors, so a decoder knows the true color of these modules before reading any data. The
+calibration set is the three $8\times 8$ finder blocks, including their white separators,
+and every $5\times 5$ alignment pattern. For qrism symbols the two timing lines are added,
+because version~1 has no alignment pattern and its finders contain no black module.
+
+The resulting classes are unbalanced. In a HiQ photograph black appears only in one
+alignment pattern and contributes 17 samples, against several hundred for white. This is
+the main reason the classifier below regularizes its covariances.
+
+\subsection{Inter-module leak inversion}
+
+Cross-module interference is modeled as a symmetric leak between each module and its
+edge neighbors. With $\mathcal{N}(p)$ the up to four edge neighbors of $p$ inside the grid,
+$n_p = |\mathcal{N}(p)|$, and $\mathbf{t}_p$ the value the module would have without
+leakage,
+\begin{equation}
+\mathbf{m}_p = (1 - n_p\beta)\,\mathbf{t}_p + \beta \sum_{q \in \mathcal{N}(p)} \mathbf{m}_q ,
+\label{eq:leak}
+\end{equation}
+where $\beta$ is the fraction each neighbor contributes. Writing the neighbors' term with
+their measured rather than true values makes the model invertible in one pass:
+\begin{equation}
+\hat{\mathbf{t}}_p = \frac{\mathbf{m}_p - \beta \sum_{q \in \mathcal{N}(p)} \mathbf{m}_q}{1 - n_p\beta} .
+\label{eq:inverse}
+\end{equation}
+The correction acts on the module grid rather than on pixels, costs four reads per module,
+and handles the symbol border by using each module's actual neighbor count. Inside a
+uniform region it returns the input unchanged, so it alters only modules next to a color
+change, which is where interference occurs. The gain $1/(1-4\beta)$ amplifies sensor noise
+and diverges at $\beta = 0.25$, so $\beta$ trades interference removed against noise
+added. We use one fixed $\beta = 0.06$ for every photograph and every channel; Section~\ref{sec:results}
+shows how it was chosen and how it varies with module size and lighting.
+
+Prior treatments of cross-module interference are heavier. HiQ's QDA-CMI and LSVM-CMI
+learn neighbor weights offline jointly with the classifier~\cite{yang2018hiq}, and
+Bagherinia and Manduchi decode blurred color patches by iterative joint
+estimation~\cite{bagherinia2014blur}. Equation~\eqref{eq:inverse} has one parameter, needs
+no training data and runs in a single pass.
+
+\subsection{Regularized discriminant analysis}
+
+After correction, the calibration samples of each color $c$ give a centroid
+$\boldsymbol{\mu}_c$, taken as the per-channel median, and a covariance $\Sigma_c$ about
+it. The pooled within-class covariance $\Sigma$ is the scatter of all calibration samples
+about their own class centroids. Each class covariance is shrunk toward the pooled one,
+\begin{equation}
+\Sigma_c(\lambda) = (1-\lambda)\,\Sigma_c + \lambda\,\Sigma ,
+\end{equation}
+following the first of the two regularizations of Friedman~\cite{friedman1989rda}. A class
+with fewer than eight samples uses $\Sigma$ directly, and a ridge of $10^{-3}$ times the
+mean variance keeps every matrix invertible. A module is assigned the color minimizing
+\begin{equation}
+g_c(\hat{\mathbf{t}}_p) = (\hat{\mathbf{t}}_p - \boldsymbol{\mu}_c)^{\top}\,
+\Sigma_c(\lambda)^{-1}\,(\hat{\mathbf{t}}_p - \boldsymbol{\mu}_c) + \ln\left|\Sigma_c(\lambda)\right| ,
+\end{equation}
+the Gaussian discriminant with equal priors. With $\lambda = 1$ this is linear
+discriminant analysis (LDA), and with $\lambda = 0$ quadratic discriminant analysis (QDA).
+We use $\lambda = 0.5$.
+
+The learned metric is what separates this classifier from nearest-centroid rules. Shading
+and exposure changes move all three channels together: in five CUHK-CQRC photographs we
+inspected, the pooled within-class correlations between channels are all positive, mostly
+between 0.4 and 0.8. A Euclidean distance cannot tell that drift from a change of color,
+which is why dark blue modules in shadow are read as black. The inverse covariance
+discounts the shared-brightness direction and weights differences across it.
+
+The calibration samples are taken from the corrected grid~\eqref{eq:inverse}, so the
+classifier is fitted in the space it is applied in. Per photograph the fit estimates eight
+centroids and covariances from a few hundred samples and inverts eight $3\times 3$
+matrices; per module it evaluates eight quadratic forms. On one core of an Apple M4 the
+whole color recovery stage, fit included, takes \TimeChosenNs{}\,ns
+per module, or \TimeChosenVforty{}\,ms for a version-40 symbol of $177\times 177$ modules.
+Leak inversion accounts for \TimeDeblurNs{}\,ns of this, against \TimeRdaNs{}\,ns for RDA alone.
+Image decoding and localization, which every pipeline shares, are not included.

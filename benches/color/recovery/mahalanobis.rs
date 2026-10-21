@@ -71,7 +71,7 @@ impl Mahalanobis {
 
     /// Fits centroids and covariances. `shrink` blends each class's own scatter toward the
     /// pooled scatter: 1.0 is fully pooled (LDA), 0.0 fully per-class (QDA).
-    fn fit(ng: &GroupedSamples, shrink: f64) -> Self {
+    pub(crate) fn fit(ng: &GroupedSamples, shrink: f64) -> Self {
         let palette: [[f64; 3]; 8] = std::array::from_fn(|c| median_rgb(&ng[c]));
 
         // Scatter of each class about its own centroid, accumulated per class and pooled.

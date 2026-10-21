@@ -34,10 +34,16 @@
 //! one Reed-Solomon block sink a layer that the same error budget scattered would survive. The
 //! reference messages come from decoding each version's clean render once, at startup.
 //!
+//! Besides the printed report, writes `benches/color/accuracy_hiq_photos.csv`: one row per
+//! photo and pipeline with raw counts, so tables can be rebuilt on any subset of photos (such
+//! as HiQ's own test split) and pipelines compared photo by photo.
+//!
 //! Run with:
 //!   cargo bench --features benchmark --bench color -- accuracy
 
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -96,7 +102,7 @@ pub(crate) const FOLDERS: [&str; 8] = ["01", "02", "03", "04", "05", "06", "07",
 /// The reference renders in `source/`, named by QR version. A photo whose detected version is
 /// not one of these has been misread by the localizer and is skipped rather than scored
 /// against the wrong ground truth.
-const VERSIONS: [usize; 5] = [21, 25, 30, 35, 40];
+pub(crate) const VERSIONS: [usize; 5] = [21, 25, 30, 35, 40];
 
 /// Photos taken from each capture folder, spread evenly over that folder's listing so a partial
 /// run still covers the mix of versions and conditions it holds. `usize::MAX` takes every photo
@@ -111,7 +117,7 @@ const SAMPLES_PER_FOLDER: usize = usize::MAX;
 pub(crate) struct Reference {
     pub(crate) truth: Vec<Vec<Color>>,
     pub(crate) groups: [Vec<(i32, i32)>; 8],
-    func: Vec<Vec<bool>>,
+    pub(crate) func: Vec<Vec<bool>>,
     pub(crate) messages: [String; 3],
 }
 
@@ -491,7 +497,7 @@ pub(crate) fn eval_channel<N: Normalizer, R: ChannelRecovery, T: Thresholder>(
 // Pipelines
 //------------------------------------------------------------------------------
 
-const PIPELINES: [&str; 15] = [
+const PIPELINES: [&str; 16] = [
     "euclid raw",
     "euclid intensity",
     "black/white euclid",
@@ -504,6 +510,7 @@ const PIPELINES: [&str; 15] = [
     "mahalanobis rda (raw)",
     "rda + deblur fit",
     "rda + deblur b=.04",
+    "rda + deblur b=.06",
     "rda + deblur b=.08",
     "rda + deblur b=.12",
     "rda + deblur optical",
@@ -616,9 +623,10 @@ fn run_pipelines(
 
     let rda_db_fit = timed(&mut times[10], || run_deblur(Deblur::fit(rgb, groups)));
     let rda_db_04 = timed(&mut times[11], || run_deblur(Deblur::fixed(0.04)));
-    let rda_db_08 = timed(&mut times[12], || run_deblur(Deblur::fixed(0.08)));
-    let rda_db_12 = timed(&mut times[13], || run_deblur(Deblur::fixed(0.12)));
-    let rda_db_opt = timed(&mut times[14], || run_deblur(Deblur::per_channel(beta_optical)));
+    let rda_db_06 = timed(&mut times[12], || run_deblur(Deblur::fixed(BEST_BETA)));
+    let rda_db_08 = timed(&mut times[13], || run_deblur(Deblur::fixed(0.08)));
+    let rda_db_12 = timed(&mut times[14], || run_deblur(Deblur::fixed(0.12)));
+    let rda_db_opt = timed(&mut times[15], || run_deblur(Deblur::per_channel(beta_optical)));
 
     (
         [
@@ -634,6 +642,7 @@ fn run_pipelines(
             maha_rda,
             rda_db_fit,
             rda_db_04,
+            rda_db_06,
             rda_db_08,
             rda_db_12,
             rda_db_opt,
@@ -724,7 +733,7 @@ pub(crate) struct Sampled {
     /// Blur measured off the finder patterns in the photograph itself, as a 5-point leak
     /// fraction. Computed here because it needs the symbol geometry and the source pixels,
     /// neither of which survives into the module grid.
-    beta_optical: [f64; 3],
+    pub(crate) beta_optical: [f64; 3],
     /// The blur width behind `beta_optical`, kept for reporting.
     sigma_optical: [f64; 3],
 }
@@ -845,6 +854,15 @@ pub fn benchmark_accuracy() {
         FOLDERS.into_iter().map(|f| (f, new_scores())).collect();
 
     let (mut attempted, mut scored) = (0usize, 0usize);
+    let photos_csv = "benches/color/accuracy_hiq_photos.csv";
+    let mut photo_rows =
+        BufWriter::new(File::create(photos_csv).unwrap_or_else(|e| panic!("{photos_csv}: {e}")));
+    writeln!(
+        photo_rows,
+        "path,version,pipeline,localized,data_correct,data_total,bit_err_r,bit_err_g,bit_err_b,\
+         layers_ok,decoded"
+    )
+    .unwrap();
     let (mut unreadable, mut no_symbol, mut no_tile) = (0usize, 0usize, 0usize);
     let mut bad_version: HashMap<usize, usize> = HashMap::new();
 
@@ -859,9 +877,30 @@ pub fn benchmark_accuracy() {
 
         for (path, outcome) in files.iter().zip(outcomes) {
             attempted += 1;
+            if !matches!(outcome, Outcome::Scored(..)) {
+                for pipe in PIPELINES {
+                    writeln!(photo_rows, "{},,{pipe},0,0,0,0,0,0,0,0", path.display()).unwrap();
+                }
+            }
             match outcome {
                 Outcome::Scored(v, res) => {
                     scored += 1;
+                    for (pi, s) in res.scores.iter().enumerate() {
+                        writeln!(
+                            photo_rows,
+                            "{},{v},{},1,{},{},{},{},{},{},{}",
+                            path.display(),
+                            PIPELINES[pi],
+                            s.correct,
+                            s.total,
+                            s.lost[0] + s.gained[0],
+                            s.lost[1] + s.gained[1],
+                            s.lost[2] + s.gained[2],
+                            s.layer_ok,
+                            s.codes_ok
+                        )
+                        .unwrap();
+                    }
                     if dumped.insert(v) {
                         print_fit_params(
                             &format!("v{v} sample: {}", path.display()),

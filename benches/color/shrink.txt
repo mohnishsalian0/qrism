@@ -1,0 +1,154 @@
+warning: methods `width`, `height`, and `data` are never used
+   --> src/common/utils/bit_types.rs:405:12
+    |
+396 | impl BitMatrix {
+    | -------------- methods in this implementation
+...
+405 |     pub fn width(&self) -> u32 {
+    |            ^^^^^
+...
+409 |     pub fn height(&self) -> u32 {
+    |            ^^^^^^
+...
+421 |     pub fn data(&self) -> &[u64] {
+    |            ^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `x0`, `y0`, `x1`, and `y1` are never read
+  --> src/reader/tile.rs:21:5
+   |
+15 | pub(super) struct Tile {
+   |                   ---- fields in this struct
+...
+21 |     x0: u32,
+   |     ^^
+22 |     y0: u32,
+   |     ^^
+23 |     x1: u32,
+   |     ^^
+24 |     y1: u32,
+   |     ^^
+   |
+   = note: `Tile` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `mod_area` is never used
+  --> src/reader/utils/frame.rs:70:12
+   |
+33 | impl LocalFrame {
+   | --------------- method in this implementation
+...
+70 |     pub fn mod_area(&self) -> f64 {
+   |            ^^^^^^^^
+
+warning: associated function `bound_check` is never used
+   --> src/reader/utils/geometry.rs:124:8
+    |
+123 | pub trait Axis {
+    |           ---- associated function in this trait
+124 |     fn bound_check(img: &BinaryImage, pt: &Point) -> bool;
+    |        ^^^^^^^^^^^
+
+warning: `qrism` (lib) generated 4 warnings
+warning: unused imports: `detect_hc_qr` and `detect_qr`
+ --> src/main.rs:4:13
+  |
+4 | use qrism::{detect_hc_qr, detect_qr, ECLevel, Version};
+  |             ^^^^^^^^^^^^  ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `MaskPattern`
+ --> src/main.rs:5:13
+  |
+5 | use qrism::{MaskPattern, QRBuilder};
+  |             ^^^^^^^^^^^
+
+warning: `qrism` (bin "qrism") generated 2 warnings (run `cargo fix --bin "qrism" -p qrism` to apply 2 suggestions)
+   Compiling qrism v0.1.0 (/Users/mohnishsalian/Projects/qrism)
+    Finished `bench` profile [optimized] target(s) in 3.54s
+     Running benches/color/main.rs (target/release/deps/color-ae737c50866f5725)
+
+
+########## rda shrink x beta grid: hiq dataset ##########
+
+  5544 photos attempted, 4600 localized; code% over localized photos, beta down, shrink across
+  (shrink 0 = QDA, 1 = LDA; * = best cell, = = not distinguishable from it, McNemar p >= 0.05)
+
+    beta         0.0     0.1     0.2     0.3     0.4     0.5     0.6     0.7     0.8     0.9     1.0
+    0.00       21.2    29.8    33.6    35.0    35.5    35.4    34.9    34.3    33.7    33.0    32.2 
+    0.04       27.9    36.4    40.1    41.4    42.0    42.0    41.9    41.7    41.4    40.9    40.0 
+    0.05       28.8    37.1    40.7    42.2    42.8=   42.7    42.7=   42.6=   42.4    41.8    41.0 
+    0.06       28.6    36.1    39.5    41.4    42.5    42.9=   43.1*   43.0=   42.8=   42.4    41.9 
+    0.07       26.8    32.9    36.5    39.0    40.5    41.2    41.9    42.3    42.4    41.9    41.1 
+    0.08       21.9    27.6    31.5    33.7    35.1    36.3    37.0    37.9    38.0    37.7    36.6 
+
+    best    b=0.06 s=0.6    data%  90.07   layer%  53.6   code%  43.1 (41.7-44.5)
+    default b=0.06 s=0.5    data%  90.12   layer%  53.7   code%  42.9 (41.5-44.3)   vs best 25 / 16, p 0.211
+
+  by version: each group's best cell against the default (b=0.06 s=0.5)
+    group           photos              best   code%   default   best / dflt        p
+    v21               1424      b=0.05 s=0.5    66.0      65.6       26 / 20    0.461
+    v25               1096      b=0.07 s=0.7    60.2      59.7       24 / 18    0.441
+    v30                766      b=0.06 s=0.6    33.4      32.4         8 / 0    0.008
+    v35                834      b=0.06 s=0.5    11.6      11.6         0 / 0    1.000
+    v40                480      b=0.06 s=0.7     9.0       8.5         2 / 0    0.500
+
+  wrote benches/color/shrink_hiq.csv and benches/color/shrink_hiq_photos.csv
+
+
+########## rda shrink x beta grid: qrism dataset, all module sizes ##########
+
+  3428 photos attempted, 2456 localized; code% over localized photos, beta down, shrink across
+  (shrink 0 = QDA, 1 = LDA; * = best cell, = = not distinguishable from it, McNemar p >= 0.05)
+
+    beta         0.0     0.1     0.2     0.3     0.4     0.5     0.6     0.7     0.8     0.9     1.0
+    0.00       12.9    19.3    21.5    22.9    23.5    24.3    24.6    24.6    24.3    23.7    22.3 
+    0.04       18.7    26.6    29.2    30.8    31.8    31.9    32.0    31.7    31.4    30.8    29.3 
+    0.05       18.9    27.7    30.7    31.8    33.1=   33.4=   33.2=   33.5=   32.6    31.9    30.6 
+    0.06       17.8    28.1    31.6    32.8    33.3    33.9*   33.9=   33.5=   33.0    32.0    30.0 
+    0.07       15.3    27.2    30.3    31.6    32.3    32.7    32.7    32.9    32.2    31.3    30.1 
+    0.08       11.6    25.8    29.0    30.2    31.3    31.3    31.0    30.7    30.3    28.9    27.6 
+
+    best    b=0.06 s=0.5    data%  87.94   chan%  56.2   fmt%  99.7   code%  33.9 (32.1-35.8)
+    default b=0.06 s=0.5    data%  87.94   chan%  56.2   fmt%  99.7   code%  33.9 (32.1-35.8)
+
+  by module size: each group's best cell against the default (b=0.06 s=0.5)
+    group           photos              best   code%   default   best / dflt        p
+    08px               259      b=0.08 s=0.7     1.9       0.4         4 / 0    0.125
+    12px              1061      b=0.07 s=0.7    20.1      18.5       27 / 10    0.008
+    20px              1136      b=0.05 s=0.7    56.0      56.0       36 / 36    1.000
+
+  by capture condition: each group's best cell against the default (b=0.06 s=0.5)
+    group           photos              best   code%   default   best / dflt        p
+    close               28      b=0.04 s=0.8    89.3      85.7         3 / 2    1.000
+    daylight           271      b=0.04 s=0.6    49.1      41.3        24 / 3    0.000
+    flashlight         458      b=0.08 s=0.4    30.6      28.4        17 / 7    0.064
+    monitor             75      b=0.07 s=0.8    93.3      89.3         3 / 0    0.250
+    perspective          0
+    regular           1024      b=0.05 s=0.5    40.5      39.8       28 / 21    0.392
+    small              259      b=0.08 s=0.7     1.9       0.4         4 / 0    0.125
+    wb-cool             23      b=0.08 s=0.3    60.9      47.8         3 / 0    0.250
+    wb-neutral         145      b=0.08 s=0.4    50.3      35.9        21 / 0    0.000
+    wb-warm            173      b=0.06 s=0.5    16.2      16.2         0 / 0    1.000
+
+  by version: each group's best cell against the default (b=0.06 s=0.5)
+    group           photos              best   code%   default   best / dflt        p
+    v1                 372      b=0.06 s=0.6    55.4      54.6         3 / 0    0.250
+    v5                 359      b=0.07 s=0.7    41.8      40.7        12 / 8    0.503
+    v10                358      b=0.05 s=0.7    40.8      40.2         6 / 4    0.754
+    v15                356      b=0.06 s=0.2    35.7      35.7         8 / 8    1.000
+    v25                364      b=0.05 s=0.4    27.7      25.5        12 / 4    0.077
+    v30                319      b=0.04 s=0.5    24.5      21.6        15 / 6    0.078
+    v40                328      b=0.04 s=0.5    17.7      15.5        10 / 3    0.092
+
+  wrote benches/color/shrink_qrism.csv and benches/color/shrink_qrism_photos.csv
+
+
+########## setting chosen on one dataset, scored on the other ##########
+  (code% over localized photos)
+
+    chosen on   setting          hiq code% qrism code%
+    hiq         b=0.06 s=0.6          43.1        33.9
+    qrism       b=0.06 s=0.5          42.9        33.9
+    current     b=0.06 s=0.5          42.9        33.9

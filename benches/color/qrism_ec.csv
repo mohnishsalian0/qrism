@@ -1,0 +1,441 @@
+pipeline,heuristic,ec,ch_r%,ch_g%,ch_b%,code%
+euclid raw,regular,L,66.0,18.6,5.9,4.0
+euclid raw,regular,M,82.6,44.0,24.3,22.0
+euclid raw,regular,Q,85.8,45.9,20.5,15.3
+euclid raw,regular,H,87.9,59.8,18.8,15.9
+euclid raw,close,L,100.0,28.6,14.3,14.3
+euclid raw,close,M,100.0,28.6,14.3,14.3
+euclid raw,close,Q,100.0,28.6,28.6,28.6
+euclid raw,close,H,100.0,71.4,28.6,28.6
+euclid raw,daylight,L,86.8,38.2,25.0,23.5
+euclid raw,daylight,M,100.0,70.1,29.9,29.9
+euclid raw,daylight,Q,98.4,75.0,39.1,37.5
+euclid raw,daylight,H,96.8,69.8,47.6,44.4
+euclid raw,flashlight,L,50.4,18.5,19.3,12.6
+euclid raw,flashlight,M,56.4,20.2,12.8,11.7
+euclid raw,flashlight,Q,76.0,32.6,21.7,16.3
+euclid raw,flashlight,H,78.9,36.0,16.7,16.7
+euclid raw,monitor,L,65.0,85.0,70.0,60.0
+euclid raw,monitor,M,94.7,100.0,100.0,94.7
+euclid raw,monitor,Q,94.7,94.7,94.7,94.7
+euclid raw,monitor,H,81.2,93.8,87.5,81.2
+euclid raw,perspective,L,0.0,0.0,0.0,0.0
+euclid raw,perspective,M,0.0,0.0,0.0,0.0
+euclid raw,perspective,Q,0.0,0.0,0.0,0.0
+euclid raw,perspective,H,0.0,0.0,0.0,0.0
+euclid raw,small,L,1.6,0.0,0.0,0.0
+euclid raw,small,M,38.8,4.5,0.0,0.0
+euclid raw,small,Q,57.6,9.1,0.0,0.0
+euclid raw,small,H,25.8,4.8,0.0,0.0
+euclid raw,wb-cool,L,33.3,0.0,0.0,0.0
+euclid raw,wb-cool,M,100.0,75.0,75.0,75.0
+euclid raw,wb-cool,Q,100.0,75.0,37.5,37.5
+euclid raw,wb-cool,H,62.5,50.0,25.0,25.0
+euclid raw,wb-neutral,L,85.7,0.0,0.0,0.0
+euclid raw,wb-neutral,M,100.0,66.7,25.0,25.0
+euclid raw,wb-neutral,Q,100.0,60.0,17.5,17.5
+euclid raw,wb-neutral,H,93.9,28.6,12.2,12.2
+euclid raw,wb-warm,L,68.4,0.0,0.0,0.0
+euclid raw,wb-warm,M,98.1,49.1,0.0,0.0
+euclid raw,wb-warm,Q,91.8,51.0,4.1,4.1
+euclid raw,wb-warm,H,98.1,28.8,0.0,0.0
+euclid intensity,regular,L,45.1,9.1,2.0,0.4
+euclid intensity,regular,M,65.3,16.2,13.9,10.0
+euclid intensity,regular,Q,64.4,17.0,15.2,8.5
+euclid intensity,regular,H,61.9,25.9,15.1,6.7
+euclid intensity,close,L,57.1,14.3,28.6,14.3
+euclid intensity,close,M,42.9,28.6,28.6,28.6
+euclid intensity,close,Q,71.4,28.6,28.6,28.6
+euclid intensity,close,H,100.0,57.1,57.1,57.1
+euclid intensity,daylight,L,22.1,13.2,8.8,8.8
+euclid intensity,daylight,M,35.8,13.4,13.4,10.4
+euclid intensity,daylight,Q,45.6,19.1,13.2,10.3
+euclid intensity,daylight,H,39.4,18.2,19.7,13.6
+euclid intensity,flashlight,L,42.9,14.3,7.6,1.7
+euclid intensity,flashlight,M,45.2,26.9,9.7,9.7
+euclid intensity,flashlight,Q,58.5,20.0,13.1,5.4
+euclid intensity,flashlight,H,72.8,28.1,14.0,6.1
+euclid intensity,monitor,L,10.0,20.0,25.0,0.0
+euclid intensity,monitor,M,21.1,15.8,36.8,5.3
+euclid intensity,monitor,Q,35.0,35.0,30.0,15.0
+euclid intensity,monitor,H,12.5,37.5,37.5,12.5
+euclid intensity,perspective,L,0.0,0.0,0.0,0.0
+euclid intensity,perspective,M,0.0,0.0,0.0,0.0
+euclid intensity,perspective,Q,0.0,0.0,0.0,0.0
+euclid intensity,perspective,H,0.0,0.0,0.0,0.0
+euclid intensity,small,L,0.0,0.0,0.0,0.0
+euclid intensity,small,M,23.9,0.0,0.0,0.0
+euclid intensity,small,Q,21.2,4.5,0.0,0.0
+euclid intensity,small,H,4.8,1.6,0.0,0.0
+euclid intensity,wb-cool,L,66.7,0.0,0.0,0.0
+euclid intensity,wb-cool,M,100.0,0.0,0.0,0.0
+euclid intensity,wb-cool,Q,75.0,0.0,0.0,0.0
+euclid intensity,wb-cool,H,62.5,0.0,0.0,0.0
+euclid intensity,wb-neutral,L,71.4,0.0,14.3,0.0
+euclid intensity,wb-neutral,M,97.9,12.5,25.0,0.0
+euclid intensity,wb-neutral,Q,100.0,2.5,37.5,2.5
+euclid intensity,wb-neutral,H,93.9,24.5,12.2,6.1
+euclid intensity,wb-warm,L,47.4,0.0,0.0,0.0
+euclid intensity,wb-warm,M,96.2,18.9,0.0,0.0
+euclid intensity,wb-warm,Q,83.7,34.7,6.1,6.1
+euclid intensity,wb-warm,H,94.2,36.5,1.9,1.9
+black/white euclid,regular,L,66.8,18.2,5.1,3.2
+black/white euclid,regular,M,81.9,43.2,24.3,22.0
+black/white euclid,regular,Q,85.1,45.1,19.8,15.3
+black/white euclid,regular,H,87.0,58.2,19.2,16.3
+black/white euclid,close,L,100.0,14.3,28.6,14.3
+black/white euclid,close,M,100.0,28.6,14.3,14.3
+black/white euclid,close,Q,100.0,28.6,28.6,28.6
+black/white euclid,close,H,100.0,71.4,42.9,42.9
+black/white euclid,daylight,L,86.8,39.7,25.0,23.5
+black/white euclid,daylight,M,100.0,70.1,29.9,29.9
+black/white euclid,daylight,Q,96.9,73.8,38.5,36.9
+black/white euclid,daylight,H,96.8,69.8,47.6,44.4
+black/white euclid,flashlight,L,49.6,18.5,19.3,12.6
+black/white euclid,flashlight,M,58.5,17.0,11.7,10.6
+black/white euclid,flashlight,Q,76.0,31.8,20.9,16.3
+black/white euclid,flashlight,H,78.9,35.1,15.8,15.8
+black/white euclid,monitor,L,60.0,85.0,75.0,60.0
+black/white euclid,monitor,M,94.7,100.0,100.0,94.7
+black/white euclid,monitor,Q,95.0,95.0,95.0,95.0
+black/white euclid,monitor,H,81.2,93.8,87.5,81.2
+black/white euclid,perspective,L,0.0,0.0,0.0,0.0
+black/white euclid,perspective,M,0.0,0.0,0.0,0.0
+black/white euclid,perspective,Q,0.0,0.0,0.0,0.0
+black/white euclid,perspective,H,0.0,0.0,0.0,0.0
+black/white euclid,small,L,1.6,0.0,0.0,0.0
+black/white euclid,small,M,38.8,6.0,0.0,0.0
+black/white euclid,small,Q,51.5,9.1,0.0,0.0
+black/white euclid,small,H,27.4,3.2,0.0,0.0
+black/white euclid,wb-cool,L,100.0,0.0,0.0,0.0
+black/white euclid,wb-cool,M,100.0,75.0,50.0,50.0
+black/white euclid,wb-cool,Q,100.0,87.5,37.5,37.5
+black/white euclid,wb-cool,H,62.5,50.0,25.0,25.0
+black/white euclid,wb-neutral,L,85.7,0.0,0.0,0.0
+black/white euclid,wb-neutral,M,100.0,64.6,25.0,25.0
+black/white euclid,wb-neutral,Q,100.0,62.5,17.5,17.5
+black/white euclid,wb-neutral,H,93.9,28.6,12.2,12.2
+black/white euclid,wb-warm,L,63.2,0.0,0.0,0.0
+black/white euclid,wb-warm,M,96.2,49.1,0.0,0.0
+black/white euclid,wb-warm,Q,91.8,44.9,8.2,8.2
+black/white euclid,wb-warm,H,98.1,19.2,5.8,5.8
+per-colorant int + adp,regular,L,31.7,22.6,14.3,10.7
+per-colorant int + adp,regular,M,50.2,45.2,25.1,22.0
+per-colorant int + adp,regular,Q,57.2,45.4,26.9,17.0
+per-colorant int + adp,regular,H,52.5,40.0,32.5,18.3
+per-colorant int + adp,close,L,57.1,71.4,71.4,57.1
+per-colorant int + adp,close,M,42.9,71.4,42.9,42.9
+per-colorant int + adp,close,Q,71.4,100.0,85.7,71.4
+per-colorant int + adp,close,H,100.0,100.0,100.0,100.0
+per-colorant int + adp,daylight,L,20.6,14.7,25.0,14.7
+per-colorant int + adp,daylight,M,30.9,29.4,29.4,22.1
+per-colorant int + adp,daylight,Q,41.2,30.9,36.8,26.5
+per-colorant int + adp,daylight,H,43.9,45.5,33.3,28.8
+per-colorant int + adp,flashlight,L,42.0,21.0,20.2,11.8
+per-colorant int + adp,flashlight,M,35.5,25.8,10.8,8.6
+per-colorant int + adp,flashlight,Q,50.8,35.4,23.8,16.2
+per-colorant int + adp,flashlight,H,57.9,38.6,27.2,21.9
+per-colorant int + adp,monitor,L,40.0,50.0,45.0,35.0
+per-colorant int + adp,monitor,M,47.4,57.9,57.9,47.4
+per-colorant int + adp,monitor,Q,65.0,80.0,60.0,60.0
+per-colorant int + adp,monitor,H,56.2,56.2,62.5,50.0
+per-colorant int + adp,perspective,L,0.0,0.0,0.0,0.0
+per-colorant int + adp,perspective,M,0.0,0.0,0.0,0.0
+per-colorant int + adp,perspective,Q,0.0,0.0,0.0,0.0
+per-colorant int + adp,perspective,H,0.0,0.0,0.0,0.0
+per-colorant int + adp,small,L,0.0,0.0,0.0,0.0
+per-colorant int + adp,small,M,14.7,7.4,0.0,0.0
+per-colorant int + adp,small,Q,27.3,10.6,0.0,0.0
+per-colorant int + adp,small,H,1.6,6.5,0.0,0.0
+per-colorant int + adp,wb-cool,L,33.3,0.0,0.0,0.0
+per-colorant int + adp,wb-cool,M,100.0,100.0,100.0,100.0
+per-colorant int + adp,wb-cool,Q,75.0,100.0,75.0,75.0
+per-colorant int + adp,wb-cool,H,62.5,50.0,62.5,50.0
+per-colorant int + adp,wb-neutral,L,85.7,71.4,28.6,28.6
+per-colorant int + adp,wb-neutral,M,91.7,72.9,56.2,52.1
+per-colorant int + adp,wb-neutral,Q,78.0,95.1,43.9,43.9
+per-colorant int + adp,wb-neutral,H,85.7,57.1,34.7,34.7
+per-colorant int + adp,wb-warm,L,68.4,10.5,0.0,0.0
+per-colorant int + adp,wb-warm,M,96.2,45.3,24.5,24.5
+per-colorant int + adp,wb-warm,Q,87.8,59.2,12.2,12.2
+per-colorant int + adp,wb-warm,H,96.2,40.4,0.0,0.0
+mahalanobis lda (raw),regular,L,56.3,19.3,19.3,11.8
+mahalanobis lda (raw),regular,M,77.2,48.3,34.4,32.4
+mahalanobis lda (raw),regular,Q,88.9,43.5,33.6,26.6
+mahalanobis lda (raw),regular,H,86.7,52.5,31.2,24.2
+mahalanobis lda (raw),close,L,85.7,85.7,85.7,85.7
+mahalanobis lda (raw),close,M,85.7,85.7,57.1,42.9
+mahalanobis lda (raw),close,Q,100.0,85.7,85.7,85.7
+mahalanobis lda (raw),close,H,100.0,100.0,100.0,100.0
+mahalanobis lda (raw),daylight,L,89.7,58.8,25.0,25.0
+mahalanobis lda (raw),daylight,M,97.0,71.6,55.2,55.2
+mahalanobis lda (raw),daylight,Q,95.7,76.8,53.6,53.6
+mahalanobis lda (raw),daylight,H,93.9,69.7,53.0,50.0
+mahalanobis lda (raw),flashlight,L,42.9,24.4,17.6,11.8
+mahalanobis lda (raw),flashlight,M,52.6,18.9,10.5,7.4
+mahalanobis lda (raw),flashlight,Q,71.5,33.1,23.1,13.1
+mahalanobis lda (raw),flashlight,H,79.8,43.9,26.3,21.1
+mahalanobis lda (raw),monitor,L,85.0,85.0,80.0,80.0
+mahalanobis lda (raw),monitor,M,100.0,100.0,100.0,100.0
+mahalanobis lda (raw),monitor,Q,95.0,95.0,95.0,95.0
+mahalanobis lda (raw),monitor,H,93.8,93.8,93.8,93.8
+mahalanobis lda (raw),perspective,L,0.0,0.0,0.0,0.0
+mahalanobis lda (raw),perspective,M,0.0,0.0,0.0,0.0
+mahalanobis lda (raw),perspective,Q,0.0,0.0,0.0,0.0
+mahalanobis lda (raw),perspective,H,0.0,0.0,0.0,0.0
+mahalanobis lda (raw),small,L,0.0,0.0,0.0,0.0
+mahalanobis lda (raw),small,M,17.9,7.5,0.0,0.0
+mahalanobis lda (raw),small,Q,30.3,7.6,0.0,0.0
+mahalanobis lda (raw),small,H,12.9,6.5,0.0,0.0
+mahalanobis lda (raw),wb-cool,L,100.0,0.0,0.0,0.0
+mahalanobis lda (raw),wb-cool,M,75.0,75.0,75.0,75.0
+mahalanobis lda (raw),wb-cool,Q,100.0,62.5,37.5,37.5
+mahalanobis lda (raw),wb-cool,H,100.0,62.5,25.0,25.0
+mahalanobis lda (raw),wb-neutral,L,85.7,0.0,0.0,0.0
+mahalanobis lda (raw),wb-neutral,M,93.8,35.4,27.1,20.8
+mahalanobis lda (raw),wb-neutral,Q,97.6,26.8,12.2,12.2
+mahalanobis lda (raw),wb-neutral,H,85.7,14.3,2.0,2.0
+mahalanobis lda (raw),wb-warm,L,61.1,0.0,5.6,0.0
+mahalanobis lda (raw),wb-warm,M,96.2,15.4,11.5,5.8
+mahalanobis lda (raw),wb-warm,Q,91.8,14.3,0.0,0.0
+mahalanobis lda (raw),wb-warm,H,94.2,5.8,0.0,0.0
+mahalanobis qda (raw),regular,L,50.0,13.8,13.4,7.1
+mahalanobis qda (raw),regular,M,69.9,32.4,27.8,21.2
+mahalanobis qda (raw),regular,Q,71.1,34.4,25.6,18.5
+mahalanobis qda (raw),regular,H,70.4,35.8,22.5,15.8
+mahalanobis qda (raw),close,L,71.4,71.4,28.6,28.6
+mahalanobis qda (raw),close,M,71.4,57.1,57.1,57.1
+mahalanobis qda (raw),close,Q,100.0,57.1,57.1,42.9
+mahalanobis qda (raw),close,H,100.0,85.7,57.1,57.1
+mahalanobis qda (raw),daylight,L,60.3,17.6,23.5,16.2
+mahalanobis qda (raw),daylight,M,59.7,23.9,32.8,22.4
+mahalanobis qda (raw),daylight,Q,69.6,29.0,31.9,21.7
+mahalanobis qda (raw),daylight,H,71.2,34.8,33.3,22.7
+mahalanobis qda (raw),flashlight,L,35.3,13.4,10.1,4.2
+mahalanobis qda (raw),flashlight,M,46.7,12.0,10.9,5.4
+mahalanobis qda (raw),flashlight,Q,52.3,19.2,20.8,8.5
+mahalanobis qda (raw),flashlight,H,59.6,23.7,14.9,5.3
+mahalanobis qda (raw),monitor,L,50.0,70.0,55.0,45.0
+mahalanobis qda (raw),monitor,M,63.2,94.7,89.5,52.6
+mahalanobis qda (raw),monitor,Q,75.0,80.0,75.0,70.0
+mahalanobis qda (raw),monitor,H,43.8,68.8,62.5,37.5
+mahalanobis qda (raw),perspective,L,0.0,0.0,0.0,0.0
+mahalanobis qda (raw),perspective,M,0.0,0.0,0.0,0.0
+mahalanobis qda (raw),perspective,Q,0.0,0.0,0.0,0.0
+mahalanobis qda (raw),perspective,H,0.0,0.0,0.0,0.0
+mahalanobis qda (raw),small,L,0.0,0.0,0.0,0.0
+mahalanobis qda (raw),small,M,17.6,11.8,0.0,0.0
+mahalanobis qda (raw),small,Q,12.1,7.6,0.0,0.0
+mahalanobis qda (raw),small,H,8.1,6.5,0.0,0.0
+mahalanobis qda (raw),wb-cool,L,33.3,0.0,0.0,0.0
+mahalanobis qda (raw),wb-cool,M,50.0,0.0,50.0,0.0
+mahalanobis qda (raw),wb-cool,Q,50.0,37.5,37.5,37.5
+mahalanobis qda (raw),wb-cool,H,50.0,25.0,25.0,25.0
+mahalanobis qda (raw),wb-neutral,L,42.9,0.0,0.0,0.0
+mahalanobis qda (raw),wb-neutral,M,72.9,20.8,27.1,16.7
+mahalanobis qda (raw),wb-neutral,Q,77.5,27.5,12.5,12.5
+mahalanobis qda (raw),wb-neutral,H,67.3,20.4,2.0,2.0
+mahalanobis qda (raw),wb-warm,L,81.2,0.0,0.0,0.0
+mahalanobis qda (raw),wb-warm,M,80.8,11.5,13.5,3.8
+mahalanobis qda (raw),wb-warm,Q,73.5,20.4,2.0,2.0
+mahalanobis qda (raw),wb-warm,H,65.4,7.7,0.0,0.0
+mahalanobis rda (raw),regular,L,63.6,19.0,20.6,12.3
+mahalanobis rda (raw),regular,M,79.2,49.8,36.3,33.6
+mahalanobis rda (raw),regular,Q,91.5,50.6,36.9,31.7
+mahalanobis rda (raw),regular,H,87.5,57.1,40.0,33.8
+mahalanobis rda (raw),close,L,85.7,85.7,71.4,71.4
+mahalanobis rda (raw),close,M,100.0,85.7,71.4,71.4
+mahalanobis rda (raw),close,Q,100.0,85.7,100.0,85.7
+mahalanobis rda (raw),close,H,100.0,100.0,100.0,100.0
+mahalanobis rda (raw),daylight,L,88.2,42.6,29.4,27.9
+mahalanobis rda (raw),daylight,M,95.5,68.7,55.2,52.2
+mahalanobis rda (raw),daylight,Q,94.2,72.5,52.2,52.2
+mahalanobis rda (raw),daylight,H,93.9,66.7,56.1,53.0
+mahalanobis rda (raw),flashlight,L,46.2,26.9,18.5,12.6
+mahalanobis rda (raw),flashlight,M,60.9,18.5,17.4,9.8
+mahalanobis rda (raw),flashlight,Q,70.0,30.0,25.4,13.1
+mahalanobis rda (raw),flashlight,H,78.1,41.2,26.3,20.2
+mahalanobis rda (raw),monitor,L,85.0,85.0,80.0,80.0
+mahalanobis rda (raw),monitor,M,100.0,100.0,100.0,100.0
+mahalanobis rda (raw),monitor,Q,95.0,95.0,95.0,95.0
+mahalanobis rda (raw),monitor,H,87.5,93.8,93.8,87.5
+mahalanobis rda (raw),perspective,L,0.0,0.0,0.0,0.0
+mahalanobis rda (raw),perspective,M,0.0,0.0,0.0,0.0
+mahalanobis rda (raw),perspective,Q,0.0,0.0,0.0,0.0
+mahalanobis rda (raw),perspective,H,0.0,0.0,0.0,0.0
+mahalanobis rda (raw),small,L,1.7,0.0,0.0,0.0
+mahalanobis rda (raw),small,M,26.5,14.7,0.0,0.0
+mahalanobis rda (raw),small,Q,28.8,10.6,0.0,0.0
+mahalanobis rda (raw),small,H,16.1,9.7,0.0,0.0
+mahalanobis rda (raw),wb-cool,L,66.7,0.0,0.0,0.0
+mahalanobis rda (raw),wb-cool,M,75.0,75.0,50.0,50.0
+mahalanobis rda (raw),wb-cool,Q,100.0,62.5,37.5,37.5
+mahalanobis rda (raw),wb-cool,H,100.0,50.0,25.0,25.0
+mahalanobis rda (raw),wb-neutral,L,85.7,0.0,0.0,0.0
+mahalanobis rda (raw),wb-neutral,M,91.7,37.5,29.2,20.8
+mahalanobis rda (raw),wb-neutral,Q,97.6,39.0,12.2,12.2
+mahalanobis rda (raw),wb-neutral,H,89.8,14.3,4.1,4.1
+mahalanobis rda (raw),wb-warm,L,72.2,0.0,5.6,0.0
+mahalanobis rda (raw),wb-warm,M,94.2,19.2,15.4,9.6
+mahalanobis rda (raw),wb-warm,Q,89.8,18.4,4.1,4.1
+mahalanobis rda (raw),wb-warm,H,94.2,9.6,0.0,0.0
+rda + deblur b=.04,regular,L,75.6,32.7,29.1,23.6
+rda + deblur b=.04,regular,M,88.4,55.2,45.2,42.1
+rda + deblur b=.04,regular,Q,95.6,59.8,48.7,45.4
+rda + deblur b=.04,regular,H,91.2,69.2,51.2,48.3
+rda + deblur b=.04,close,L,100.0,85.7,71.4,57.1
+rda + deblur b=.04,close,M,100.0,85.7,85.7,71.4
+rda + deblur b=.04,close,Q,100.0,100.0,85.7,85.7
+rda + deblur b=.04,close,H,100.0,100.0,100.0,100.0
+rda + deblur b=.04,daylight,L,86.8,35.3,29.4,25.0
+rda + deblur b=.04,daylight,M,98.5,59.7,61.2,49.3
+rda + deblur b=.04,daylight,Q,98.6,69.6,63.8,55.1
+rda + deblur b=.04,daylight,H,98.5,68.2,62.1,57.6
+rda + deblur b=.04,flashlight,L,52.1,26.1,24.4,16.0
+rda + deblur b=.04,flashlight,M,64.5,24.7,25.8,18.3
+rda + deblur b=.04,flashlight,Q,76.9,41.5,40.0,26.2
+rda + deblur b=.04,flashlight,H,85.1,49.1,34.2,27.2
+rda + deblur b=.04,monitor,L,85.0,85.0,80.0,80.0
+rda + deblur b=.04,monitor,M,100.0,100.0,100.0,100.0
+rda + deblur b=.04,monitor,Q,95.0,95.0,95.0,95.0
+rda + deblur b=.04,monitor,H,87.5,93.8,93.8,87.5
+rda + deblur b=.04,perspective,L,0.0,0.0,0.0,0.0
+rda + deblur b=.04,perspective,M,0.0,0.0,0.0,0.0
+rda + deblur b=.04,perspective,Q,0.0,0.0,0.0,0.0
+rda + deblur b=.04,perspective,H,0.0,0.0,0.0,0.0
+rda + deblur b=.04,small,L,1.7,0.0,0.0,0.0
+rda + deblur b=.04,small,M,50.0,13.2,1.5,0.0
+rda + deblur b=.04,small,Q,48.5,16.7,0.0,0.0
+rda + deblur b=.04,small,H,38.7,12.9,0.0,0.0
+rda + deblur b=.04,wb-cool,L,66.7,33.3,0.0,0.0
+rda + deblur b=.04,wb-cool,M,75.0,75.0,75.0,75.0
+rda + deblur b=.04,wb-cool,Q,100.0,62.5,37.5,37.5
+rda + deblur b=.04,wb-cool,H,100.0,62.5,37.5,37.5
+rda + deblur b=.04,wb-neutral,L,100.0,0.0,14.3,0.0
+rda + deblur b=.04,wb-neutral,M,100.0,52.1,50.0,41.7
+rda + deblur b=.04,wb-neutral,Q,97.6,56.1,22.0,19.5
+rda + deblur b=.04,wb-neutral,H,98.0,38.8,8.2,6.1
+rda + deblur b=.04,wb-warm,L,73.7,10.5,15.8,10.5
+rda + deblur b=.04,wb-warm,M,96.2,37.7,22.6,22.6
+rda + deblur b=.04,wb-warm,Q,91.8,26.5,6.1,6.1
+rda + deblur b=.04,wb-warm,H,100.0,23.1,3.8,3.8
+rda + deblur b=.05,regular,L,77.2,33.9,30.3,24.0
+rda + deblur b=.05,regular,M,88.4,54.4,44.8,42.5
+rda + deblur b=.05,regular,Q,95.9,63.1,49.4,46.1
+rda + deblur b=.05,regular,H,91.7,69.2,52.9,49.6
+rda + deblur b=.05,close,L,100.0,85.7,71.4,57.1
+rda + deblur b=.05,close,M,100.0,85.7,85.7,71.4
+rda + deblur b=.05,close,Q,100.0,100.0,85.7,85.7
+rda + deblur b=.05,close,H,100.0,100.0,100.0,100.0
+rda + deblur b=.05,daylight,L,88.2,33.8,32.4,23.5
+rda + deblur b=.05,daylight,M,98.5,58.2,61.2,46.3
+rda + deblur b=.05,daylight,Q,98.6,65.2,63.8,50.7
+rda + deblur b=.05,daylight,H,98.5,66.7,63.6,59.1
+rda + deblur b=.05,flashlight,L,54.6,28.6,26.9,19.3
+rda + deblur b=.05,flashlight,M,65.6,29.0,29.0,21.5
+rda + deblur b=.05,flashlight,Q,76.9,47.7,41.5,30.0
+rda + deblur b=.05,flashlight,H,85.1,50.0,36.8,30.7
+rda + deblur b=.05,monitor,L,85.0,85.0,80.0,80.0
+rda + deblur b=.05,monitor,M,100.0,100.0,100.0,100.0
+rda + deblur b=.05,monitor,Q,95.0,95.0,95.0,95.0
+rda + deblur b=.05,monitor,H,87.5,93.8,93.8,87.5
+rda + deblur b=.05,perspective,L,0.0,0.0,0.0,0.0
+rda + deblur b=.05,perspective,M,0.0,0.0,0.0,0.0
+rda + deblur b=.05,perspective,Q,0.0,0.0,0.0,0.0
+rda + deblur b=.05,perspective,H,0.0,0.0,0.0,0.0
+rda + deblur b=.05,small,L,3.3,0.0,0.0,0.0
+rda + deblur b=.05,small,M,51.5,14.7,2.9,0.0
+rda + deblur b=.05,small,Q,53.0,15.2,0.0,0.0
+rda + deblur b=.05,small,H,38.7,11.3,0.0,0.0
+rda + deblur b=.05,wb-cool,L,66.7,33.3,0.0,0.0
+rda + deblur b=.05,wb-cool,M,100.0,75.0,100.0,75.0
+rda + deblur b=.05,wb-cool,Q,100.0,62.5,37.5,37.5
+rda + deblur b=.05,wb-cool,H,100.0,62.5,37.5,37.5
+rda + deblur b=.05,wb-neutral,L,100.0,14.3,14.3,14.3
+rda + deblur b=.05,wb-neutral,M,100.0,56.2,56.2,47.9
+rda + deblur b=.05,wb-neutral,Q,97.6,56.1,36.6,31.7
+rda + deblur b=.05,wb-neutral,H,98.0,38.8,18.4,16.3
+rda + deblur b=.05,wb-warm,L,78.9,10.5,15.8,10.5
+rda + deblur b=.05,wb-warm,M,96.2,37.7,28.3,26.4
+rda + deblur b=.05,wb-warm,Q,91.8,30.6,8.2,8.2
+rda + deblur b=.05,wb-warm,H,100.0,21.2,5.8,5.8
+rda + deblur b=.06,regular,L,77.2,31.1,31.1,22.0
+rda + deblur b=.06,regular,M,91.1,52.5,44.8,40.9
+rda + deblur b=.06,regular,Q,95.9,62.6,50.7,45.9
+rda + deblur b=.06,regular,H,92.9,68.3,55.0,50.8
+rda + deblur b=.06,close,L,100.0,71.4,71.4,57.1
+rda + deblur b=.06,close,M,100.0,100.0,100.0,100.0
+rda + deblur b=.06,close,Q,100.0,100.0,85.7,85.7
+rda + deblur b=.06,close,H,100.0,100.0,100.0,100.0
+rda + deblur b=.06,daylight,L,89.7,23.5,39.7,20.6
+rda + deblur b=.06,daylight,M,100.0,47.8,62.7,38.8
+rda + deblur b=.06,daylight,Q,98.6,58.0,65.2,47.8
+rda + deblur b=.06,daylight,H,100.0,66.7,63.6,59.1
+rda + deblur b=.06,flashlight,L,54.6,29.4,28.6,23.5
+rda + deblur b=.06,flashlight,M,68.8,32.3,31.2,25.8
+rda + deblur b=.06,flashlight,Q,76.2,49.2,46.2,33.1
+rda + deblur b=.06,flashlight,H,86.0,49.1,37.7,30.7
+rda + deblur b=.06,monitor,L,85.0,85.0,80.0,80.0
+rda + deblur b=.06,monitor,M,100.0,100.0,100.0,100.0
+rda + deblur b=.06,monitor,Q,95.0,95.0,90.0,90.0
+rda + deblur b=.06,monitor,H,87.5,93.8,93.8,87.5
+rda + deblur b=.06,perspective,L,0.0,0.0,0.0,0.0
+rda + deblur b=.06,perspective,M,0.0,0.0,0.0,0.0
+rda + deblur b=.06,perspective,Q,0.0,0.0,0.0,0.0
+rda + deblur b=.06,perspective,H,0.0,0.0,0.0,0.0
+rda + deblur b=.06,small,L,5.0,0.0,0.0,0.0
+rda + deblur b=.06,small,M,54.4,14.7,4.4,0.0
+rda + deblur b=.06,small,Q,60.6,18.2,1.5,1.5
+rda + deblur b=.06,small,H,41.9,9.7,0.0,0.0
+rda + deblur b=.06,wb-cool,L,66.7,33.3,0.0,0.0
+rda + deblur b=.06,wb-cool,M,100.0,75.0,100.0,75.0
+rda + deblur b=.06,wb-cool,Q,100.0,75.0,62.5,62.5
+rda + deblur b=.06,wb-cool,H,100.0,62.5,37.5,37.5
+rda + deblur b=.06,wb-neutral,L,100.0,14.3,14.3,14.3
+rda + deblur b=.06,wb-neutral,M,100.0,60.4,56.2,50.0
+rda + deblur b=.06,wb-neutral,Q,97.6,61.0,43.9,39.0
+rda + deblur b=.06,wb-neutral,H,98.0,36.7,24.5,22.4
+rda + deblur b=.06,wb-warm,L,78.9,15.8,15.8,15.8
+rda + deblur b=.06,wb-warm,M,98.1,37.7,28.3,28.3
+rda + deblur b=.06,wb-warm,Q,91.8,34.7,8.2,8.2
+rda + deblur b=.06,wb-warm,H,100.0,21.2,11.5,11.5
+jabcode (balanced),regular,L,39.1,2.0,11.1,1.6
+jabcode (balanced),regular,M,56.0,17.0,26.3,17.0
+jabcode (balanced),regular,Q,55.4,15.5,21.4,11.8
+jabcode (balanced),regular,H,61.2,13.3,25.4,11.2
+jabcode (balanced),close,L,71.4,14.3,42.9,14.3
+jabcode (balanced),close,M,42.9,28.6,42.9,28.6
+jabcode (balanced),close,Q,71.4,28.6,28.6,28.6
+jabcode (balanced),close,H,100.0,57.1,57.1,57.1
+jabcode (balanced),daylight,L,57.4,20.6,20.6,20.6
+jabcode (balanced),daylight,M,85.1,31.3,43.3,26.9
+jabcode (balanced),daylight,Q,85.5,33.3,44.9,30.4
+jabcode (balanced),daylight,H,89.4,40.9,50.0,39.4
+jabcode (balanced),flashlight,L,37.0,5.9,21.0,5.9
+jabcode (balanced),flashlight,M,30.9,6.4,13.8,6.4
+jabcode (balanced),flashlight,Q,56.2,14.6,21.5,13.8
+jabcode (balanced),flashlight,H,57.9,18.4,32.5,18.4
+jabcode (balanced),monitor,L,70.0,85.0,75.0,70.0
+jabcode (balanced),monitor,M,94.7,100.0,100.0,94.7
+jabcode (balanced),monitor,Q,95.0,95.0,95.0,95.0
+jabcode (balanced),monitor,H,87.5,87.5,81.2,81.2
+jabcode (balanced),perspective,L,0.0,0.0,0.0,0.0
+jabcode (balanced),perspective,M,0.0,0.0,0.0,0.0
+jabcode (balanced),perspective,Q,0.0,0.0,0.0,0.0
+jabcode (balanced),perspective,H,0.0,0.0,0.0,0.0
+jabcode (balanced),small,L,0.0,0.0,0.0,0.0
+jabcode (balanced),small,M,7.5,0.0,0.0,0.0
+jabcode (balanced),small,Q,10.4,0.0,0.0,0.0
+jabcode (balanced),small,H,0.0,0.0,0.0,0.0
+jabcode (balanced),wb-cool,L,100.0,0.0,0.0,0.0
+jabcode (balanced),wb-cool,M,100.0,0.0,50.0,0.0
+jabcode (balanced),wb-cool,Q,100.0,37.5,62.5,37.5
+jabcode (balanced),wb-cool,H,62.5,25.0,37.5,25.0
+jabcode (balanced),wb-neutral,L,71.4,0.0,0.0,0.0
+jabcode (balanced),wb-neutral,M,77.1,0.0,29.2,0.0
+jabcode (balanced),wb-neutral,Q,73.2,12.2,22.0,9.8
+jabcode (balanced),wb-neutral,H,53.1,8.2,8.2,4.1
+jabcode (balanced),wb-warm,L,31.6,0.0,0.0,0.0
+jabcode (balanced),wb-warm,M,64.2,0.0,0.0,0.0
+jabcode (balanced),wb-warm,Q,55.1,8.2,4.1,4.1
+jabcode (balanced),wb-warm,H,53.8,0.0,0.0,0.0

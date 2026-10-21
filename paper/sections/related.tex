@@ -1,0 +1,89 @@
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Color and multiplexed 2D codes}
+
+Color has been added to 2D codes in two ways. Palette codes give each module one of
+several colors and carry reference colors in the symbol: Microsoft's
+HCCB~\cite{parikh2008hccb}, HCC2D, which adds palette modules to a QR-style
+symbol~\cite{grillo2010hcc2d}, HD2DC~\cite{melgar2019hd2dc}, and JAB Code, which stores its
+palette redundantly and is standardized as ISO/IEC 23634~\cite{berchtold2020jab,iso23634}.
+Recent JAB Code work calibrates the printed colors to the printer~\cite{bugert2024calib}
+and improves version detection for large symbols~\cite{bugert2025version}. Multiplexed
+codes instead stack binary layers, one per colorant or color
+channel~\cite{bulan2011elliptical,blasinski2013pccc}, so each layer is a standard symbol. Andr\'e and Ferreira multiplexed three and six QR codes in CMY and modeled
+the recognition rate on the color constellation~\cite{andre2014colour}; ColorQR streams
+RGB-multiplexed QR codes from a phone screen and splits each received frame into its
+channels~\cite{toh2016colorqr}; El-Sheref et al.\ fold up to 24 layers into RGB
+shades~\cite{elsheref2020fmt}; Huang et al.\ design multiplexed codes whose plain layer a
+standard reader can decode~\cite{huang2022mc2d,huang2023halftone}. Other recent schemes
+separate the layers with narrowband illumination~\cite{sanagustin2025chromatic} or assign
+payload, metadata and signature to the three channels~\cite{wahsheh2026rgb}. Most of these
+works report capacity or small capture tests. Of the multiplexed QR designs we found, HiQ is
+the only one evaluated on a large public set of phone photographs,
+CUHK-CQRC~\cite{yang2016hiq,yang2018hiq}; public photographs of other color barcodes also
+exist~\cite{lecca2024coco}. Sirmen and \"Ust\"unda\u{g} survey color barcodes and their
+sources of distortion~\cite{sirmen2023survey}.
+
+\subsection{Color recovery}
+
+Decoding a color code means assigning each sampled module a color despite illumination,
+white balance and channel mixing. Palette codes compare samples with the reference colors
+printed in the symbol~\cite{grillo2010hcc2d,berchtold2020jab}; Bagherinia and Manduchi
+analyze when colors can be separated without a palette~\cite{bagherinia2011theory}; Ong et
+al.\ adapt thresholds and color spaces to the lighting~\cite{ong2011mmcc}. For
+per-colorant codes, Blasinski et al.\ model cross-channel interference as a linear mixing
+of colorant densities and estimate it per image, either from pilot blocks built into the
+synchronization markers or by expectation maximization over the
+data~\cite{blasinski2013pccc,bulan2012em}. HiQ trains its classifiers offline: QDA and a
+layered SVM, each optionally with a cross-module interference (CMI) term, are fitted to
+labelled CUHK-CQRC photographs~\cite{yang2018hiq}. Benito-Altamirano et al.\ work in the
+opposite direction and embed color charts in back-compatible QR codes to correct the colors
+of the scene~\cite{benito2023backcompat}.
+
+Our calibration is closest to the pilot-block estimate of Blasinski et al.: both fit the
+color model to each photograph from modules whose colors are known. We differ in the model
+and in where the labels come from. We fit class-conditional Gaussians with shrunk
+covariances~\cite{friedman1989rda}, which absorb illumination and channel mixing without a
+colorant model, and we take the labels from the finder, alignment and timing patterns that
+a multiplexed QR symbol already contains, so no symbol area goes to pilots and no
+photographs are needed for training.
+
+\subsection{Blur and inter-module interference}
+
+When modules shrink toward the size of the optical and demosaicing blur, each sampled
+module mixes with its neighbors. Bagherinia and Manduchi model a blurred patch as a linear
+combination of its own color and its neighbors' colors and decode all patches jointly by
+iteratively minimizing the observation error~\cite{bagherinia2014blur}. HiQ named the effect
+cross-module interference in high-density color QR codes and learns neighbor weights
+jointly with its classifier~\cite{yang2018hiq}. For monochrome QR codes, blind deblurring
+estimates a blur kernel in the pixel domain: from the finder patterns as a known
+signal~\cite{vangennip2015deblur}, from priors on the finder and alignment patterns of each
+quadrant~\cite{zheng2024positioning}, or by a multi-scale search that stops once the code
+reads~\cite{chen2021scale}. Channel models for print-to-camera and screen-to-camera links
+estimate spatial and color distortion from training symbols~\cite{zhang2019printcapture} or
+equalize color crosstalk with an MMSE filter on a transform-domain
+code~\cite{fujihashi2021mimo}.
+
+Our leak model~\eqref{eq:leak} is a linear neighbor model of the same kind as Bagherinia and
+Manduchi's, with four edge neighbors and one shared weight. Fixing that weight gives a
+closed-form inverse on the module grid, computed in one pass with no kernel estimate and no
+iteration over the symbol. We did not find 2020 to 2026 work that applies a fixed
+one-parameter grid inverse of this kind to color codes.
+
+\subsection{Learned decoders and screen-to-camera codes}
+
+Deep networks are now common for barcode localization and are used for decoding as
+well~\cite{wudhikarn2022review}. Liao et al.\ train CNNs on pairs of adjacent modules to read
+laser-marked Data Matrix symbols~\cite{liao2022datamatrix}. Most learned color decoders come
+from screen-to-camera and optical camera communication, where the transmitter is a display:
+Deep D2C-Net and DeepLight decode data embedded in displayed images with trained
+networks~\cite{tamang2021deepd2c,tran2021deeplight}, DeepCCB-OCC applies deep learning to
+complementary color barcodes~\cite{kim2022deepccb}, and CNN demodulators and neural
+equalizers read color shift keying with 4 to 512 colors~\cite{gordillo2022cnncsk,onodera2023csk512}.
+Model-based display codes use per-channel encoding~\cite{dinesh2019channelwise} or
+temporal color vibration~\cite{abe2020vibration}. These systems are trained or tuned for a
+display and camera and often combine several frames. Our setting is one photograph of a
+printed or displayed static symbol taken with an unknown phone, and our method uses no
+training data. We found no learned decoder for multiplexed color QR codes in this period
+that reports results on CUHK-CQRC.

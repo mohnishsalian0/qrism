@@ -1,0 +1,94 @@
+warning: methods `width`, `height`, and `data` are never used
+   --> src/common/utils/bit_types.rs:405:12
+    |
+396 | impl BitMatrix {
+    | -------------- methods in this implementation
+...
+405 |     pub fn width(&self) -> u32 {
+    |            ^^^^^
+...
+409 |     pub fn height(&self) -> u32 {
+    |            ^^^^^^
+...
+421 |     pub fn data(&self) -> &[u64] {
+    |            ^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `x0`, `y0`, `x1`, and `y1` are never read
+  --> src/reader/tile.rs:21:5
+   |
+15 | pub(super) struct Tile {
+   |                   ---- fields in this struct
+...
+21 |     x0: u32,
+   |     ^^
+22 |     y0: u32,
+   |     ^^
+23 |     x1: u32,
+   |     ^^
+24 |     y1: u32,
+   |     ^^
+   |
+   = note: `Tile` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `mod_area` is never used
+  --> src/reader/utils/frame.rs:70:12
+   |
+33 | impl LocalFrame {
+   | --------------- method in this implementation
+...
+70 |     pub fn mod_area(&self) -> f64 {
+   |            ^^^^^^^^
+
+warning: associated function `bound_check` is never used
+   --> src/reader/utils/geometry.rs:124:8
+    |
+123 | pub trait Axis {
+    |           ---- associated function in this trait
+124 |     fn bound_check(img: &BinaryImage, pt: &Point) -> bool;
+    |        ^^^^^^^^^^^
+
+warning: `qrism` (lib) generated 4 warnings
+warning: unused imports: `detect_hc_qr` and `detect_qr`
+ --> src/main.rs:4:13
+  |
+4 | use qrism::{detect_hc_qr, detect_qr, ECLevel, Version};
+  |             ^^^^^^^^^^^^  ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `MaskPattern`
+ --> src/main.rs:5:13
+  |
+5 | use qrism::{MaskPattern, QRBuilder};
+  |             ^^^^^^^^^^^
+
+warning: `qrism` (bin "qrism") generated 2 warnings (run `cargo fix --bin "qrism" -p qrism` to apply 2 suggestions)
+   Compiling qrism v0.1.0 (/Users/mohnishsalian/Projects/qrism)
+    Finished `bench` profile [optimized] target(s) in 3.98s
+     Running benches/color/main.rs (target/release/deps/color-ae737c50866f5725)
+
+
+########## colour pipeline timing ##########
+
+  14 symbols x 5 reps, 235974 modules per rep, single-threaded
+  excludes image decode and localization (~91% of end-to-end wall time)
+
+    pipeline                      total ms     ns/module  ms per v40 sym       rel
+    euclid raw                        13.5          11.5            0.36      4.1x
+    euclid intensity                  29.9          25.3            0.79      9.0x
+    black/white euclid                13.8          11.7            0.37      4.1x
+    per-colorant int + adp            20.9          17.7            0.55      6.3x
+    per-colorant abs + adp             6.3           5.3            0.17      1.9x
+    per-colorant int + local          21.4          18.1            0.57      6.4x
+    local standalone (raw)             3.3           2.8            0.09      1.0x
+    mahalanobis lda (raw)             65.6          55.6            1.74     19.7x
+    mahalanobis qda (raw)             65.5          55.5            1.74     19.7x
+    mahalanobis rda (raw)             65.5          55.6            1.74     19.7x
+    rda + deblur fit                 193.7         164.2            5.14     58.2x
+    rda + deblur b=.04                73.3          62.2            1.95     22.0x
+    rda + deblur b=.06                73.5          62.3            1.95     22.1x
+    rda + deblur b=.08                73.5          62.3            1.95     22.1x
+    rda + deblur b=.12                73.7          62.4            1.96     22.1x
+    rda + deblur optical              73.7          62.4            1.96     22.1x
