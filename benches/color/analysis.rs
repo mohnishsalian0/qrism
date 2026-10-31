@@ -10,6 +10,12 @@
 //!   - per-colorant abs + adp  : Absorptance + PerColorant + Adaptive
 //!   - per-colorant int + local: Intensity   + PerColorant + Local (indicator)
 //!   - local standalone (raw)  : Local (intensity) straight on the sampled RGB
+//!   - hiq qda / lsvm          : HiqWhite    + HiQ's shipped QDA / layered SVM
+//!   - hiq qda+cmi fixed       : HiqWhite    + HiQ's QDA behind corrected CMI cancellation
+//!   - jabcode (balanced)      : JABCode's balanceRGB + its hard-decision classifier
+//!
+//! The `hiq` rows run HiQ's pretrained models unchanged on the same samples, after HiQ's own
+//! white-point normalization, so they compare classifiers alone (see `hiq_port.md`).
 //!
 //! Runs on the `hiq` dataset: photographs of five printed colour QRs (versions 21/25/30/35/40)
 //! spread over eight capture folders. The normal localizer ([`detect_hc_qr`]) recovers both
@@ -51,17 +57,24 @@ use image::RgbImage;
 use rayon::prelude::*;
 
 use crate::calibration::{
-    calibration_coords, function_mask, group_by_color, reference_grid, sample_groups,
-    sample_module_rgb, GroupedSamples,
+    calibration_coords, function_mask, group_by_color, module_pixel, reference_grid,
+    sample_groups, sample_module_rgb, GroupedSamples,
 };
 use crate::deblur::{estimate_beta_optical, estimate_sigma_optical, Deblur};
 use crate::hiq::{decode_layers, Layer};
 use crate::normalization::{
-    absorptance::Absorptance, black_white::BlackWhite, intensity::Intensity,
+    absorptance::Absorptance,
+    black_white::BlackWhite,
+    hiq_white::{white_candidates, HiqWhite},
+    intensity::Intensity,
     Identity, Normalizer,
 };
 use crate::recovery::{
-    euclid_measured::EuclidMeasured, mahalanobis::Mahalanobis, per_colorant::PerColorant,
+    euclid_measured::EuclidMeasured,
+    hiq::{HiqCmi, HiqLsvm, HiqQda, Neighbours},
+    jabcode::{BalanceRgb, JabCode},
+    mahalanobis::Mahalanobis,
+    per_colorant::PerColorant,
     ChannelRecovery, DirectRecovery,
 };
 use crate::thresholding::{adaptive::Adaptive, local::Local, Thresholder};
@@ -497,7 +510,7 @@ pub(crate) fn eval_channel<N: Normalizer, R: ChannelRecovery, T: Thresholder>(
 // Pipelines
 //------------------------------------------------------------------------------
 
-const PIPELINES: [&str; 16] = [
+const PIPELINES: [&str; 21] = [
     "euclid raw",
     "euclid intensity",
     "black/white euclid",
@@ -514,18 +527,56 @@ const PIPELINES: [&str; 16] = [
     "rda + deblur b=.08",
     "rda + deblur b=.12",
     "rda + deblur optical",
+    "hiq qda",
+    "hiq qda+cmi fixed",
+    "hiq qda+cmi hiq nbrs",
+    "hiq lsvm",
+    "jabcode (balanced)",
+];
+
+/// Everything a pipeline reads for one photo, shared by all of them.
+struct Inputs<'a> {
+    grid: usize,
+    rgb: &'a [Vec<[f64; 3]>],
+    raw: &'a GroupedSamples,
+    groups: &'a [Vec<(i32, i32)>; 8],
+    beta_optical: [f64; 3],
+    hiq: &'a HiqModels,
+    hiq_white: &'a [[f64; 3]],
+    balance: &'a BalanceRgb,
+}
+
+type Pipeline = fn(&Inputs) -> Vec<Vec<Color>>;
+
+/// The pipelines, in [`PIPELINES`] order. Each is its own function kept out of line, so the
+/// compiler optimizes it the same way whatever else is in the list: with every pipeline
+/// inlined into one function, adding one moved another's measured cost by a third.
+const RUNNERS: [Pipeline; PIPELINES.len()] = [
+    euclid_raw,
+    euclid_int,
+    bw_euclid,
+    pc_int,
+    pc_abs,
+    pc_int_local,
+    local_raw,
+    maha_lda,
+    maha_qda,
+    maha_rda,
+    rda_db_fit,
+    rda_db_04,
+    rda_db_06,
+    rda_db_08,
+    rda_db_12,
+    rda_db_opt,
+    hiq_qda,
+    hiq_cmi,
+    hiq_cmi_shipped,
+    hiq_lsvm,
+    jab,
 ];
 
 /// Fits every pipeline on this image's calibration samples and decodes the whole grid with
-/// each, returning prediction grids in [`PIPELINES`] order.
-/// Runs `f`, recording how long it took into `slot`.
-fn timed<T>(slot: &mut Duration, f: impl FnOnce() -> T) -> T {
-    let start = Instant::now();
-    let out = f();
-    *slot = start.elapsed();
-    out
-}
-
+/// each, returning prediction grids in [`PIPELINES`] order and the time each took.
 #[allow(clippy::type_complexity)]
 fn run_pipelines(
     grid: usize,
@@ -533,122 +584,209 @@ fn run_pipelines(
     raw: &GroupedSamples,
     groups: &[Vec<(i32, i32)>; 8],
     beta_optical: [f64; 3],
+    hiq: &HiqModels,
+    hiq_white: &[[f64; 3]],
+    balance: &BalanceRgb,
 ) -> ([Vec<Vec<Color>>; PIPELINES.len()], [Duration; PIPELINES.len()]) {
+    let inputs = Inputs { grid, rgb, raw, groups, beta_optical, hiq, hiq_white, balance };
     let mut times = [Duration::ZERO; PIPELINES.len()];
-    let euclid_raw = timed(&mut times[0], || {
-        let norm = Identity;
-        let ng = norm.normalize_groups(raw);
-        let rec = EuclidMeasured::fit(&ng);
-        eval_direct(&norm, &rec, grid, rgb)
+    let preds = std::array::from_fn(|pi| {
+        let start = Instant::now();
+        let out = RUNNERS[pi](&inputs);
+        times[pi] = start.elapsed();
+        out
     });
+    (preds, times)
+}
 
-    let euclid_int = timed(&mut times[1], || {
-        let norm = Intensity::fit(raw);
-        let ng = norm.normalize_groups(raw);
-        let rec = EuclidMeasured::fit(&ng);
-        eval_direct(&norm, &rec, grid, rgb)
-    });
+#[inline(never)]
+fn euclid_raw(i: &Inputs) -> Vec<Vec<Color>> {
+    let norm = Identity;
+    let ng = norm.normalize_groups(i.raw);
+    let rec = EuclidMeasured::fit(&ng);
+    eval_direct(&norm, &rec, i.grid, i.rgb)
+}
 
-    let bw_euclid = timed(&mut times[2], || {
-        let norm = BlackWhite::fit(raw);
-        let ng = norm.normalize_groups(raw);
-        let rec = EuclidMeasured::fit(&ng);
-        eval_direct(&norm, &rec, grid, rgb)
-    });
+#[inline(never)]
+fn euclid_int(i: &Inputs) -> Vec<Vec<Color>> {
+    let norm = Intensity::fit(i.raw);
+    let ng = norm.normalize_groups(i.raw);
+    let rec = EuclidMeasured::fit(&ng);
+    eval_direct(&norm, &rec, i.grid, i.rgb)
+}
 
-    let pc_int = timed(&mut times[3], || {
-        let norm = Intensity::fit(raw);
-        let ng = norm.normalize_groups(raw);
-        let rec = PerColorant::fit(&ng);
-        let thr = Adaptive::fit(&rec.recover_groups(&ng));
-        eval_channel(&norm, &rec, &thr, grid, rgb)
-    });
+#[inline(never)]
+fn bw_euclid(i: &Inputs) -> Vec<Vec<Color>> {
+    let norm = BlackWhite::fit(i.raw);
+    let ng = norm.normalize_groups(i.raw);
+    let rec = EuclidMeasured::fit(&ng);
+    eval_direct(&norm, &rec, i.grid, i.rgb)
+}
 
-    let pc_abs = timed(&mut times[4], || {
-        let norm = Absorptance::fit(raw);
-        let ng = norm.normalize_groups(raw);
-        let rec = PerColorant::fit(&ng);
-        let thr = Adaptive::fit(&rec.recover_groups(&ng));
-        eval_channel(&norm, &rec, &thr, grid, rgb)
-    });
+#[inline(never)]
+fn pc_int(i: &Inputs) -> Vec<Vec<Color>> {
+    let norm = Intensity::fit(i.raw);
+    let ng = norm.normalize_groups(i.raw);
+    let rec = PerColorant::fit(&ng);
+    let thr = Adaptive::fit(&rec.recover_groups(&ng));
+    eval_channel(&norm, &rec, &thr, i.grid, i.rgb)
+}
 
-    let pc_int_local = timed(&mut times[5], || {
-        let norm = Intensity::fit(raw);
-        let ng = norm.normalize_groups(raw);
-        let rec = PerColorant::fit(&ng);
-        let thr = Local::indicator();
-        eval_channel(&norm, &rec, &thr, grid, rgb)
-    });
+#[inline(never)]
+fn pc_abs(i: &Inputs) -> Vec<Vec<Color>> {
+    let norm = Absorptance::fit(i.raw);
+    let ng = norm.normalize_groups(i.raw);
+    let rec = PerColorant::fit(&ng);
+    let thr = Adaptive::fit(&rec.recover_groups(&ng));
+    eval_channel(&norm, &rec, &thr, i.grid, i.rgb)
+}
 
-    // Block-threshold the sampled RGB grid directly (no recovery). The most direct mirror of
-    // `prepare`, with its native brighter-is-on polarity.
-    let local_raw = timed(&mut times[6], || Local::intensity().decide_grid(rgb));
+#[inline(never)]
+fn pc_int_local(i: &Inputs) -> Vec<Vec<Color>> {
+    let norm = Intensity::fit(i.raw);
+    let ng = norm.normalize_groups(i.raw);
+    let rec = PerColorant::fit(&ng);
+    let thr = Local::indicator();
+    eval_channel(&norm, &rec, &thr, i.grid, i.rgb)
+}
 
-    // Same centroids as `euclid raw`, but distance measured under a learned covariance, so
-    // the delta against it isolates the metric. The three differ only in how `Sigma` is
-    // estimated: pooled, per-class, or per-class shrunk halfway toward pooled.
-    let maha_lda = timed(&mut times[7], || {
-        let norm = Identity;
-        let ng = norm.normalize_groups(raw);
-        let rec = Mahalanobis::fit_lda(&ng);
-        eval_direct(&norm, &rec, grid, rgb)
-    });
+/// Block-threshold the sampled RGB grid directly (no recovery). The most direct mirror of
+/// `prepare`, with its native brighter-is-on polarity.
+#[inline(never)]
+fn local_raw(i: &Inputs) -> Vec<Vec<Color>> {
+    Local::intensity().decide_grid(i.rgb)
+}
 
-    let maha_qda = timed(&mut times[8], || {
-        let norm = Identity;
-        let ng = norm.normalize_groups(raw);
-        let rec = Mahalanobis::fit_qda(&ng);
-        eval_direct(&norm, &rec, grid, rgb)
-    });
+// Same centroids as `euclid raw`, but distance measured under a learned covariance, so the
+// delta against it isolates the metric. The three differ only in how `Sigma` is estimated:
+// pooled, per-class, or per-class shrunk halfway toward pooled.
 
-    let maha_rda = timed(&mut times[9], || {
-        let norm = Identity;
-        let ng = norm.normalize_groups(raw);
-        let rec = Mahalanobis::fit_rda(&ng);
-        eval_direct(&norm, &rec, grid, rgb)
-    });
+#[inline(never)]
+fn maha_lda(i: &Inputs) -> Vec<Vec<Color>> {
+    let norm = Identity;
+    let ng = norm.normalize_groups(i.raw);
+    let rec = Mahalanobis::fit_lda(&ng);
+    eval_direct(&norm, &rec, i.grid, i.rgb)
+}
 
-    // Phase 0 deblur in front of the best pipeline. The deblurred grid is what both the fit
-    // and the decode see, so the palette is learned in the same space it is applied in. The
-    // fixed variants bracket the fitted one, so a flat result can be read as "deblur does not
-    // help here" rather than "the fit picked badly".
-    let run_deblur = |db: Deblur| {
-        let dg = db.apply(rgb);
-        let draw = db.sample_groups(rgb, groups);
-        let norm = Identity;
-        let ng = norm.normalize_groups(&draw);
-        let rec = Mahalanobis::fit_rda(&ng);
-        eval_direct(&norm, &rec, grid, &dg)
-    };
+#[inline(never)]
+fn maha_qda(i: &Inputs) -> Vec<Vec<Color>> {
+    let norm = Identity;
+    let ng = norm.normalize_groups(i.raw);
+    let rec = Mahalanobis::fit_qda(&ng);
+    eval_direct(&norm, &rec, i.grid, i.rgb)
+}
 
-    let rda_db_fit = timed(&mut times[10], || run_deblur(Deblur::fit(rgb, groups)));
-    let rda_db_04 = timed(&mut times[11], || run_deblur(Deblur::fixed(0.04)));
-    let rda_db_06 = timed(&mut times[12], || run_deblur(Deblur::fixed(BEST_BETA)));
-    let rda_db_08 = timed(&mut times[13], || run_deblur(Deblur::fixed(0.08)));
-    let rda_db_12 = timed(&mut times[14], || run_deblur(Deblur::fixed(0.12)));
-    let rda_db_opt = timed(&mut times[15], || run_deblur(Deblur::per_channel(beta_optical)));
+#[inline(never)]
+fn maha_rda(i: &Inputs) -> Vec<Vec<Color>> {
+    let norm = Identity;
+    let ng = norm.normalize_groups(i.raw);
+    let rec = Mahalanobis::fit_rda(&ng);
+    eval_direct(&norm, &rec, i.grid, i.rgb)
+}
 
-    (
-        [
-            euclid_raw,
-            euclid_int,
-            bw_euclid,
-            pc_int,
-            pc_abs,
-            pc_int_local,
-            local_raw,
-            maha_lda,
-            maha_qda,
-            maha_rda,
-            rda_db_fit,
-            rda_db_04,
-            rda_db_06,
-            rda_db_08,
-            rda_db_12,
-            rda_db_opt,
-        ],
-        times,
-    )
+/// Phase 0 deblur in front of the best pipeline. The deblurred grid is what both the fit and
+/// the decode see, so the palette is learned in the same space it is applied in. The fixed
+/// variants bracket the fitted one, so a flat result can be read as "deblur does not help
+/// here" rather than "the fit picked badly". Shared by the deblur pipelines but compiled into
+/// each of them, which is what keeps them comparable.
+#[inline(always)]
+fn run_deblur(i: &Inputs, db: Deblur) -> Vec<Vec<Color>> {
+    let dg = db.apply(i.rgb);
+    let draw = db.sample_groups(i.rgb, i.groups);
+    let norm = Identity;
+    let ng = norm.normalize_groups(&draw);
+    let rec = Mahalanobis::fit_rda(&ng);
+    eval_direct(&norm, &rec, i.grid, &dg)
+}
+
+#[inline(never)]
+fn rda_db_fit(i: &Inputs) -> Vec<Vec<Color>> {
+    run_deblur(i, Deblur::fit(i.rgb, i.groups))
+}
+
+#[inline(never)]
+fn rda_db_04(i: &Inputs) -> Vec<Vec<Color>> {
+    run_deblur(i, Deblur::fixed(0.04))
+}
+
+#[inline(never)]
+fn rda_db_06(i: &Inputs) -> Vec<Vec<Color>> {
+    run_deblur(i, Deblur::fixed(BEST_BETA))
+}
+
+#[inline(never)]
+fn rda_db_08(i: &Inputs) -> Vec<Vec<Color>> {
+    run_deblur(i, Deblur::fixed(0.08))
+}
+
+#[inline(never)]
+fn rda_db_12(i: &Inputs) -> Vec<Vec<Color>> {
+    run_deblur(i, Deblur::fixed(0.12))
+}
+
+#[inline(never)]
+fn rda_db_opt(i: &Inputs) -> Vec<Vec<Color>> {
+    run_deblur(i, Deblur::per_channel(i.beta_optical))
+}
+
+// HiQ's pretrained classifiers on the same samples. Their only per-image fit is the white
+// point, the mean of the finder-ring samples that survived HiQ's binarizer (picked out during
+// sampling, as HiQ picks them during localization).
+
+#[inline(never)]
+fn hiq_qda(i: &Inputs) -> Vec<Vec<Color>> {
+    let norm = HiqWhite::fit(i.hiq_white);
+    eval_direct(&norm, &i.hiq.qda, i.grid, i.rgb)
+}
+
+/// Shared by the two CMI pipelines but compiled into each, like [`run_deblur`].
+#[inline(always)]
+fn run_cmi(i: &Inputs, nb: Neighbours) -> Vec<Vec<Color>> {
+    let norm = HiqWhite::fit(i.hiq_white);
+    let ngrid: Vec<Vec<[f64; 3]>> =
+        i.rgb.iter().map(|row| row.iter().map(|&c| norm.apply(c)).collect()).collect();
+    i.hiq.cmi.decide_grid(&ngrid, nb)
+}
+
+#[inline(never)]
+fn hiq_cmi(i: &Inputs) -> Vec<Vec<Color>> {
+    run_cmi(i, Neighbours::Edge)
+}
+
+#[inline(never)]
+fn hiq_cmi_shipped(i: &Inputs) -> Vec<Vec<Color>> {
+    run_cmi(i, Neighbours::HiqShipped)
+}
+
+#[inline(never)]
+fn hiq_lsvm(i: &Inputs) -> Vec<Vec<Color>> {
+    let norm = HiqWhite::fit(i.hiq_white);
+    eval_direct(&norm, &i.hiq.lsvm, i.grid, i.rgb)
+}
+
+/// JABCode balances the whole image before sampling, so both the palette and the modules it
+/// classifies are read from the stretched values. The stretch's histogram needs the source
+/// pixels and is fitted during sampling, as `qrism_analysis` does.
+#[inline(never)]
+fn jab(i: &Inputs) -> Vec<Vec<Color>> {
+    let bal: Vec<Vec<[f64; 3]>> =
+        i.rgb.iter().map(|row| row.iter().map(|&x| i.balance.apply(x)).collect()).collect();
+    let rec = JabCode::fit(&sample_groups(i.groups, &bal));
+    eval_direct(&Identity, &rec, i.grid, &bal)
+}
+
+/// HiQ's shipped models, loaded once per pass and shared by every photo.
+pub(crate) struct HiqModels {
+    qda: HiqQda,
+    cmi: HiqCmi,
+    lsvm: HiqLsvm,
+}
+
+impl HiqModels {
+    pub(crate) fn shipped() -> Self {
+        HiqModels { qda: HiqQda::shipped(), cmi: HiqCmi::shipped(), lsvm: HiqLsvm::shipped() }
+    }
 }
 
 /// Dumps the parameters each stage fitted on one image, as a sanity check that a bad score is
@@ -736,6 +874,11 @@ pub(crate) struct Sampled {
     pub(crate) beta_optical: [f64; 3],
     /// The blur width behind `beta_optical`, kept for reporting.
     sigma_optical: [f64; 3],
+    /// HiQ's white-point samples that its binarizer did not call black, for the `hiq`
+    /// pipelines. Needs the source pixels, so it is picked out here.
+    pub(crate) hiq_white: Vec<[f64; 3]>,
+    /// JABCode's whole-image channel stretch, for the `jabcode` pipeline.
+    pub(crate) balance: BalanceRgb,
 }
 
 /// Why a photo contributed nothing.
@@ -784,7 +927,10 @@ pub(crate) fn sample_grid(path: &Path, refs: &HashMap<usize, Reference>) -> Resu
     let raw = sample_groups(&reference.groups, &rgb);
     let beta_optical = estimate_beta_optical(sym, &photo, ver);
     let sigma_optical = estimate_sigma_optical(sym, &photo, ver);
-    Ok(Sampled { version, rgb, raw, beta_optical, sigma_optical })
+    // The same pixels the grid holds: every module mapped above, so the unwrap cannot fail.
+    let hiq_white = white_candidates(&photo, grid, |gx, gy| module_pixel(sym, &photo, gx, gy).unwrap());
+    let balance = BalanceRgb::fit(&photo);
+    Ok(Sampled { version, rgb, raw, beta_optical, sigma_optical, hiq_white, balance })
 }
 
 /// What one photo contributed: a score per pipeline, plus the calibration samples it fitted on
@@ -806,7 +952,7 @@ enum Outcome {
 
 /// Decodes one photo with every pipeline and scores each against the reference for the version
 /// the localizer reported.
-fn analyze(path: &Path, refs: &HashMap<usize, Reference>) -> Outcome {
+fn analyze(path: &Path, refs: &HashMap<usize, Reference>, hiq: &HiqModels) -> Outcome {
     let sampled = match sample_grid(path, refs) {
         Ok(s) => s,
         Err(skip) => return Outcome::Skipped(skip),
@@ -815,8 +961,16 @@ fn analyze(path: &Path, refs: &HashMap<usize, Reference>) -> Outcome {
     let reference = &refs[&sampled.version];
     let grid = sampled.rgb.len();
     let ver = Version::Normal(sampled.version);
-    let (preds, _times) =
-        run_pipelines(grid, &sampled.rgb, &sampled.raw, &reference.groups, sampled.beta_optical);
+    let (preds, _times) = run_pipelines(
+        grid,
+        &sampled.rgb,
+        &sampled.raw,
+        &reference.groups,
+        sampled.beta_optical,
+        hiq,
+        &sampled.hiq_white,
+        &sampled.balance,
+    );
     let scores = std::array::from_fn(|pi| {
         let mut s = score(&reference.truth, &preds[pi], &reference.func, grid);
         s.add_decode(&decode_layers(&preds[pi], ver), &reference.messages);
@@ -841,6 +995,7 @@ fn analyze(path: &Path, refs: &HashMap<usize, Reference>) -> Outcome {
 pub fn benchmark_accuracy() {
     println!("\n\n########## colour pipeline accuracy ##########");
     let refs = load_references();
+    let hiq = HiqModels::shipped();
     let mut dumped = HashSet::new();
 
     let mut overall = new_scores();
@@ -873,7 +1028,7 @@ pub fn benchmark_accuracy() {
         // Decoding dominates the runtime and photos are independent, so they run across cores.
         // The fold below stays serial and in listing order: every total is an integer sum, so
         // the output is identical to a serial run rather than merely equivalent.
-        let outcomes: Vec<Outcome> = files.par_iter().map(|p| analyze(p, &refs)).collect();
+        let outcomes: Vec<Outcome> = files.par_iter().map(|p| analyze(p, &refs, &hiq)).collect();
 
         for (path, outcome) in files.iter().zip(outcomes) {
             attempted += 1;
@@ -1064,6 +1219,7 @@ const TIMING_REPS: usize = 5;
 pub fn benchmark_timing() {
     println!("\n\n########## colour pipeline timing ##########");
     let refs = load_references();
+    let hiq = HiqModels::shipped();
 
     let grids: Vec<Sampled> = FOLDERS
         .iter()
@@ -1081,8 +1237,16 @@ pub fn benchmark_timing() {
     for _ in 0..TIMING_REPS {
         for s in &grids {
             let groups = &refs[&s.version].groups;
-            let (_preds, times) =
-                run_pipelines(s.rgb.len(), &s.rgb, &s.raw, groups, s.beta_optical);
+            let (_preds, times) = run_pipelines(
+                s.rgb.len(),
+                &s.rgb,
+                &s.raw,
+                groups,
+                s.beta_optical,
+                &hiq,
+                &s.hiq_white,
+                &s.balance,
+            );
             for (slot, t) in totals.iter_mut().zip(times) {
                 *slot += t;
             }

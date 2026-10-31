@@ -1,0 +1,27 @@
+########## HiQ classifier parity ##########
+
+    photo                       config         modules  classify  features   white  px differ  >4 lvl mean lvl  bin differ   colour
+    01/402.JPG                  lsvm-ip6plus     10201         0         0   exact       4090       0     0.65        0/12        0
+    01/402.JPG                  qda              10201         0         0   exact       4090       0     0.65        0/12        0
+    01/402.JPG                  qda+cmi-fix      10201         0         0   exact       4090       0     0.65        0/12        0
+    03/1149.JPG                 lsvm-ip6plus     13689         0         0   exact       6327       0     0.75        0/12      133
+    03/1149.JPG                 qda              13689         0         0   exact       6327       0     0.75        0/12      122
+    03/1149.JPG                 qda+cmi-fix      13689         0         0   exact       6327       0     0.75        0/12      101
+    05/2001.JPG                 lsvm-ip6plus     18769         0         0   exact       8860       0     0.77        0/12      186
+    05/2001.JPG                 qda              18769         0         0   exact       8844       0     0.77        0/12      129
+    05/2001.JPG                 qda+cmi-fix      18769         0         0   exact       8844       0     0.77        0/12      149
+    07/3004.JPG                 lsvm-ip6plus     24649         0         0   exact      11798       0     0.78        0/12      309
+    07/3004.JPG                 qda              24649         0         0   exact      11792       0     0.78        0/12      213
+    07/3004.JPG                 qda+cmi-fix      24649         0         0   exact      11792       0     0.78        0/12      201
+    08/4097.JPG                 lsvm-ip6plus     31329         0         0   exact      14841       0     0.77        0/12      191
+    08/4097.JPG                 qda              31329         0         0   exact      14841       0     0.77        0/12      150
+    08/4097.JPG                 qda+cmi-fix      31329         0         0   exact      14841       0     0.77        0/12      148
+    all                                         295911         0         0             137704       0                    0     2032
+
+  classify/features/white: the port against HiQ on HiQ's own inputs (must be 0/0/exact).
+  px differ: modules whose pixel `image` decodes differently from Java ImageIO (>4 lvl: by more
+  than 4 levels in some channel; mean lvl: mean largest channel gap); bin differ:
+  white samples the binarizer judges differently on that decode; colour: modules whose
+  colour changes when the port reads those pixels, which is JPEG decoding alone.
+
+  parity holds: the port reproduces HiQ's decisions on every module

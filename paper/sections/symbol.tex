@@ -10,9 +10,9 @@ matches the dark-module convention of a monochrome QR code~\cite{iso18004}.
 layer, so each layer can be decoded on its own once the colors are recovered.
 
 \emph{qrism}, the design implemented in the open-source library this work builds on,
-encodes one message. Its codeword stream is split into three equal parts, each written to
-one channel with its own Reed-Solomon blocks, so a symbol decodes only when all three
-channels do. The finder patterns use the same complementary color pairs as HiQ (green ring
+encodes one message. Its codeword stream fills the red channel first, then green, then
+blue, each channel with its own Reed-Solomon blocks, and unused capacity is padded as in a
+monochrome QR code. A symbol decodes only when all three channels do. The finder patterns use the same complementary color pairs as HiQ (green ring
 and magenta stone top left, red and cyan top right, blue and yellow bottom left). Alignment
 patterns, timing patterns, and format and version information are black and white, as in a
 monochrome QR code.
@@ -24,7 +24,8 @@ and alignment patterns and fits a homography per region of the symbol. In the li
 here this runs on a min-channel projection of the photograph, which keeps colored finder
 rings dark, with sub-pixel finder and alignment centers. (2)~\emph{Sampling} reads one pixel
 at the projected center of every module. (3)~\emph{Color recovery} assigns each sample one
-of the eight colors. (4)~\emph{Decoding} splits the color grid into its three layers and
+of the eight colors; our method first fits its classifier to the samples of the function
+patterns (Section~\ref{sec:calibration}). (4)~\emph{Decoding} splits the color grid into its three layers and
 runs standard Reed-Solomon decoding on each. This paper is about stage~(3); the experiments
 in Section~\ref{sec:setup} hold stages (1), (2) and (4) fixed so that only color recovery
 varies.

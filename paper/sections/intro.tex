@@ -27,7 +27,7 @@ them~\cite{yang2018hiq}. Bagherinia and Manduchi decode blurred patches by itera
 estimation~\cite{bagherinia2014blur}, and screen-to-camera systems train networks end to
 end~\cite{tamang2021deepd2c,tran2021deeplight}. A trained decoder depends on the printers,
 displays and phones in its training set. We look for a method that needs no training data,
-runs in time linear in the number of modules, and holds up on dense symbols.
+runs in time linear in the number of modules, and holds up on high-version symbols.
 
 Our method fits each photograph on its own. The finder, alignment and timing patterns of a
 multiplexed QR symbol have fixed colors, so they label a few hundred samples per photograph.
@@ -37,9 +37,11 @@ samples are then classified by regularized discriminant analysis with shrink
 $\lambda=0.5$, fitted to the labelled samples. On the public CUHK-CQRC dataset the method
 decodes \HiqCodeChosen\% of localized symbols, against \HiqCodeRda\% without leak inversion
 and \HiqCodeEuclid\% for nearest-centroid classification; on a new dataset of qrism symbols
-it decodes \QrCodeChosen\%. On HiQ's own test split, our decoder reads \PairCommonOurs\% of
-the symbols that both it and the released HiQ decoder localize, against \PairCommonHiq\% for
-HiQ.
+it decodes \QrCodeChosen\% of localized symbols, from \QrCodeChosenPxTwenty\% at
+0.84\,mm modules to \QrCodeChosenPxTwelve\% at 0.5\,mm. On HiQ's own test split, with HiQ's shipped classifiers run on the
+same module samples, ours decodes \PortOursCode\% of symbols against \PortCmiCode\% for the
+best of them; end to end, our decoder reads \PairCommonOurs\% of the symbols that both it and
+the released HiQ decoder localize, against \PairCommonHiq\% for HiQ.
 
 The contributions are:
 \begin{itemize}
@@ -48,11 +50,11 @@ calibration from function patterns, a one-parameter inverse of inter-module leak
 regularized discriminant analysis (Section~\ref{sec:method});
 \item a dataset of \QrAttempted{} photographs of qrism symbols at seven versions, four
 error-correction levels and four phones, with the source render of every symbol;
-\item an evaluation on two datasets in which both parameters are chosen on each dataset and
-checked on the other, with paired tests, and an end-to-end comparison with the released HiQ
-decoder on its test split that also corrects a defect in its CMI step
-(Sections~\ref{sec:setup} and~\ref{sec:results});
-\item an open-source Rust implementation. \todo{repository URL}
+\item an evaluation on two datasets in which the leak fraction $\beta$ and the shrink $\lambda$ are chosen on each dataset and
+checked on the other, with paired tests, and a comparison with HiQ on its test split, both
+end to end and with its shipped classifiers run on our module samples, which also corrects
+two defects in its CMI step (Sections~\ref{sec:setup} and~\ref{sec:results});
+\item an open-source Rust implementation, at \url{https://github.com/mohnishsalian0/qrism}.
 \end{itemize}
 
 Section~\ref{sec:related} reviews related work, Section~\ref{sec:symbol} describes the

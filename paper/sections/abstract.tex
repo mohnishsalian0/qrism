@@ -1,5 +1,5 @@
 \begin{abstract}
-\todo{draft; finalize after the introduction} High-capacity color QR codes stack three
+High-capacity color QR codes stack three
 binary layers in the RGB channels, and decoding them depends on recovering each module's
 color from a phone photograph. We present a color recovery method that needs no offline
 training. It inverts a one-parameter linear leak between neighboring modules and then
@@ -8,10 +8,13 @@ function patterns whose colors the symbol fixes. Both parameters were chosen on 
 datasets separately, and the chosen values are best or statistically tied with the best on
 both: the public CUHK-CQRC dataset of HiQ codes and a new dataset of \QrAttempted{}
 photographs, which we release. On CUHK-CQRC the method decodes
-\HiqCodeChosen\% of localized symbols, against \HiqCodeRda\% without leak inversion and
-\HiqCodeEuclid\% for nearest-centroid classification. On HiQ's own test split our open-source
-decoder reads \PairCommonOurs\% of the symbols that both it and the released HiQ decoder
-localize, against \PairCommonHiq\% for HiQ.
+\HiqCodeChosen\% of localized symbols. On HiQ's own test split, with HiQ's
+shipped classifiers run on the same module samples, ours decodes \PortOursCode\% of symbols
+against \PortCmiCode\% by HiQ's best, at \TimeChosenNs{} against \PortCmiNs\,ns per module on
+one Apple M4 core, our per-photograph fit included (\TimeChosenVforty\,ms for a version-40
+symbol). End to end, our open-source decoder reads
+\PairCommonOurs\% of the symbols that both it and the released HiQ decoder localize, against
+\PairCommonHiq\% for HiQ.
 \end{abstract}
 
 \begin{IEEEkeywords}

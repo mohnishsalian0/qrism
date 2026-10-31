@@ -1,7 +1,34 @@
 \section{Conclusion}
 \label{sec:conclusion}
 
-\todo{write last: restate the method in two sentences, the headline numbers
-(\HiqCodeChosen\% and \QrCodeChosen\% symbol decode rate at $\beta=0.06$, $\lambda=0.5$,
-chosen on each dataset and agreeing), the release of the dataset and code, and the open
-problem of choosing $\beta$ per photograph.}
+Color recovery for multiplexed QR codes does not need offline training. Each photograph is
+fitted on its own function patterns: a closed-form inverse of the leak between edge-adjacent
+modules, with one fixed fraction $\beta=0.06$, followed by regularized discriminant analysis
+with shrink $\lambda=0.5$. These values were chosen on each dataset separately; they are the
+best setting on the qrism dataset and statistically tied with the best on CUHK-CQRC
+($p\HiqGridBestP$). At these values the method decodes \HiqCodeChosen\% of localized symbols
+on CUHK-CQRC and \QrCodeChosen\% on the qrism dataset, and every baseline decodes fewer on
+both. Given the same module samples on HiQ's test split, it decodes \PortOursCode\% of symbols
+against \PortCmiCode\% for the best of HiQ's trained classifiers, at \TimeChosenNs\,ns per
+module including the fit.
+
+Color codes have been proposed for file transfer between phones without a
+network~\cite{toh2016colorqr}, for validation data on small product labels such as medicine
+packs that must be checked off-line~\cite{melgar2019hd2dc}, for encrypted payloads carried
+with their signatures~\cite{wahsheh2026rgb}, and for hidden traceability and
+anti-counterfeiting layers beside a layer that standard readers
+decode~\cite{huang2022mc2d,huang2023halftone}. In these uses the printer, display and phone
+are often not known in advance. Our method assumes nothing about them, only that the
+function patterns are intact: it is fitted to each photograph without training data,
+recovers the colors of a version-40 symbol in \TimeChosenVforty\,ms, and was evaluated on
+both printed and displayed symbols. The decode rates above are for single photographs; a
+phone scanner sees many frames per second and could retry on later ones, but we have not
+measured how often this helps. Symbols with 0.34\,mm modules almost never decode and oblique views are not
+localized (Section~\ref{sec:limitations}), so these uses would need further work before
+deployment.
+
+The fixed $\beta$ is the main compromise: its best value grows as modules shrink and shifts
+with lighting, and choosing it per photograph in a way that tracks decodability rather than
+bit error rate remains open.
+The Rust implementation is available at \url{https://github.com/mohnishsalian0/qrism}, and
+the qrism dataset is released with its source renders.

@@ -65,8 +65,7 @@ warning: unused import: `MaskPattern`
   |             ^^^^^^^^^^^
 
 warning: `qrism` (bin "qrism") generated 2 warnings (run `cargo fix --bin "qrism" -p qrism` to apply 2 suggestions)
-   Compiling qrism v0.1.0 (/Users/mohnishsalian/Projects/qrism)
-    Finished `bench` profile [optimized] target(s) in 3.98s
+    Finished `bench` profile [optimized] target(s) in 0.16s
      Running benches/color/main.rs (target/release/deps/color-ae737c50866f5725)
 
 
@@ -76,19 +75,24 @@ warning: `qrism` (bin "qrism") generated 2 warnings (run `cargo fix --bin "qrism
   excludes image decode and localization (~91% of end-to-end wall time)
 
     pipeline                      total ms     ns/module  ms per v40 sym       rel
-    euclid raw                        13.5          11.5            0.36      4.1x
-    euclid intensity                  29.9          25.3            0.79      9.0x
-    black/white euclid                13.8          11.7            0.37      4.1x
-    per-colorant int + adp            20.9          17.7            0.55      6.3x
-    per-colorant abs + adp             6.3           5.3            0.17      1.9x
-    per-colorant int + local          21.4          18.1            0.57      6.4x
-    local standalone (raw)             3.3           2.8            0.09      1.0x
-    mahalanobis lda (raw)             65.6          55.6            1.74     19.7x
-    mahalanobis qda (raw)             65.5          55.5            1.74     19.7x
-    mahalanobis rda (raw)             65.5          55.6            1.74     19.7x
-    rda + deblur fit                 193.7         164.2            5.14     58.2x
-    rda + deblur b=.04                73.3          62.2            1.95     22.0x
-    rda + deblur b=.06                73.5          62.3            1.95     22.1x
-    rda + deblur b=.08                73.5          62.3            1.95     22.1x
-    rda + deblur b=.12                73.7          62.4            1.96     22.1x
-    rda + deblur optical              73.7          62.4            1.96     22.1x
+    euclid raw                        13.8          11.7            0.37      4.1x
+    euclid intensity                  30.2          25.6            0.80      8.9x
+    black/white euclid                14.4          12.2            0.38      4.2x
+    per-colorant int + adp            21.0          17.8            0.56      6.2x
+    per-colorant abs + adp             6.5           5.5            0.17      1.9x
+    per-colorant int + local          21.0          17.8            0.56      6.2x
+    local standalone (raw)             3.4           2.9            0.09      1.0x
+    mahalanobis lda (raw)             66.1          56.0            1.75     19.4x
+    mahalanobis qda (raw)             65.9          55.8            1.75     19.4x
+    mahalanobis rda (raw)             66.2          56.1            1.76     19.5x
+    rda + deblur fit                 195.1         165.4            5.18     57.3x
+    rda + deblur b=.04                74.0          62.7            1.97     21.7x
+    rda + deblur b=.06                73.9          62.6            1.96     21.7x
+    rda + deblur b=.08                74.1          62.8            1.97     21.8x
+    rda + deblur b=.12                74.1          62.8            1.97     21.8x
+    rda + deblur optical              74.2          62.9            1.97     21.8x
+    hiq qda                           50.8          43.1            1.35     14.9x
+    hiq qda+cmi fixed                 57.9          49.1            1.54     17.0x
+    hiq qda+cmi hiq nbrs              58.6          49.7            1.56     17.2x
+    hiq lsvm                           7.1           6.0            0.19      2.1x
+    jabcode (balanced)                28.6          24.2            0.76      8.4x

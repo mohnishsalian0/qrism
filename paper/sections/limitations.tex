@@ -1,7 +1,7 @@
 \section{Limitations}
 \label{sec:limitations}
 
-A single $\beta$ is a compromise. The best value depends on module size in pixels and on
+A single $\beta$ is a compromise. The best value depends on module size and on
 lighting (Table~\ref{tab:breakdown}), and the per-photograph estimates we tried do not
 reliably beat the fixed value. Estimating $\beta$ from a photograph in a way that tracks
 decodability rather than bit error rate is open.
@@ -9,12 +9,9 @@ decodability rather than bit error rate is open.
 Calibration assumes the function patterns are intact. Glare, damage or occlusion on a
 finder or alignment pattern corrupts the samples the whole photograph is fitted on.
 
-Symbols with 8\,px modules almost never decode, and none of the oblique-view photographs
+Symbols with 0.34\,mm modules almost never decode, and none of the oblique-view photographs
 is localized, so neither condition informs the comparison of color recovery methods.
 
 Each module is read from one pixel at its projected center. Averaging several pixels may
 reduce noise but would also mix in more of the neighbors that leak inversion removes; we
 have not measured this trade-off.
-
-The comparison with HiQ is end to end (Section~\ref{sec:hiq}) and does not separate color
-recovery from localization and sampling.

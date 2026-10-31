@@ -12,6 +12,7 @@ fitting a class-conditional Gaussian model to each photograph, and the third by 
 fixed linear leak between neighboring modules before that fit. Nothing is trained offline.
 
 \subsection{Calibration from function patterns}
+\label{sec:calibration}
 
 Every photograph supplies its own labelled samples. The QR specification fixes the
 position of the finder, alignment and timing patterns, and both symbol designs fix their
@@ -27,9 +28,9 @@ the main reason the classifier below regularizes its covariances.
 \subsection{Inter-module leak inversion}
 
 Cross-module interference is modeled as a symmetric leak between each module and its
-edge neighbors. With $\mathcal{N}(p)$ the up to four edge neighbors of $p$ inside the grid,
-$n_p = |\mathcal{N}(p)|$, and $\mathbf{t}_p$ the value the module would have without
-leakage,
+edge neighbors. Let $\mathcal{N}(p)$ be the set of edge neighbors of $p$ inside the grid (at
+most four), $n_p = |\mathcal{N}(p)|$ their number, and $\mathbf{t}_p$ the value the module
+would have without leakage. Then
 \begin{equation}
 \mathbf{m}_p = (1 - n_p\beta)\,\mathbf{t}_p + \beta \sum_{q \in \mathcal{N}(p)} \mathbf{m}_q ,
 \label{eq:leak}
@@ -63,7 +64,8 @@ about their own class centroids. Each class covariance is shrunk toward the pool
 \begin{equation}
 \Sigma_c(\lambda) = (1-\lambda)\,\Sigma_c + \lambda\,\Sigma ,
 \end{equation}
-following the first of the two regularizations of Friedman~\cite{friedman1989rda}. A class
+the unweighted form of the first of Friedman's two shrinkage steps~\cite{friedman1989rda};
+we do not shrink further toward the identity beyond a small ridge. A class
 with fewer than eight samples uses $\Sigma$ directly, and a ridge of $10^{-3}$ times the
 mean variance keeps every matrix invertible. A module is assigned the color minimizing
 \begin{equation}
@@ -81,8 +83,8 @@ between 0.4 and 0.8. A Euclidean distance cannot tell that drift from a change o
 which is why dark blue modules in shadow are read as black. The inverse covariance
 discounts the shared-brightness direction and weights differences across it.
 
-The calibration samples are taken from the corrected grid~\eqref{eq:inverse}, so the
-classifier is fitted in the space it is applied in. Per photograph the fit estimates eight
+The calibration samples are taken after leak inversion~\eqref{eq:inverse}, so the
+classifier is fitted to samples processed the same way as the modules it classifies. Per photograph the fit estimates eight
 centroids and covariances from a few hundred samples and inverts eight $3\times 3$
 matrices; per module it evaluates eight quadratic forms. On one core of an Apple M4 the
 whole color recovery stage, fit included, takes \TimeChosenNs{}\,ns

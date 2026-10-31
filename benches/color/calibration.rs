@@ -247,6 +247,16 @@ pub(crate) fn sample_module_rgb(
     Some([median_u8(&mut rs), median_u8(&mut gs), median_u8(&mut bs)])
 }
 
+/// The pixel `sample_module_rgb` reads for module `(gx, gy)` at the module centre, for
+/// stages that need the position rather than the colour (HiQ's binarizer test).
+pub(crate) fn module_pixel(sym: &Symbol, img: &RgbImage, gx: usize, gy: usize) -> Option<(u32, u32)> {
+    let (w, ht) = img.dimensions();
+    let (px, py) = sym.exact_map(gx, gy, 0.5, 0.5)?;
+    let x = (px.round() as i64).clamp(0, w as i64 - 1) as u32;
+    let y = (py.round() as i64).clamp(0, ht as i64 - 1) as u32;
+    Some((x, y))
+}
+
 fn median_u8(v: &mut [u8]) -> f64 {
     if v.is_empty() {
         return 0.0;

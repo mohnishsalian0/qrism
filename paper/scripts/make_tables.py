@@ -18,6 +18,7 @@ Inputs (paths relative to `paper/`, overridable with flags):
   ../../hiq/HiQ/hiq-decoder/bench/results/full.csv  HiQ decoder per photo
   data/cuhk_cqrc_split.csv                          CUHK-CQRC metadata (HiQ's test split)
   ../benches/color/timing.txt                       timing pass (per-module cost)
+  ../benches/color/hiq_parity/parity.txt            HiQ classifier ports against the HiQ decoder
   ../../hiq/HiQ/hiq-decoder/bench/results/timing.txt  HiQ bench timing, same machine
 
 Outputs, under `generated/`:
@@ -26,6 +27,7 @@ Outputs, under `generated/`:
   tab_shrink.tex          RDA shrink at beta 0 and 0.06, both datasets
   tab_breakdown.tex       qrism decode rate by module size and capture condition
   tab_paired.tex          paired comparison with the HiQ decoder
+  tab_ported.tex          HiQ's classifiers on our samples (classifier-only comparison)
 """
 import argparse
 import csv
@@ -33,6 +35,7 @@ import math
 import os
 import re
 from collections import defaultdict
+from types import SimpleNamespace
 
 CHOSEN = "b=0.06"  # sweep label of the chosen setting
 CHOSEN_GRID = "b=0.06 s=0.5"  # same setting in the shrink grid
@@ -158,21 +161,19 @@ def write(path, text):
 # ------------------------------------------------------------------------------
 
 # (paper label, accuracy-pass / qrism-report pipeline name or None, family). The chosen
-# setting is added last from the sweep (CUHK-CQRC) and the qrism report (qrism).
+# setting is added last from the sweep (CUHK-CQRC) and the qrism report (qrism). The qrism
+# report has no optical-beta run, so that cell comes from the beta sweep (SWEEP_OPTICAL).
+# Rows of family "ours" are variants of our method, not baselines: they are left out of the
+# "ours decodes more than every baseline" check and of its p-value.
+SWEEP_OPTICAL = "sweep:optical"
 BASELINES = [
-    ("Centroid, RGB", "euclid raw", "euclid raw", "centroid"),
-    ("Centroid, optical density", "euclid intensity", "euclid intensity", "centroid"),
-    ("Centroid, black/white stretch", "black/white euclid", "black/white euclid", "centroid"),
-    ("Interf. canc., density", "per-colorant int + adp", "per-colorant int + adp", "channel"),
-    ("Interf. canc., absorptance", "per-colorant abs + adp", None, "channel"),
-    ("Interf. canc., local thr.", "per-colorant int + local", None, "channel"),
-    ("Local threshold", "local standalone (raw)", None, "channel"),
-    ("JAB Code classifier", None, "jabcode (balanced)", "channel"),
-    ("LDA", "mahalanobis lda (raw)", "mahalanobis lda (raw)", "da"),
-    ("QDA", "mahalanobis qda (raw)", "mahalanobis qda (raw)", "da"),
-    ("RDA ($\\lambda=0.5$)", "mahalanobis rda (raw)", "mahalanobis rda (raw)", "da"),
-    ("Ours, $\\beta$ fit per image", "rda + deblur fit", None, "ours"),
+    ("Nearest centroid", "black/white euclid", "black/white euclid", "prior"),
+    ("Interference cancellation", "per-colorant int + adp", "per-colorant int + adp", "prior"),
+    ("JAB Code classifier", "jabcode (balanced)", "jabcode (balanced)", "prior"),
+    ("RDA, no leak inversion", "mahalanobis rda (raw)", "mahalanobis rda (raw)", "da"),
+    ("Ours, $\\beta$ per photograph", "rda + deblur optical", SWEEP_OPTICAL, "ours"),
 ]
+CENTROID = "black/white euclid"  # the nearest-centroid baseline cited in the text
 QRISM_CHOSEN = "rda + deblur b=.06"  # the chosen setting's name in the qrism report
 
 
@@ -204,7 +205,7 @@ def decoded_by_path(rows_by_path):
     return {p: r["decoded"] == "1" for p, r in rows_by_path.items()}
 
 
-def tab_baselines(acc_ph, q_ph, sw_h, ph_h):
+def tab_baselines(acc_ph, q_ph, sw_h, ph_h, sw_q, ph_q):
     """Color recovery pipelines on both datasets, every row over the same localized photos
     of its dataset. Returns the table and the largest McNemar p of any baseline against the
     chosen setting, for the caption and the text."""
@@ -214,23 +215,32 @@ def tab_baselines(acc_ph, q_ph, sw_h, ph_h):
     rows, prev = [], None
     stats_h, stats_q = {}, {}
 
-    def cell(ph, name, ours, stats):
+    def cell(ph, name, ours, stats, baseline):
         nonlocal worst
         if name is None:
             return "-- & --"
-        s = Stat(ph[name].values())
-        mine = decoded_by_path(ph[name])
-        b = sum(ours[p] and not mine.get(p, False) for p in ours)
-        c = sum(mine.get(p, False) and not ours[p] for p in ours)
-        worst = max(worst, mcnemar(b, c))
-        stats[name] = s
+        if name == SWEEP_OPTICAL:
+            # qrism optical beta: rates and per-photo decodes from the beta sweep
+            r = sw_q[("all", "all", "optical")]
+            s = SimpleNamespace(ber=float(r["ber_pct"]), code=float(r["code_pct"]))
+            mine = {row["path"]: row["optical"] == "1" for row in ph_q}
+            assert set(mine) == set(ours), "beta sweep and qrism report localized different photos"
+        else:
+            s = Stat(ph[name].values())
+            mine = decoded_by_path(ph[name])
+        if baseline:
+            b = sum(ours[p] and not mine.get(p, False) for p in ours)
+            c = sum(mine.get(p, False) and not ours[p] for p in ours)
+            worst = max(worst, mcnemar(b, c))
+            stats[name] = s
         return f"{s.ber:.2f} & {s.code:.1f}"
 
     for label, kh, kq, fam in BASELINES:
         if prev is not None and fam != prev:
             rows.append("\\midrule")
         prev = fam
-        rows.append(f"{label} & {cell(acc_ph, kh, ours_h, stats_h)} & {cell(q_ph, kq, ours_q, stats_q)} \\\\")
+        base = fam != "ours"
+        rows.append(f"{label} & {cell(acc_ph, kh, ours_h, stats_h, base)} & {cell(q_ph, kq, ours_q, stats_q, base)} \\\\")
     a = sw_h[("all", "all", CHOSEN)]
     sq = Stat(q_ph[QRISM_CHOSEN].values())
     rows.append(
@@ -250,9 +260,10 @@ def tab_baselines(acc_ph, q_ph, sw_h, ph_h):
 \\small
 \\caption{{Color recovery pipelines, all fed the same module samples: bit error rate before
 Reed-Solomon correction and symbol decode rate, in percent, over the photographs localized
-at the right version ({n_h} on CUHK-CQRC, {n_q} on qrism). Centroid: nearest calibration
-centroid; interf.\\ canc.: interference cancellation; ours: RDA with leak inversion. Ours
-decodes more symbols than every baseline, with exact McNemar $p<10^{{{p_exp(worst)}}}$.}}
+at the right version ({n_h} on CUHK-CQRC, {n_q} on qrism). The last block is our method with
+$\\beta$ estimated per photograph from the blur of the finder edges and with the fixed
+$\\beta$, which decodes more symbols than every row above that block, with exact McNemar
+$p<10^{{{p_exp(worst)}}}$.}}
 \\label{{tab:baselines}}
 \\setlength{{\\tabcolsep}}{{4pt}}
 \\begin{{tabular}}{{@{{}}lrrrr@{{}}}}
@@ -302,7 +313,7 @@ $\\lambda$ & $\\beta=0$ & $0.06$ & $\\beta=0$ & $0.06$ \\\\
 """
 
 
-SIZE_NAMES = {"08px": "8 px", "12px": "12 px", "20px": "20 px"}
+SIZE_NAMES = {"08px": "0.34 mm", "12px": "0.5 mm", "20px": "0.84 mm"}
 COND_ORDER = ["regular", "daylight", "flashlight", "monitor", "close", "wb-cool", "wb-neutral", "wb-warm"]
 
 
@@ -433,8 +444,9 @@ def tab_paired(P):
 \\centering
 \\small
 \\caption{{End-to-end decoders on HiQ's test split of CUHK-CQRC, paired by photo. Each decoder uses its own
-localization and sampling. Disc.: photos only ours decoded / only HiQ decoded;
-every difference has exact McNemar $p<10^{{{p_exp(worst)}}}$.}}
+localization and sampling. CMI, corrected: all five CMI weights, with the neighbors HiQ's
+sampler gathers (two of four on most modules). Disc.: photos only ours decoded / only HiQ
+decoded; every difference has exact McNemar $p<10^{{{p_exp(worst)}}}$.}}
 \\label{{tab:paired}}
 \\setlength{{\\tabcolsep}}{{4pt}}
 \\begin{{tabular}}{{@{{}}lrcr@{{}}}}
@@ -448,6 +460,151 @@ Decoder & Symbol \\% & 95\\% CI & Disc. \\\\
 """
 
 
+# HiQ's shipped classifiers, ported to run on our samples (benches/color/recovery/hiq.rs), as
+# (accuracy-pass pipeline, paper label, macro tag, HiQ bench config run end to end or None).
+# HiQ's own `qda+cmi-fix` gathers neighbours with the sampler's `else if`, so the row that
+# reproduces it is the one with HiQ's neighbours; all four neighbours has no HiQ counterpart.
+HIQ_PORTS = [
+    ("hiq qda", "QDA", "Qda", "qda"),
+    ("hiq qda+cmi fixed", "QDA + CMI, corrected", "Cmi", None),
+    ("hiq qda+cmi hiq nbrs", "\\quad with HiQ's neighbors", "CmiShipped", "qda+cmi-fix"),
+    ("hiq lsvm", "Layered SVM", "Lsvm", "lsvm-ip6plus"),
+]
+ACC_CHOSEN = "rda + deblur b=.06"  # the chosen setting's name in the accuracy pass
+
+
+def ported(acc_ph, P, split):
+    """HiQ's classifiers and ours on the same samples, on HiQ's test split: every test photo
+    our localizer found at a known version, and the common set of Table tab:paired."""
+    def by_key(rows):
+        return {tuple(p.split("/")[-2:]): r for p, r in rows.items()}
+
+    ours = by_key(acc_ph[ACC_CHOSEN])
+    test = sorted(k for k in ours if is_test(split[k]))
+    # Same photos and same decodes as the sweep the end-to-end table is built from, or the two
+    # tables would not be about the same thing.
+    assert set(test) == P["q_ok"], "accuracy pass and sweep localized different test photos"
+    assert all((ours[k]["decoded"] == "1") == P["qd"](k, CHOSEN) for k in test), \
+        "accuracy pass and sweep disagree on the chosen setting"
+    R = {"test": test, "common": P["common"], "ours": ours, "port": {}}
+    for name, _, _, _ in HIQ_PORTS:
+        R["port"][name] = by_key(acc_ph[name])
+        assert set(R["port"][name]) == set(ours), f"{name} scored different photos"
+    return R
+
+
+def port_stats(R, name, keys):
+    """Stat over `keys` for a port (or ours when `name` is None), with the photos only ours
+    decoded and only it decoded, and the exact McNemar p between them."""
+    rows = R["ours"] if name is None else R["port"][name]
+    s = Stat(rows[k] for k in keys)
+    if name is not None:
+        s.b = sum(R["ours"][k]["decoded"] == "1" and rows[k]["decoded"] == "0" for k in keys)
+        s.c = sum(R["ours"][k]["decoded"] == "0" and rows[k]["decoded"] == "1" for k in keys)
+        s.p = mcnemar(s.b, s.c)
+    return s
+
+
+def tab_ported(R, P):
+    """HiQ's classifiers on our samples next to ours, then the end-to-end figure HiQ's decoder
+    reaches with the same classifier on its own samples, on the common set."""
+    test, common = R["test"], R["common"]
+    worst = 0.0
+    ours, ours_c = port_stats(R, None, test), port_stats(R, None, common)
+    rows = [
+        f"Ours, $\\beta=0.06$ & {ours.data:.1f} & {ours.ber:.2f} & {ours.code:.1f} & & {ours_c.code:.1f} & \\\\",
+        "\\midrule",
+    ]
+    for name, label, _, cfg in HIQ_PORTS:
+        s, sc = port_stats(R, name, test), port_stats(R, name, common)
+        worst = max(worst, s.p)
+        # The caption says ours decodes more symbols than every HiQ classifier on the same samples.
+        assert s.code < ours.code and sc.code < ours_c.code, f"{name} decodes as many symbols as ours"
+        e2e = "--" if cfg is None else f"{100 * sum(P['hd'](k, cfg) for k in common) / len(common):.1f}"
+        # The text says each HiQ classifier decodes about as many symbols on our samples as in
+        # its own decoder, which is what puts the end-to-end gap on the classifier.
+        assert cfg is None or abs(sc.code - float(e2e)) < 1.5, f"{name}: ported and end-to-end differ"
+        rows.append(
+            f"{label} & {s.data:.1f} & {s.ber:.2f} & {s.code:.1f} & {s.b}/{s.c} & {sc.code:.1f} & {e2e} \\\\"
+        )
+    assert worst < 0.05, "a HiQ classifier is not significantly worse than ours; fix the caption"
+    body = "\n".join(rows)
+    table = f"""\\begin{{table}}[t]
+\\centering
+\\footnotesize
+\\caption{{HiQ's shipped classifiers run on our module samples, HiQ's test split of CUHK-CQRC:
+module accuracy, bit error rate and symbol decode rate in percent over the {len(test)} test
+photographs our localizer finds. CMI, corrected: all five weights and all four neighbors.
+Disc.: photographs only ours decoded / only the HiQ classifier
+decoded, exact McNemar $p<10^{{{p_exp(worst)}}}$ for every row. The last two columns are the
+symbol decode rate on the {len(common)} photographs both decoders localize (Table~\\ref{{tab:paired}}),
+on our samples and end to end in the HiQ decoder.}}
+\\label{{tab:ported}}
+\\setlength{{\\tabcolsep}}{{3pt}}
+\\begin{{tabular}}{{@{{}}lrrrrrr@{{}}}}
+\\toprule
+ & \\multicolumn{{4}}{{c}}{{Test, our samples}} & \\multicolumn{{2}}{{c}}{{Common set}} \\\\
+\\cmidrule(lr){{2-5}}\\cmidrule(l){{6-7}}
+Classifier & Module & BER & Symbol & Disc. & Ours & HiQ \\\\
+\\midrule
+{body}
+\\bottomrule
+\\end{{tabular}}
+\\end{{table}}
+"""
+    return table, worst
+
+
+def parity_pass(path):
+    """The totals row of the parity pass. The ported-classifier table means nothing unless the
+    ports reproduced HiQ on HiQ's own inputs, so a failed check stops the build."""
+    text = open(path).read()
+    assert "parity holds" in text, "HiQ ports do not reproduce the HiQ decoder; see parity.txt"
+    m = re.search(r"^\s{4}all\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$", text, re.M)
+    modules, classify, features, px, far, binar, colour = (int(x) for x in m.groups())
+    assert classify == features == binar == far == 0, "parity totals changed; fix the text"
+    return modules, colour
+
+
+def numbers_ported(N, R, P, t, parity):
+    """Macros for the classifier-only comparison and the ports' per-module cost."""
+    test, common = R["test"], R["common"]
+    N.add("PortTest", len(test))
+    ours = port_stats(R, None, test)
+    N.add("PortOursCode", f1(ours.code))
+    N.add("PortOursBer", f2(ours.ber))
+    N.add("PortOursData", f1(ours.data))
+    N.add("PortOursCodeCommon", f1(port_stats(R, None, common).code))
+    # The abstract and introduction quote the corrected CMI as the best HiQ classifier on our samples.
+    best = max(HIQ_PORTS, key=lambda h: port_stats(R, h[0], test).code)
+    assert best[2] == "Cmi", "best ported HiQ classifier changed; fix the abstract and introduction"
+    for name, _, tag, cfg in HIQ_PORTS:
+        s, sc = port_stats(R, name, test), port_stats(R, name, common)
+        N.add(f"Port{tag}Code", f1(s.code))
+        N.add(f"Port{tag}Ber", f2(s.ber))
+        N.add(f"Port{tag}Data", f1(s.data))
+        N.add(f"Port{tag}OnlyOurs", s.b)
+        N.add(f"Port{tag}OnlyHiq", s.c)
+        N.add(f"Port{tag}P", fmt_p(s.p))
+        N.add(f"Port{tag}CodeCommon", f1(sc.code))
+        N.add(f"Port{tag}PCommon", fmt_p(sc.p))
+        # Timed in the same pass as ours; absent from a timing.txt older than the ports.
+        if name in t:
+            N.add(f"Port{tag}Ns", f"{t[name][0]:.1f}")
+        if cfg is not None:
+            N.add(f"Port{tag}EndToEnd", f"{100 * sum(P['hd'](k, cfg) for k in common) / len(common):.1f}")
+    # Correcting the neighbour set is a classifier-side change, so test it on its own pairs.
+    a, b = R["port"]["hiq qda+cmi fixed"], R["port"]["hiq qda+cmi hiq nbrs"]
+    x = sum(a[k]["decoded"] == "1" and b[k]["decoded"] == "0" for k in test)
+    y = sum(a[k]["decoded"] == "0" and b[k]["decoded"] == "1" for k in test)
+    N.add("PortNbrsGainOnly", x)
+    N.add("PortNbrsLossOnly", y)
+    N.add("PortNbrsP", fmt_p(mcnemar(x, y)))
+    modules, colour = parity
+    N.add("PortParityModules", f"{modules:,}".replace(",", "{,}"))
+    N.add("PortParityJpegPct", f1(100 * colour / modules))
+
+
 COND_DESC = {
     "regular": "Reference capture",
     "daylight": "Outdoor daylight",
@@ -455,11 +612,12 @@ COND_DESC = {
     "monitor": "Shown on a display",
     "perspective": "Oblique view",
     "close": "Close range",
-    "small": "8 px modules",
+    "small": "0.34 mm modules",
     "wb-cool": "White balance cool",
     "wb-neutral": "White balance neutral",
     "wb-warm": "White balance warm",
 }
+MODULE_MM = {8: "0.34", 12: "0.5", 20: "0.84"}  # printed at 600 dpi
 COND_TABLE_ORDER = ["regular", "daylight", "flashlight", "monitor", "perspective", "close", "small",
                     "wb-cool", "wb-neutral", "wb-warm"]
 
@@ -479,8 +637,8 @@ def tab_dataset(counts_csv, sw_q):
         loc = int(loc["photos"]) if loc else 0
         tot += d["n"]
         tot_loc += loc
-        px = ", ".join(str(x) for x in sorted(d["px"]))
-        rows.append(f"{COND_DESC[c]} & {len(d['phones'])} & {px} & {d['n']} & {loc} \\\\")
+        mm = ", ".join(MODULE_MM[x] for x in sorted(d["px"]))
+        rows.append(f"{COND_DESC[c]} & {len(d['phones'])} & {mm} & {d['n']} & {loc} \\\\")
     rows.append("\\midrule")
     phones = set().union(*(d["phones"] for d in by.values()))
     rows.append(f"Total & {len(phones)} & & {tot} & {tot_loc} \\\\")
@@ -488,12 +646,12 @@ def tab_dataset(counts_csv, sw_q):
     return f"""\\begin{{table}}[t]
 \\centering
 \\small
-\\caption{{The qrism dataset by capture condition: phones used, module sizes of the
-source renders in pixels, photos, and photos the localizer found at the right version.}}
+\\caption{{The qrism dataset by capture condition: phones used, printed module
+sizes in mm, photos, and photos the localizer found at the right version.}}
 \\label{{tab:dataset}}
 \\begin{{tabular}}{{@{{}}lrlrr@{{}}}}
 \\toprule
-Condition & Phones & px & Photos & Localized \\\\
+Condition & Phones & mm & Photos & Localized \\\\
 \\midrule
 {body}
 \\bottomrule
@@ -585,16 +743,16 @@ def numbers(N, sw_h, sw_q, ph_h, ph_q, sh_h, sh_q, shp_h, shp_q, P, bs_h, bs_q, 
     N.add("QrNotLocalized", int(m.group(1)) - int(m.group(2)))
 
     # baselines on CUHK-CQRC
-    N.add("HiqCodeEuclid", f1(bs_h["euclid raw"].code))
+    N.add("HiqCodeEuclid", f1(bs_h[CENTROID].code))
     N.add("HiqCodePerColorant", f1(bs_h["per-colorant int + adp"].code))
+    N.add("HiqCodeJab", f1(bs_h["jabcode (balanced)"].code))
     N.add("HiqCodeRda", f1(bs_h["mahalanobis rda (raw)"].code))
-    N.add("HiqDataEuclid", f1(bs_h["euclid raw"].data))
-    N.add("HiqCodeFit", f1(bs_h["rda + deblur fit"].code))
-    N.add("QrCodeEuclid", f1(bs_q["euclid raw"].code))
+    N.add("HiqDataEuclid", f1(bs_h[CENTROID].data))
+    N.add("QrCodeEuclid", f1(bs_q[CENTROID].code))
     N.add("QrCodePerColorant", f1(bs_q["per-colorant int + adp"].code))
     N.add("QrCodeJab", f1(bs_q["jabcode (balanced)"].code))
     N.add("QrCodeRda", f1(bs_q["mahalanobis rda (raw)"].code))
-    N.add("QrDataEuclid", f1(bs_q["euclid raw"].data))
+    N.add("QrDataEuclid", f1(bs_q[CENTROID].data))
     N.add("BaselineWorstP", fmt_p(worst))
 
     # HiQ's split of CUHK-CQRC, from the dataset's metadata
@@ -691,11 +849,18 @@ def main():
         assert len(rda) == int(r0["photos"]), f"{name} and sweep localized different photos"
         assert abs(Stat(rda.values()).code - float(r0["code_pct"])) < 0.001, f"{name} and sweep disagree"
 
-    table, worst, bs_h, bs_q, _ = tab_baselines(acc_ph, q_ph, sw_h, ph_h)
+    table, worst, bs_h, bs_q, _ = tab_baselines(acc_ph, q_ph, sw_h, ph_h, sw_q, ph_q)
+    # The CUHK-CQRC optical row comes from the accuracy pass, the text's optical numbers
+    # from the sweep; they must be the same run.
+    op_acc = Stat(acc_ph["rda + deblur optical"].values()).code
+    assert abs(op_acc - float(sw_h[("all", "all", "optical")]["code_pct"])) < 0.001, "optical rows disagree"
     write(f"{a.out}/tab_baselines.tex", table)
     write(f"{a.out}/tab_shrink.tex", tab_shrink(sh_h, sh_q))
     write(f"{a.out}/tab_breakdown.tex", tab_breakdown(sw_q))
     write(f"{a.out}/tab_paired.tex", tab_paired(P))
+    R = ported(acc_ph, P, split)
+    table, _ = tab_ported(R, P)
+    write(f"{a.out}/tab_ported.tex", table)
 
     write(f"{a.out}/tab_dataset.tex", tab_dataset(a.counts, sw_q))
 
@@ -708,18 +873,13 @@ def main():
     N.add("TimeChosenVforty", f"{ours[1]:.2f}")
     N.add("TimeRdaNs", f"{rda[0]:.1f}")
     N.add("TimeDeblurNs", f"{ours[0] - rda[0]:.1f}")
-    # The HiQ bench times the same span (per-module colour cost, single core, decode and
-    # localization excluded), on the same machine.
-    th = timing_pass(a.hiq_timing, "HiQ colour classifier timing")
-    for cfg, nm in (("lsvm-ip6plus", "Lsvm"), ("qda", "Qda"), ("qda+cmi-fix", "QdaCmi")):
-        N.add(f"HiqTime{nm}Ns", f"{th[cfg][0]:.1f}")
-        N.add(f"HiqTime{nm}Vforty", f"{th[cfg][1]:.2f}")
-    # The text places our cost between HiQ's layered SVM and its QDA.
-    assert th["lsvm-ip6plus"][0] < ours[0] < th["qda"][0], "timing order changed; fix the text"
+    # HiQ's classifiers are timed as Rust ports in the same pass as ours (numbers_ported); the
+    # Java timings in a.hiq_timing are no longer used in the text.
     numbers(N, sw_h, sw_q, ph_h, ph_q, sh_h, sh_q, shp_h, shp_q, P, bs_h, bs_q, worst, split,
             hiq_attempted, f"{b}/sweep.txt")
+    numbers_ported(N, R, P, t, parity_pass(f"{b}/hiq_parity/parity.txt"))
     N.write(f"{a.out}/numbers.tex")
-    print(f"wrote {a.out}/: numbers.tex ({len(N.lines)} macros) and 5 tables")
+    print(f"wrote {a.out}/: numbers.tex ({len(N.lines)} macros) and 6 tables")
 
 
 if __name__ == "__main__":

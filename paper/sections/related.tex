@@ -17,7 +17,8 @@ RGB-multiplexed QR codes from a phone screen and splits each received frame into
 channels~\cite{toh2016colorqr}; El-Sheref et al.\ fold up to 24 layers into RGB
 shades~\cite{elsheref2020fmt}; Huang et al.\ design multiplexed codes whose plain layer a
 standard reader can decode~\cite{huang2022mc2d,huang2023halftone}. Other recent schemes
-separate the layers with narrowband illumination~\cite{sanagustin2025chromatic} or assign
+separate the layers by photographing the symbol under red and under blue
+light~\cite{sanagustin2025chromatic} or assign
 payload, metadata and signature to the three channels~\cite{wahsheh2026rgb}. Most of these
 works report capacity or small capture tests. Of the multiplexed QR designs we found, HiQ is
 the only one evaluated on a large public set of phone photographs,
@@ -37,17 +38,17 @@ of colorant densities and estimate it per image, either from pilot blocks built 
 synchronization markers or by expectation maximization over the
 data~\cite{blasinski2013pccc,bulan2012em}. HiQ trains its classifiers offline: QDA and a
 layered SVM, each optionally with a cross-module interference (CMI) term, are fitted to
-labelled CUHK-CQRC photographs~\cite{yang2018hiq}. Benito-Altamirano et al.\ work in the
-opposite direction and embed color charts in back-compatible QR codes to correct the colors
-of the scene~\cite{benito2023backcompat}.
+labelled CUHK-CQRC photographs~\cite{yang2018hiq}. Benito-Altamirano et al.\ use the
+code the other way round: they embed reference colors in back-compatible QR codes and use
+them to correct the colors of the rest of the scene~\cite{benito2023backcompat}.
 
 Our calibration is closest to the pilot-block estimate of Blasinski et al.: both fit the
 color model to each photograph from modules whose colors are known. We differ in the model
 and in where the labels come from. We fit class-conditional Gaussians with shrunk
 covariances~\cite{friedman1989rda}, which absorb illumination and channel mixing without a
-colorant model, and we take the labels from the finder, alignment and timing patterns that
-a multiplexed QR symbol already contains, so no symbol area goes to pilots and no
-photographs are needed for training.
+colorant model, and we take the labels from the finder, alignment and timing patterns whose colors the
+symbol format already fixes, so the method runs on existing designs such as HiQ without
+changing them, and no photographs are needed for training.
 
 \subsection{Blur and inter-module interference}
 
@@ -68,8 +69,7 @@ code~\cite{fujihashi2021mimo}.
 Our leak model~\eqref{eq:leak} is a linear neighbor model of the same kind as Bagherinia and
 Manduchi's, with four edge neighbors and one shared weight. Fixing that weight gives a
 closed-form inverse on the module grid, computed in one pass with no kernel estimate and no
-iteration over the symbol. We did not find 2020 to 2026 work that applies a fixed
-one-parameter grid inverse of this kind to color codes.
+iteration over the symbol.
 
 \subsection{Learned decoders and screen-to-camera codes}
 

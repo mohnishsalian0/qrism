@@ -6,29 +6,27 @@
 \input{generated/tab_baselines}
 
 Table~\ref{tab:baselines} compares color recovery pipelines on both datasets. Nearest
-centroid in raw RGB decodes \HiqCodeEuclid\% of symbols on CUHK-CQRC and \QrCodeEuclid\% on
-qrism, and per-colorant interference cancellation~\cite{blasinski2013pccc}
-\HiqCodePerColorant\% and \QrCodePerColorant\%. JAB Code's classifier decodes \QrCodeJab\%
-on qrism. Keeping the same centroids but measuring distance with the RDA metric raises the
-rate to \HiqCodeRda\% and \QrCodeRda\%, and adding leak inversion at $\beta=0.06$ raises it to
+centroid decodes \HiqCodeEuclid\% of symbols on CUHK-CQRC and \QrCodeEuclid\% on qrism, and
+interference cancellation~\cite{blasinski2013pccc} \HiqCodePerColorant\% and
+\QrCodePerColorant\%. JAB Code's classifier decodes \HiqCodeJab\% and \QrCodeJab\%. Fitting RDA to
+the same calibration samples raises the rate to \HiqCodeRda\% and \QrCodeRda\%, and adding
+leak inversion at $\beta=0.06$ raises it to
 \HiqCodeChosen\% (95\% CI \HiqCodeChosenLo--\HiqCodeChosenHi) and \QrCodeChosen\%
 (\QrCodeChosenLo--\QrCodeChosenHi). Every baseline decodes fewer symbols than our method on
 both datasets; the closest has exact McNemar $p\BaselineWorstP$. Leak inversion alone decodes
 \HiqDeblurGainOnly{} CUHK-CQRC photographs that RDA misses and loses \HiqDeblurLossOnly{}
 ($p\HiqDeblurP$); on qrism the counts are \QrDeblurGainOnly{} and \QrDeblurLossOnly{}
-($p\QrDeblurP$).
+($p\QrDeblurP$). Estimating $\beta$ per photograph instead decodes \HiqCodeOptical\% and
+\QrCodeOptical\% (Section~\ref{sec:beta}).
 
-Module accuracy understates these differences. Nearest centroid and our method differ by
-three points in module accuracy (\HiqDataEuclid\% against \HiqDataChosen\%) but by more than
-a factor of two in symbols decoded, because a symbol fails as soon as one Reed-Solomon
+Module accuracy understates these differences. On CUHK-CQRC, nearest centroid and our method
+differ by three points in module accuracy (\HiqDataEuclid\% against \HiqDataChosen\%) but by
+more than a factor of two in symbols decoded (\HiqCodeEuclid\% against \HiqCodeChosen\%), because a symbol fails as soon as one Reed-Solomon
 block in one layer holds more errors than it can correct. We therefore rank pipelines and
 choose parameters by symbol decode rate.
 
-Choosing $\beta$ per photograph does worse than the fixed value: minimizing the spread of
-the corrected grid around its palette gives \HiqCodeFit\%, and an optical estimate of
-blur measured on the finder edges gives \HiqCodeOptical\%.
-
 \subsection{Leak fraction}
+\label{sec:beta}
 
 \begin{figure}[t]
 \centering
@@ -45,7 +43,7 @@ rate peaks at $\beta=0.06$: \HiqCodeChosen\% on CUHK-CQRC against \HiqCodeNoDebl
 without leak inversion, and \QrCodeChosen\% on the qrism dataset against
 \QrCodeNoDeblur\%. Because both datasets select the same value, choosing $\beta$ on one
 and testing on the other costs nothing. The optimum is narrow but not sharp: $\beta=0.05$
-cannot be told apart from 0.06 ($p\HiqPFive$ and $p\QrPFive$), while 0.04 ($p\HiqPFour$,
+cannot be told apart from 0.06 ($p\HiqPFive$ on CUHK-CQRC, $p\QrPFive$ on qrism), while 0.04 ($p\HiqPFour$,
 $p\QrPFour$) and 0.07 ($p\HiqPSeven$, $p\QrPSeven$) are worse on both datasets. Past 0.08
 the noise gain dominates and decoding collapses, to \HiqCodeTwelve\% and \QrCodeTwelve\%
 at $\beta=0.12$.
@@ -55,8 +53,8 @@ The bit error rate does not peak where decoding does. At $\beta=0.06$ it falls f
 \QrBerChosen\% on qrism, but it keeps falling, to $\beta=\HiqBerMinBeta$ on CUHK-CQRC and
 \QrBerMinBeta{} on qrism. Our reading is that the photographs that can be decoded at all
 want less correction than those that cannot. On
-the qrism dataset the bit error rate of 20\,px symbols is lowest at
-$\beta=\QrBerMinBetaPxTwenty$, next to their decode optimum, while 12\,px and 8\,px
+the qrism dataset the bit error rate of 0.84\,mm symbols is lowest at
+$\beta=\QrBerMinBetaPxTwenty$, next to their decode optimum, while 0.5\,mm and 0.34\,mm
 symbols, which rarely decode, are best served by $\beta=\QrBerMinBetaPxTwelve$ and
 \QrBerMinBetaPxEight. Those symbols pull the pooled bit error rate toward larger $\beta$
 without adding decoded symbols. The per-photograph optical estimate shows the same split:
@@ -90,9 +88,9 @@ be set independently.
 \input{generated/tab_breakdown}
 
 Table~\ref{tab:breakdown} breaks the qrism results down. The best $\beta$ grows as modules
-shrink: \QrBestBetaPxTwenty{} at 20\,px, \QrBestBetaPxTwelve{} at 12\,px and
-\QrBestBetaPxEight{} at 8\,px. This is what a blur of fixed width in pixels predicts, since
-it covers a larger fraction of a smaller module. At 8\,px almost nothing decodes, at most
+shrink: \QrBestBetaPxTwenty{} at 0.84\,mm, \QrBestBetaPxTwelve{} at 0.5\,mm and
+\QrBestBetaPxEight{} at 0.34\,mm. This is what a blur of fixed width in image pixels predicts, since
+it covers a larger fraction of a smaller module. At 0.34\,mm almost nothing decodes, at most
 \QrBestCodePxEight\%. Capture conditions move the optimum as well: daylight photographs do
 best at $\beta=\QrBestBetaDaylight$ (\QrBestCodeDaylight\% against \QrCodeChosenDaylight\%
 at 0.06), while the neutral white-balance condition does best at \QrBestBetaWbNeutral{} and
@@ -100,7 +98,7 @@ the flash condition at \QrBestBetaFlashlight. These per-group optima are chosen 
 scored on, so they overstate what a per-group $\beta$ would gain; they show that a single
 $\beta$ is a compromise across conditions.
 
-\subsection{Comparison with the HiQ decoder}
+\subsection{Comparison with HiQ}
 \label{sec:hiq}
 
 \input{generated/tab_paired}
@@ -115,16 +113,25 @@ for HiQ's best configuration, QDA with the corrected CMI. It leads in all
 \PairVersionsTotal{} symbol versions and all \PairFoldersTotal{} capture folders. Without
 leak inversion it reads \PairCommonOursNoDeblur\%, still ahead of HiQ.
 
-The HiQ classifiers were also timed on the same machine, over the same span as ours
-(Section~\ref{sec:method}): \HiqTimeLsvmNs\,ns per module for the layered SVM,
-\HiqTimeQdaNs\,ns for QDA and \HiqTimeQdaCmiNs\,ns for QDA with the corrected CMI, against
-\TimeChosenNs\,ns for ours. These figures do not isolate the algorithms. HiQ runs as
-JIT-compiled Java and ours as Rust, which favors ours; HiQ fits nothing per photograph while
-our time includes the fit, which favors HiQ. They do show that the costs are of the same order:
-ours falls between HiQ's layered SVM and its QDA without any training, and the layered SVM,
-the only faster one, decodes \PairCommonLsvm\% of the common set.
+\input{generated/tab_ported}
 
-One qualification applies. Each decoder uses its own localization and module sampling, so
-the gap combines color recovery and sampling; a comparison of the classifiers alone needs
-HiQ's classifier run on our samples. \todo{run HiQ's QDA and corrected CMI on the library's
-samples, or state the claim as end-to-end only}
+Each decoder above uses its own localization and module sampling, so the gap combines color
+recovery and sampling. To separate them, HiQ's shipped models were ported unchanged and run
+on our module samples, after HiQ's own white-point normalization (Table~\ref{tab:ported}); given
+HiQ's inputs, the ports reproduce the HiQ decoder's decision on all \PortParityModules{}
+module decisions of five test photographs. On our samples HiQ's QDA with the corrected CMI decodes \PortCmiCode\% of the
+\PortTest{} test photographs our localizer finds, against \PortOursCode\% for ours
+($p\PortCmiP$). On the common set each HiQ classifier decodes about as many symbols on our
+samples as in its own decoder, \PortCmiShippedCodeCommon\% against \PortCmiShippedEndToEnd\% for
+CMI as HiQ runs it, so nearly all of the gap in Table~\ref{tab:paired} comes from the
+classifier.
+HiQ's sampler fills only two of the four CMI neighbor slots on most modules; filling all four
+adds \PortNbrsGainOnly{} decoded photographs and loses \PortNbrsLossOnly{} ($p\PortNbrsP$).
+Timed in Rust in the same pass as ours, on the span of Section~\ref{sec:method}, the ports
+cost \PortLsvmNs\,ns per module for the layered SVM, \PortQdaNs\,ns for QDA and \PortCmiNs\,ns
+for QDA with the corrected CMI, against \TimeChosenNs\,ns for ours, which includes the
+per-photograph fit. As in HiQ's decoder, the ports' white point is estimated during
+localization and is not timed.
+Two caveats remain. HiQ's models were trained on HiQ's sampling and run here on ours, and our
+images are decoded by a different JPEG decoder, which moves no pixel by more than 4 levels but
+changes the color of \PortParityJpegPct\% of modules on the parity photographs.

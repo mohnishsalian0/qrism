@@ -14,12 +14,14 @@ names. Ground truth for each image is the clean source render of its version.
 
 The \emph{qrism dataset} is new and will be released with this paper. It contains
 \QrAttempted{} photographs of qrism symbols at versions 1, 5, 10, 15, 25, 30 and 40, each
-at all four error-correction levels. Symbols were rendered at 12 and 20 pixels per module,
-or 8 in the small-module condition, and each was photographed five times under the
+at all four error-correction levels. Modules measure 0.5 and 0.84\,mm, or 0.34\,mm in the
+small-module condition, and each symbol was photographed five times under the
 conditions of Table~\ref{tab:dataset} with four phones: Apple iPhone~13 and iPhone~16,
-Motorola Edge~50 Fusion and OnePlus Nord~CE \todo{exact OnePlus model}. \todo{print setup:
-printer, paper, printed symbol size, capture distance; display used for the on-screen
-condition; what distinguishes the close and reference captures}
+Motorola Edge~50 Fusion and OnePlus Nord~CE6. Symbols were printed at 600\,dpi on plain A4 paper with an HP laser printer, from renders of
+20, 12 and 8 pixels per module. The on-screen condition used an LG display, zoomed so that
+modules have the same sizes as in print. Photographs were taken about 20 to 25\,cm from the symbol. The
+0.34\,mm symbols, and the 0.84\,mm symbols of the close condition, were taken from about 10 to
+15\,cm.
 
 \input{generated/tab_dataset}
 
@@ -59,22 +61,24 @@ made on one dataset holds on the other.
 \subsection{Baselines}
 
 The color recovery baselines all use the same calibration modules as our method.
-\emph{Nearest centroid} assigns the closest calibration median in raw RGB, in optical
-density relative to the white calibration modules, or after a per-channel stretch that
-maps the black and white medians to 0 and~1. \emph{Interference cancellation} follows
+\emph{Nearest centroid} assigns the closest calibration median after a per-channel stretch
+that maps the black and white medians to 0 and~1. \emph{Interference cancellation} follows
 Blasinski et al.~\cite{blasinski2013pccc}: a non-negative $3\times 3$ mixing matrix is
-fitted to the calibration samples in optical density or absorptance and inverted, and each
-recovered channel is thresholded midway between the nearest on and off calibration colors, or
-with a local block threshold. A \emph{local threshold} on the raw channels mirrors
-monochrome QR binarization. On qrism symbols we also run the hard-decision classifier of
-JAB Code~\cite{iso23634} with its image balancing, using one palette of calibration medians
-because no qrism finder carries all eight colors. \emph{LDA} and \emph{QDA} are the
-$\lambda=1$ and $\lambda=0$ ends of our classifier without leak inversion.
+fitted to the calibration samples in optical density and inverted, and each recovered
+channel is thresholded midway between the nearest on and off calibration colors. We also run
+the hard-decision classifier of JAB Code~\cite{iso23634} with its image balancing, using one
+palette of calibration medians because no finder in either dataset carries all eight colors. \emph{RDA} without leak inversion ($\beta=0$) measures what leak inversion
+adds. As an alternative to the fixed $\beta$, we estimate a $\beta$ per channel and
+photograph from the width of the blur across the finder edges.
 
-As an end-to-end reference we run the released HiQ decoder~\cite{yang2018hiq} with its
-shipped models: QDA, QDA with cross-module interference correction (CMI), and a layered
-SVM. In the released code the CMI step keeps only the center module's term and drops the
-four neighbor terms, so QDA with and without CMI give identical results; we also report a
-corrected version that applies all five terms. HiQ uses its own localization and sampling,
-so this comparison is of complete decoders, not of color recovery alone
+HiQ~\cite{yang2018hiq} is compared in two ways, both with its shipped models: QDA, QDA
+with cross-module interference correction (CMI), and a layered SVM. End to end, we run the
+released HiQ decoder, which uses its own localization and sampling. For a classifier-only
+comparison, we port the three models unchanged to our benchmark and run them on our module
+samples after HiQ's own white-point normalization, so that only the classifier differs from
+our method. The released CMI has two defects. Its weighting step keeps only the center
+module's term and drops the four neighbor terms, so QDA with and without CMI give identical
+results; we report a corrected version that applies all five weights. Its sampler also
+gathers only the left and upper neighbors for most modules and leaves the other two at zero.
+The end-to-end corrected CMI keeps this sampler; on our samples we report it both ways
 (Section~\ref{sec:hiq}).

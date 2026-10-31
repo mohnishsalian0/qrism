@@ -27,6 +27,7 @@
 //!   cargo bench --features benchmark --bench color -- qrism
 //!   cargo bench --features benchmark --bench color -- sweep    (opt-in, not run by default)
 //!   cargo bench --features benchmark --bench color -- shrink   (opt-in, not run by default)
+//!   cargo bench --features benchmark --bench color -- hiq_parity  (opt-in; needs hiq_parity/dump.sh)
 
 pub(crate) mod calibration;
 pub(crate) mod deblur;
@@ -36,6 +37,7 @@ pub(crate) mod recovery;
 pub(crate) mod thresholding;
 
 mod analysis;
+mod hiq_parity;
 mod qrism_analysis;
 mod sweep;
 
@@ -59,5 +61,8 @@ fn main() {
     }
     if args.iter().any(|a| a == "shrink") {
         sweep::benchmark_shrink();
+    }
+    if args.iter().any(|a| a == "hiq_parity") {
+        hiq_parity::benchmark_hiq_parity();
     }
 }

@@ -6,9 +6,12 @@
 //! strategies are [`intensity::Intensity`] (optical density),
 //! [`absorptance::Absorptance`] (its linear-in-reflectance analog, `1 - rgb/white`) and
 //! [`black_white::BlackWhite`] (per-channel black/white-point affine stretch).
+//! [`hiq_white::HiqWhite`] is HiQ's own white-point division, for running HiQ's
+//! pretrained classifiers on these samples.
 
 pub(crate) mod absorptance;
 pub(crate) mod black_white;
+pub(crate) mod hiq_white;
 pub(crate) mod intensity;
 
 use crate::calibration::GroupedSamples;
