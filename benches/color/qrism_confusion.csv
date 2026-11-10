@@ -39,22 +39,14 @@ euclid raw,monitor,Red,745,422,361,387,60259,1344,859,1466,65843,91.5
 euclid raw,monitor,Pink,580,515,374,416,388,62470,501,1774,67018,93.2
 euclid raw,monitor,Yellow,743,635,865,548,396,605,62850,5691,72333,86.9
 euclid raw,monitor,White,1192,843,774,1028,541,836,1236,121343,127793,95.0
-euclid raw,perspective,Black,0,0,0,0,0,0,0,0,0,
-euclid raw,perspective,Blue,0,0,0,0,0,0,0,0,0,
-euclid raw,perspective,Green,0,0,0,0,0,0,0,0,0,
-euclid raw,perspective,Cyan,0,0,0,0,0,0,0,0,0,
-euclid raw,perspective,Red,0,0,0,0,0,0,0,0,0,
-euclid raw,perspective,Pink,0,0,0,0,0,0,0,0,0,
-euclid raw,perspective,Yellow,0,0,0,0,0,0,0,0,0,
-euclid raw,perspective,White,0,0,0,0,0,0,0,0,0,
-euclid raw,small,Black,476131,3397,9988,107,7216,911,556,1130,499436,95.3
-euclid raw,small,Blue,62367,163673,46302,8353,2296,3759,533,1152,288435,56.7
-euclid raw,small,Green,12248,13356,227425,1551,7489,2678,2281,1179,268207,84.8
-euclid raw,small,Cyan,2032,80000,47102,134954,564,2457,613,5540,273262,49.4
-euclid raw,small,Red,8693,2081,13883,88,169804,69492,2904,1206,268151,63.3
-euclid raw,small,Pink,13540,7291,14064,162,96562,139404,668,1221,272912,51.1
-euclid raw,small,Yellow,1245,745,4607,320,1175,900,252307,30889,292188,86.4
-euclid raw,small,White,1566,1897,3403,1246,547,1147,15467,497449,522722,95.2
+euclid raw,small,Black,416164,2671,9345,1302,3753,1712,1852,4886,441685,94.2
+euclid raw,small,Blue,21301,162152,16308,48066,1782,1293,1169,2365,254436,63.7
+euclid raw,small,Green,4055,2849,223834,837,1898,837,1191,2275,237776,94.1
+euclid raw,small,Cyan,2289,34125,4688,195488,1158,971,985,2710,242414,80.6
+euclid raw,small,Red,2603,1390,1952,617,212511,14265,2049,2307,237694,89.4
+euclid raw,small,Pink,2560,1823,1777,723,30896,200464,1057,2506,241806,82.9
+euclid raw,small,Yellow,2435,1386,2312,750,2605,980,232750,14442,257660,90.3
+euclid raw,small,White,5192,3968,3130,1400,2371,1920,3600,440263,461844,95.3
 euclid raw,wb-cool,Black,36837,0,0,0,67,0,0,0,36904,99.8
 euclid raw,wb-cool,Blue,1037,10951,1305,2926,4857,147,0,0,21223,51.6
 euclid raw,wb-cool,Green,1382,0,14278,0,5353,2,0,0,21015,67.9
@@ -119,22 +111,14 @@ euclid intensity,monitor,Red,5825,309,923,384,46553,8911,3245,2786,68936,67.5
 euclid intensity,monitor,Pink,376,630,281,412,3995,55322,444,8622,70082,78.9
 euclid intensity,monitor,Yellow,481,380,8585,528,275,502,48441,16237,75429,64.2
 euclid intensity,monitor,White,828,495,459,777,460,661,902,128786,133368,96.6
-euclid intensity,perspective,Black,0,0,0,0,0,0,0,0,0,
-euclid intensity,perspective,Blue,0,0,0,0,0,0,0,0,0,
-euclid intensity,perspective,Green,0,0,0,0,0,0,0,0,0,
-euclid intensity,perspective,Cyan,0,0,0,0,0,0,0,0,0,
-euclid intensity,perspective,Red,0,0,0,0,0,0,0,0,0,
-euclid intensity,perspective,Pink,0,0,0,0,0,0,0,0,0,
-euclid intensity,perspective,Yellow,0,0,0,0,0,0,0,0,0,
-euclid intensity,perspective,White,0,0,0,0,0,0,0,0,0,
-euclid intensity,small,Black,441973,8263,20114,1775,21276,2531,995,1332,498259,88.7
-euclid intensity,small,Blue,20160,138926,73758,27259,9583,12843,1197,4249,287975,48.2
-euclid intensity,small,Green,5352,17114,199646,5974,13132,2729,15550,8243,267740,74.6
-euclid intensity,small,Cyan,1162,88652,59499,64325,624,2832,6715,48985,272794,23.6
-euclid intensity,small,Red,3178,2805,20333,465,147128,68659,19363,5768,267699,55.0
-euclid intensity,small,Pink,3298,6607,14347,865,89307,144938,6627,6460,272449,53.2
-euclid intensity,small,Yellow,836,626,7908,250,2075,478,178046,101451,291670,61.0
-euclid intensity,small,White,1105,1039,2258,368,477,591,7872,507774,521484,97.4
+euclid intensity,small,Black,400599,4278,17688,1298,8320,1606,2119,5777,441685,90.7
+euclid intensity,small,Blue,8406,146597,21410,69801,1911,1837,1352,3122,254436,57.6
+euclid intensity,small,Green,5531,5925,214191,2011,2273,704,3999,3142,237776,90.1
+euclid intensity,small,Cyan,1886,82294,6862,140627,1094,814,1186,7651,242414,58.0
+euclid intensity,small,Red,3248,1766,1722,500,206307,10352,10390,3409,237694,86.8
+euclid intensity,small,Pink,2285,2591,1421,555,28614,199799,1847,4694,241806,82.6
+euclid intensity,small,Yellow,2067,1648,3044,609,9797,815,215385,24295,257660,83.6
+euclid intensity,small,White,4431,3786,2830,1129,2261,1588,3082,442737,461844,95.9
 euclid intensity,wb-cool,Black,36276,381,42,35,170,0,0,0,36904,98.3
 euclid intensity,wb-cool,Blue,378,6001,7969,4763,1925,187,0,0,21223,28.3
 euclid intensity,wb-cool,Green,39,92,17413,279,3135,46,11,0,21015,82.9
@@ -199,22 +183,14 @@ black/white euclid,monitor,Red,744,425,352,390,63223,1477,857,1468,68936,91.7
 black/white euclid,monitor,Pink,576,526,371,417,403,65500,495,1794,70082,93.5
 black/white euclid,monitor,Yellow,740,639,922,552,397,611,65880,5688,75429,87.3
 black/white euclid,monitor,White,1191,849,773,1059,542,842,1210,126902,133368,95.2
-black/white euclid,perspective,Black,0,0,0,0,0,0,0,0,0,
-black/white euclid,perspective,Blue,0,0,0,0,0,0,0,0,0,
-black/white euclid,perspective,Green,0,0,0,0,0,0,0,0,0,
-black/white euclid,perspective,Cyan,0,0,0,0,0,0,0,0,0,
-black/white euclid,perspective,Red,0,0,0,0,0,0,0,0,0,
-black/white euclid,perspective,Pink,0,0,0,0,0,0,0,0,0,
-black/white euclid,perspective,Yellow,0,0,0,0,0,0,0,0,0,
-black/white euclid,perspective,White,0,0,0,0,0,0,0,0,0,
-black/white euclid,small,Black,476034,3258,10316,110,7090,947,572,1109,499436,95.3
-black/white euclid,small,Blue,61602,162456,48328,8083,2330,3962,549,1125,288435,56.3
-black/white euclid,small,Green,12620,13265,225644,1450,8684,3111,2268,1165,268207,84.1
-black/white euclid,small,Cyan,2024,82908,45310,133459,549,2777,613,5622,273262,48.8
-black/white euclid,small,Red,8689,2012,14020,93,168403,70765,2967,1202,268151,62.8
-black/white euclid,small,Pink,13441,7084,14313,170,94962,141061,680,1201,272912,51.7
-black/white euclid,small,Yellow,1252,726,4654,336,1155,941,252419,30705,292188,86.4
-black/white euclid,small,White,1569,1916,3360,1317,539,1228,15478,497315,522722,95.1
+black/white euclid,small,Black,416055,2659,9456,1300,3743,1740,1853,4879,441685,94.2
+black/white euclid,small,Blue,20780,162134,16710,48174,1788,1320,1165,2365,254436,63.7
+black/white euclid,small,Green,4124,2881,223727,837,1886,861,1190,2270,237776,94.1
+black/white euclid,small,Cyan,2279,34418,4666,195235,1140,989,984,2703,242414,80.5
+black/white euclid,small,Red,2603,1388,1969,617,212157,14612,2048,2300,237694,89.3
+black/white euclid,small,Pink,2551,1819,1786,723,30855,200506,1059,2507,241806,82.9
+black/white euclid,small,Yellow,2427,1382,2333,751,2624,993,232775,14375,257660,90.3
+black/white euclid,small,White,5182,3983,3129,1397,2340,1964,3602,440247,461844,95.3
 black/white euclid,wb-cool,Black,36874,2,0,0,28,0,0,0,36904,99.9
 black/white euclid,wb-cool,Blue,2261,12053,1142,2795,2920,52,0,0,21223,56.8
 black/white euclid,wb-cool,Green,1822,0,15112,0,4078,3,0,0,21015,71.9
@@ -279,22 +255,14 @@ per-colorant int + adp,monitor,Red,292,315,263,519,58832,4510,1655,2550,68936,85
 per-colorant int + adp,monitor,Pink,298,349,275,531,336,63052,381,4860,70082,90.0
 per-colorant int + adp,monitor,Yellow,390,449,413,747,365,568,59250,13247,75429,78.6
 per-colorant int + adp,monitor,White,683,628,480,1139,537,789,771,128341,133368,96.2
-per-colorant int + adp,perspective,Black,0,0,0,0,0,0,0,0,0,
-per-colorant int + adp,perspective,Blue,0,0,0,0,0,0,0,0,0,
-per-colorant int + adp,perspective,Green,0,0,0,0,0,0,0,0,0,
-per-colorant int + adp,perspective,Cyan,0,0,0,0,0,0,0,0,0,
-per-colorant int + adp,perspective,Red,0,0,0,0,0,0,0,0,0,
-per-colorant int + adp,perspective,Pink,0,0,0,0,0,0,0,0,0,
-per-colorant int + adp,perspective,Yellow,0,0,0,0,0,0,0,0,0,
-per-colorant int + adp,perspective,White,0,0,0,0,0,0,0,0,0,
-per-colorant int + adp,small,Black,386045,47522,24128,1280,28638,8250,4245,1905,502013,76.9
-per-colorant int + adp,small,Blue,28371,171528,16122,36391,2832,24660,2319,7505,289728,59.2
-per-colorant int + adp,small,Green,3707,1578,158531,25612,2158,1880,53057,22856,269379,58.9
-per-colorant int + adp,small,Cyan,1358,18577,10734,167597,413,10194,2856,62780,274509,61.1
-per-colorant int + adp,small,Red,4222,1586,4438,573,133073,38593,72645,14248,269378,49.4
-per-colorant int + adp,small,Pink,5203,5794,2108,675,72330,162927,14557,10562,274156,59.4
-per-colorant int + adp,small,Yellow,730,521,1427,441,297,276,218998,70777,293467,74.6
-per-colorant int + adp,small,White,1033,835,1091,1027,352,739,11923,508391,525391,96.8
+per-colorant int + adp,small,Black,414959,6906,4354,1744,2721,2079,2974,5948,441685,93.9
+per-colorant int + adp,small,Blue,6266,215833,1847,21460,861,3236,1728,3205,254436,84.8
+per-colorant int + adp,small,Green,2927,1412,212027,6340,922,928,9381,3839,237776,89.2
+per-colorant int + adp,small,Cyan,1996,22711,1604,206333,683,2263,1530,5294,242414,85.1
+per-colorant int + adp,small,Red,2599,1473,910,835,192013,10129,25782,3953,237694,80.8
+per-colorant int + adp,small,Pink,2736,3071,817,930,18182,211050,2055,2965,241806,87.3
+per-colorant int + adp,small,Yellow,2034,1289,1128,1096,884,1030,236897,13302,257660,91.9
+per-colorant int + adp,small,White,4462,2687,1705,2139,1615,2296,4366,442574,461844,95.8
 per-colorant int + adp,wb-cool,Black,31902,249,133,0,4543,77,0,0,36904,86.4
 per-colorant int + adp,wb-cool,Blue,1347,13772,216,952,1342,3589,3,2,21223,64.9
 per-colorant int + adp,wb-cool,Green,235,3,18460,7,400,4,1902,4,21015,87.8
@@ -359,22 +327,14 @@ mahalanobis lda (raw),monitor,Red,1143,443,334,356,63147,1197,765,1551,68936,91.
 mahalanobis lda (raw),monitor,Pink,885,601,354,373,608,65012,420,1829,70082,92.8
 mahalanobis lda (raw),monitor,Yellow,971,658,820,448,384,487,67757,3904,75429,89.8
 mahalanobis lda (raw),monitor,White,1612,929,630,694,521,694,939,127349,133368,95.5
-mahalanobis lda (raw),perspective,Black,0,0,0,0,0,0,0,0,0,
-mahalanobis lda (raw),perspective,Blue,0,0,0,0,0,0,0,0,0,
-mahalanobis lda (raw),perspective,Green,0,0,0,0,0,0,0,0,0,
-mahalanobis lda (raw),perspective,Cyan,0,0,0,0,0,0,0,0,0,
-mahalanobis lda (raw),perspective,Red,0,0,0,0,0,0,0,0,0,
-mahalanobis lda (raw),perspective,Pink,0,0,0,0,0,0,0,0,0,
-mahalanobis lda (raw),perspective,Yellow,0,0,0,0,0,0,0,0,0,
-mahalanobis lda (raw),perspective,White,0,0,0,0,0,0,0,0,0,
-mahalanobis lda (raw),small,Black,490176,2933,1601,80,1545,353,533,1595,498816,98.3
-mahalanobis lda (raw),small,Blue,124485,148981,5434,5107,867,621,491,2189,288175,51.7
-mahalanobis lda (raw),small,Green,56692,3756,196544,1415,818,100,1305,7335,267965,73.3
-mahalanobis lda (raw),small,Cyan,19846,104385,34861,97003,377,154,352,16034,273012,35.5
-mahalanobis lda (raw),small,Red,57474,519,729,77,187507,13825,1127,6637,267895,70.0
-mahalanobis lda (raw),small,Pink,63936,1618,498,94,116516,85980,421,3601,272664,31.5
-mahalanobis lda (raw),small,Yellow,2441,406,14101,74,1025,110,219944,53861,291962,75.3
-mahalanobis lda (raw),small,White,2747,1398,3798,354,800,240,11359,501360,522056,96.0
+mahalanobis lda (raw),small,Black,424142,2765,2130,1092,3035,1162,1796,5563,441685,96.0
+mahalanobis lda (raw),small,Blue,16666,206734,2053,21819,1642,861,1110,3551,254436,81.3
+mahalanobis lda (raw),small,Green,6876,1529,220855,738,1292,555,1315,4616,237776,92.9
+mahalanobis lda (raw),small,Cyan,3253,29126,4526,197358,1285,622,939,5305,242414,81.4
+mahalanobis lda (raw),small,Red,5942,1230,1067,501,214881,8643,1538,3892,237694,90.4
+mahalanobis lda (raw),small,Pink,5123,1365,1018,601,39891,189063,952,3793,241806,78.2
+mahalanobis lda (raw),small,Yellow,3133,1239,3865,646,1851,669,229680,16577,257660,89.1
+mahalanobis lda (raw),small,White,6367,3751,2332,1201,2840,1361,3427,440565,461844,95.4
 mahalanobis lda (raw),wb-cool,Black,36892,0,0,0,12,0,0,0,36904,100.0
 mahalanobis lda (raw),wb-cool,Blue,6680,11187,17,2704,542,0,0,93,21223,52.7
 mahalanobis lda (raw),wb-cool,Green,6049,0,14891,51,23,0,0,1,21015,70.9
@@ -439,22 +399,14 @@ mahalanobis qda (raw),monitor,Red,12506,140,218,109,51784,171,174,3834,68936,75.
 mahalanobis qda (raw),monitor,Pink,11742,382,213,92,1406,53399,106,2742,70082,76.2
 mahalanobis qda (raw),monitor,Yellow,10570,180,8321,138,108,136,47726,8250,75429,63.3
 mahalanobis qda (raw),monitor,White,4091,256,351,214,133,183,241,127899,133368,95.9
-mahalanobis qda (raw),perspective,Black,0,0,0,0,0,0,0,0,0,
-mahalanobis qda (raw),perspective,Blue,0,0,0,0,0,0,0,0,0,
-mahalanobis qda (raw),perspective,Green,0,0,0,0,0,0,0,0,0,
-mahalanobis qda (raw),perspective,Cyan,0,0,0,0,0,0,0,0,0,
-mahalanobis qda (raw),perspective,Red,0,0,0,0,0,0,0,0,0,
-mahalanobis qda (raw),perspective,Pink,0,0,0,0,0,0,0,0,0,
-mahalanobis qda (raw),perspective,Yellow,0,0,0,0,0,0,0,0,0,
-mahalanobis qda (raw),perspective,White,0,0,0,0,0,0,0,0,0,
-mahalanobis qda (raw),small,Black,497459,827,295,91,498,256,126,1841,501393,99.2
-mahalanobis qda (raw),small,Blue,141319,123331,6355,11635,951,698,141,5038,289468,42.6
-mahalanobis qda (raw),small,Green,71027,4530,159801,1561,2265,528,150,29275,269137,59.4
-mahalanobis qda (raw),small,Cyan,38089,74020,24053,97103,773,248,88,39885,274259,35.4
-mahalanobis qda (raw),small,Red,66690,1460,2620,1532,164406,24050,95,8269,269122,61.1
-mahalanobis qda (raw),small,Pink,65410,3104,1638,1672,100100,96484,74,5426,273908,35.2
-mahalanobis qda (raw),small,Yellow,7613,306,6022,54,844,191,146395,131816,293241,49.9
-mahalanobis qda (raw),small,White,4553,1230,731,134,373,430,5671,511603,524725,97.5
+mahalanobis qda (raw),small,Black,430163,783,726,530,1271,720,508,6984,441685,97.4
+mahalanobis qda (raw),small,Blue,60359,177977,1105,7219,734,430,304,6308,254436,69.9
+mahalanobis qda (raw),small,Green,23128,433,204916,552,987,340,266,7154,237776,86.2
+mahalanobis qda (raw),small,Cyan,22519,37106,3369,167751,728,395,288,10258,242414,69.2
+mahalanobis qda (raw),small,Red,19868,657,406,232,206389,2915,290,6937,237694,86.8
+mahalanobis qda (raw),small,Pink,12484,956,408,303,43644,176508,245,7258,241806,73.0
+mahalanobis qda (raw),small,Yellow,14258,381,1856,1098,1903,1142,194506,42516,257660,75.5
+mahalanobis qda (raw),small,White,11329,2874,856,636,1303,1250,2175,441421,461844,95.6
 mahalanobis qda (raw),wb-cool,Black,36898,0,0,0,6,0,0,0,36904,100.0
 mahalanobis qda (raw),wb-cool,Blue,10734,6284,6,1226,218,91,0,2664,21223,29.6
 mahalanobis qda (raw),wb-cool,Green,3406,0,12156,17,211,1,0,5224,21015,57.8
@@ -519,22 +471,14 @@ mahalanobis rda (raw),monitor,Red,1786,387,322,325,62693,1170,638,1615,68936,90.
 mahalanobis rda (raw),monitor,Pink,1117,492,344,336,459,65099,382,1853,70082,92.9
 mahalanobis rda (raw),monitor,Yellow,1169,591,1039,411,338,479,67093,4309,75429,88.9
 mahalanobis rda (raw),monitor,White,1878,806,579,651,452,670,873,127459,133368,95.6
-mahalanobis rda (raw),perspective,Black,0,0,0,0,0,0,0,0,0,
-mahalanobis rda (raw),perspective,Blue,0,0,0,0,0,0,0,0,0,
-mahalanobis rda (raw),perspective,Green,0,0,0,0,0,0,0,0,0,
-mahalanobis rda (raw),perspective,Cyan,0,0,0,0,0,0,0,0,0,
-mahalanobis rda (raw),perspective,Red,0,0,0,0,0,0,0,0,0,
-mahalanobis rda (raw),perspective,Pink,0,0,0,0,0,0,0,0,0,
-mahalanobis rda (raw),perspective,Yellow,0,0,0,0,0,0,0,0,0,
-mahalanobis rda (raw),perspective,White,0,0,0,0,0,0,0,0,0,
-mahalanobis rda (raw),small,Black,494803,1938,1036,84,988,403,575,1566,501393,98.7
-mahalanobis rda (raw),small,Blue,127128,145276,5116,7865,579,797,532,2175,289468,50.2
-mahalanobis rda (raw),small,Green,50413,5155,197413,2500,1417,277,1818,10144,269137,73.4
-mahalanobis rda (raw),small,Cyan,16020,94825,30643,111648,354,285,385,20099,274259,40.7
-mahalanobis rda (raw),small,Red,50098,830,891,557,184352,26807,988,4599,269122,68.5
-mahalanobis rda (raw),small,Pink,53244,2095,532,656,106799,107669,422,2491,273908,39.3
-mahalanobis rda (raw),small,Yellow,2877,394,7059,98,795,234,231409,50375,293241,78.9
-mahalanobis rda (raw),small,White,2899,1689,2260,298,620,538,15658,500763,524725,95.4
+mahalanobis rda (raw),small,Black,425222,2211,1823,1102,2690,1230,1765,5642,441685,96.3
+mahalanobis rda (raw),small,Blue,19944,208299,1930,17439,1416,1067,1088,3253,254436,81.9
+mahalanobis rda (raw),small,Green,7277,1207,220885,835,1301,610,1361,4300,237776,92.9
+mahalanobis rda (raw),small,Cyan,3964,27427,3873,199687,1130,746,938,4649,242414,82.4
+mahalanobis rda (raw),small,Red,5502,1106,954,504,220109,4811,1443,3265,237694,92.6
+mahalanobis rda (raw),small,Pink,4828,1280,900,597,32101,197943,954,3203,241806,81.9
+mahalanobis rda (raw),small,Yellow,3502,1072,2574,645,2379,734,234741,12013,257660,91.1
+mahalanobis rda (raw),small,White,6866,3604,2053,1199,2488,1700,4590,439344,461844,95.1
 mahalanobis rda (raw),wb-cool,Black,36894,0,0,0,10,0,0,0,36904,100.0
 mahalanobis rda (raw),wb-cool,Blue,8714,9638,14,2059,381,6,0,411,21223,45.4
 mahalanobis rda (raw),wb-cool,Green,6425,0,14498,26,40,0,0,26,21015,69.0
@@ -599,22 +543,14 @@ rda + deblur b=.04,monitor,Red,1163,426,348,346,63593,904,646,1510,68936,92.2
 rda + deblur b=.04,monitor,Pink,896,507,378,354,373,65460,416,1698,70082,93.4
 rda + deblur b=.04,monitor,Yellow,1097,633,1024,431,364,513,67902,3465,75429,90.0
 rda + deblur b=.04,monitor,White,1789,879,636,684,504,704,916,127256,133368,95.4
-rda + deblur b=.04,perspective,Black,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.04,perspective,Blue,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.04,perspective,Green,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.04,perspective,Cyan,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.04,perspective,Red,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.04,perspective,Pink,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.04,perspective,Yellow,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.04,perspective,White,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.04,small,Black,494513,2128,1069,110,965,446,629,1533,501393,98.6
-rda + deblur b=.04,small,Blue,102260,168400,5206,9923,541,788,583,1767,289468,58.2
-rda + deblur b=.04,small,Green,38335,5080,212824,2541,1411,240,2013,6693,269137,79.1
-rda + deblur b=.04,small,Cyan,10731,93888,29772,126544,348,295,426,12255,274259,46.1
-rda + deblur b=.04,small,Red,35062,1050,1292,754,206031,20897,1018,3018,269122,76.6
-rda + deblur b=.04,small,Pink,39591,2346,745,987,109403,118483,467,1886,273908,43.3
-rda + deblur b=.04,small,Yellow,2475,476,5147,108,718,232,244183,39902,293241,83.3
-rda + deblur b=.04,small,White,2701,1695,1860,229,576,500,13598,503566,524725,96.0
+rda + deblur b=.04,small,Black,424942,2300,1890,1247,2622,1389,1893,5402,441685,96.2
+rda + deblur b=.04,small,Blue,12266,206503,1839,27296,1423,1102,1149,2858,254436,81.2
+rda + deblur b=.04,small,Green,5215,1236,223578,900,1294,700,1320,3533,237776,94.0
+rda + deblur b=.04,small,Cyan,3297,21965,3128,207599,1143,812,997,3473,242414,85.6
+rda + deblur b=.04,small,Red,4107,1146,995,594,219728,6877,1490,2757,237694,92.4
+rda + deblur b=.04,small,Pink,3801,1290,964,678,23797,207428,1015,2833,241806,85.8
+rda + deblur b=.04,small,Yellow,3250,1159,2089,746,2571,833,237564,9448,257660,92.2
+rda + deblur b=.04,small,White,6498,3136,2077,1381,2489,1739,4379,440145,461844,95.3
 rda + deblur b=.04,wb-cool,Black,36898,0,0,0,6,0,0,0,36904,100.0
 rda + deblur b=.04,wb-cool,Blue,5337,13169,15,1907,397,8,0,390,21223,62.1
 rda + deblur b=.04,wb-cool,Green,4437,0,16516,26,24,0,0,12,21015,78.6
@@ -679,22 +615,14 @@ rda + deblur b=.05,monitor,Red,1062,433,361,352,63747,847,653,1481,68936,92.5
 rda + deblur b=.05,monitor,Pink,854,514,394,358,364,65511,426,1661,70082,93.5
 rda + deblur b=.05,monitor,Yellow,1072,642,938,441,375,517,68194,3250,75429,90.4
 rda + deblur b=.05,monitor,White,1755,899,662,700,514,709,934,127195,133368,95.4
-rda + deblur b=.05,perspective,Black,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.05,perspective,Blue,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.05,perspective,Green,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.05,perspective,Cyan,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.05,perspective,Red,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.05,perspective,Pink,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.05,perspective,Yellow,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.05,perspective,White,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.05,small,Black,494398,2212,1082,116,969,465,634,1517,501393,98.6
-rda + deblur b=.05,small,Blue,96803,173301,5027,10730,519,815,589,1684,289468,59.9
-rda + deblur b=.05,small,Green,37426,5044,214282,2527,1340,247,2095,6176,269137,79.6
-rda + deblur b=.05,small,Cyan,9949,93136,28523,131099,343,284,432,10493,274259,47.8
-rda + deblur b=.05,small,Red,31903,1054,1311,783,211016,19324,1021,2710,269122,78.4
-rda + deblur b=.05,small,Pink,36895,2294,752,1057,109287,121325,472,1826,273908,44.3
-rda + deblur b=.05,small,Yellow,2418,502,4459,113,722,240,246718,38069,293241,84.1
-rda + deblur b=.05,small,White,2654,1672,1820,223,585,514,13061,504196,524725,96.1
+rda + deblur b=.05,small,Black,424814,2313,1940,1302,2621,1420,1915,5360,441685,96.2
+rda + deblur b=.05,small,Blue,11110,202944,1822,32092,1399,1126,1174,2769,254436,79.8
+rda + deblur b=.05,small,Green,4878,1227,224031,932,1279,719,1323,3387,237776,94.2
+rda + deblur b=.05,small,Cyan,3171,20615,2929,209440,1150,820,1017,3272,242414,86.4
+rda + deblur b=.05,small,Red,3911,1151,996,628,219016,7798,1505,2689,237694,92.1
+rda + deblur b=.05,small,Pink,3642,1309,981,697,22524,208867,1032,2754,241806,86.4
+rda + deblur b=.05,small,Yellow,3191,1177,1983,782,2491,852,238285,8899,257660,92.5
+rda + deblur b=.05,small,White,6428,3058,2105,1449,2490,1736,4384,440194,461844,95.3
 rda + deblur b=.05,wb-cool,Black,36895,0,0,0,9,0,0,0,36904,100.0
 rda + deblur b=.05,wb-cool,Blue,4586,13922,17,1967,379,17,0,335,21223,65.6
 rda + deblur b=.05,wb-cool,Green,4122,0,16836,24,21,0,0,12,21015,80.1
@@ -759,22 +687,14 @@ rda + deblur b=.06,monitor,Red,969,441,364,359,63875,817,651,1460,68936,92.7
 rda + deblur b=.06,monitor,Pink,813,518,397,366,361,65569,437,1621,70082,93.6
 rda + deblur b=.06,monitor,Yellow,1046,652,914,451,385,531,68346,3104,75429,90.6
 rda + deblur b=.06,monitor,White,1729,921,694,706,527,722,954,127115,133368,95.3
-rda + deblur b=.06,perspective,Black,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.06,perspective,Blue,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.06,perspective,Green,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.06,perspective,Cyan,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.06,perspective,Red,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.06,perspective,Pink,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.06,perspective,Yellow,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.06,perspective,White,0,0,0,0,0,0,0,0,0,
-rda + deblur b=.06,small,Black,494190,2347,1094,130,1007,485,644,1496,501393,98.6
-rda + deblur b=.06,small,Blue,91108,178101,4916,11780,526,812,598,1627,289468,61.5
-rda + deblur b=.06,small,Green,37280,4845,215008,2538,1289,232,2161,5784,269137,79.9
-rda + deblur b=.06,small,Cyan,9307,91340,27312,136088,348,283,440,9141,274259,49.6
-rda + deblur b=.06,small,Red,29135,1063,1183,774,216153,17306,1012,2496,269122,80.3
-rda + deblur b=.06,small,Pink,34450,2324,729,1109,108925,124122,482,1767,273908,45.3
-rda + deblur b=.06,small,Yellow,2353,512,3727,116,746,248,249092,36447,293241,84.9
-rda + deblur b=.06,small,White,2594,1683,1774,229,633,509,12469,504834,524725,96.2
+rda + deblur b=.06,small,Black,424720,2314,1959,1373,2602,1446,1946,5325,441685,96.2
+rda + deblur b=.06,small,Blue,10128,198650,1793,37441,1388,1140,1186,2710,254436,78.1
+rda + deblur b=.06,small,Green,4599,1225,224391,980,1265,730,1345,3241,237776,94.4
+rda + deblur b=.06,small,Cyan,3060,19393,2724,211068,1161,836,1037,3135,242414,87.1
+rda + deblur b=.06,small,Red,3719,1153,1007,655,218032,8956,1545,2627,237694,91.7
+rda + deblur b=.06,small,Pink,3499,1304,1010,726,20875,210644,1051,2697,241806,87.1
+rda + deblur b=.06,small,Yellow,3117,1195,1884,815,2511,870,238968,8300,257660,92.7
+rda + deblur b=.06,small,White,6326,3000,2122,1521,2476,1757,4447,440195,461844,95.3
 rda + deblur b=.06,wb-cool,Black,36889,0,0,0,15,0,0,0,36904,100.0
 rda + deblur b=.06,wb-cool,Blue,3996,14406,18,2184,329,42,0,248,21223,67.9
 rda + deblur b=.06,wb-cool,Green,3870,0,17099,18,15,0,0,13,21015,81.4
@@ -839,22 +759,14 @@ jabcode (balanced),monitor,Red,2353,351,310,397,61843,1125,806,1751,68936,89.7
 jabcode (balanced),monitor,Pink,3424,418,324,423,296,60907,470,3820,70082,86.9
 jabcode (balanced),monitor,Yellow,899,499,623,539,350,508,67560,4451,75429,89.6
 jabcode (balanced),monitor,White,1499,701,541,804,451,687,1024,127661,133368,95.7
-jabcode (balanced),perspective,Black,0,0,0,0,0,0,0,0,0,
-jabcode (balanced),perspective,Blue,0,0,0,0,0,0,0,0,0,
-jabcode (balanced),perspective,Green,0,0,0,0,0,0,0,0,0,
-jabcode (balanced),perspective,Cyan,0,0,0,0,0,0,0,0,0,
-jabcode (balanced),perspective,Red,0,0,0,0,0,0,0,0,0,
-jabcode (balanced),perspective,Pink,0,0,0,0,0,0,0,0,0,
-jabcode (balanced),perspective,Yellow,0,0,0,0,0,0,0,0,0,
-jabcode (balanced),perspective,White,0,0,0,0,0,0,0,0,0,
-jabcode (balanced),small,Black,492974,1964,393,160,733,333,1139,1633,499329,98.7
-jabcode (balanced),small,Blue,140737,104069,1700,36758,157,595,1000,3442,288458,36.1
-jabcode (balanced),small,Green,109639,2285,109450,2604,307,388,34740,8838,268251,40.8
-jabcode (balanced),small,Cyan,54609,75422,14194,89608,101,226,1064,38059,273283,32.8
-jabcode (balanced),small,Red,66768,310,284,69,128721,49348,13627,9059,268186,48.0
-jabcode (balanced),small,Pink,99920,800,253,200,44650,114526,3515,9088,272952,42.0
-jabcode (balanced),small,Yellow,2727,291,11168,77,333,260,238333,39088,292277,81.5
-jabcode (balanced),small,White,3257,791,3184,278,227,380,13550,500910,522577,95.9
+jabcode (balanced),small,Black,425852,2182,921,1439,1590,1252,2310,6139,441685,96.4
+jabcode (balanced),small,Blue,18691,131584,595,95742,911,841,1367,4705,254436,51.7
+jabcode (balanced),small,Green,55855,1991,167384,1040,909,594,4516,5487,237776,70.4
+jabcode (balanced),small,Cyan,4319,44085,1328,180706,813,663,1169,9331,242414,74.5
+jabcode (balanced),small,Red,7438,967,492,658,212679,6614,4083,4763,237694,89.5
+jabcode (balanced),small,Pink,9234,1188,541,732,19611,201267,1353,7880,241806,83.2
+jabcode (balanced),small,Yellow,3678,1036,1068,769,1465,687,233727,15230,257660,90.7
+jabcode (balanced),small,White,7300,2242,1096,1509,1716,1380,4029,442572,461844,95.8
 jabcode (balanced),wb-cool,Black,36904,0,0,0,0,0,0,0,36904,100.0
 jabcode (balanced),wb-cool,Blue,9965,8075,55,3013,92,22,0,1,21223,38.0
 jabcode (balanced),wb-cool,Green,6430,0,14109,4,7,0,464,1,21015,67.1

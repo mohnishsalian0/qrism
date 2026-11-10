@@ -32,7 +32,7 @@ edge neighbors. Let $\mathcal{N}(p)$ be the set of edge neighbors of $p$ inside 
 most four), $n_p = |\mathcal{N}(p)|$ their number, and $\mathbf{t}_p$ the value the module
 would have without leakage. Then
 \begin{equation}
-\mathbf{m}_p = (1 - n_p\beta)\,\mathbf{t}_p + \beta \sum_{q \in \mathcal{N}(p)} \mathbf{m}_q ,
+\mathbf{m}_p = (1 - n_p\beta)\,\mathbf{t}_p + \beta \sum_{q \in \mathcal{N}(p)} \mathbf{t}_q ,
 \label{eq:leak}
 \end{equation}
 where $\beta$ is the fraction each neighbor contributes. Writing the neighbors' term with
@@ -41,12 +41,23 @@ their measured rather than true values makes the model invertible in one pass:
 \hat{\mathbf{t}}_p = \frac{\mathbf{m}_p - \beta \sum_{q \in \mathcal{N}(p)} \mathbf{m}_q}{1 - n_p\beta} .
 \label{eq:inverse}
 \end{equation}
-The correction acts on the module grid rather than on pixels, costs four reads per module,
-and handles the symbol border by using each module's actual neighbor count. Inside a
-uniform region it returns the input unchanged, so it alters only modules next to a color
-change, which is where interference occurs. The gain $1/(1-4\beta)$ amplifies sensor noise
-and diverges at $\beta = 0.25$, so $\beta$ trades interference removed against noise
-added. We use one fixed $\beta = 0.06$ for every photograph and every channel; Section~\ref{sec:results}
+Equation~\eqref{eq:inverse} rearranges to
+\begin{equation}
+\hat{\mathbf{t}}_p = \mathbf{m}_p - k \sum_{q \in \mathcal{N}(p)} (\mathbf{m}_q - \mathbf{m}_p) ,
+\quad k = \frac{\beta}{1 - n_p\beta} .
+\label{eq:laplacian}
+\end{equation}
+The sum is the discrete Laplacian of the module grid, so leak inversion is Laplacian
+sharpening, or unsharp masking~\cite{gonzalez2018dip}, applied to modules rather than
+pixels, with its gain $k$ fixed by the leak model instead of tuned by hand.
+Equation~\eqref{eq:inverse} is a one-pass approximation to solving~\eqref{eq:leak} for all
+modules jointly, accurate when $\beta$ is small.
+
+The correction costs four reads per module and handles the symbol border by using each
+module's actual neighbor count. The Laplacian is zero inside a uniform region, so only
+modules next to a color change are altered, which is where interference occurs. The gain
+$k$ amplifies sensor noise and, for interior modules, diverges at $\beta = 0.25$, so $\beta$
+trades interference removed against noise added. We use one fixed $\beta = 0.06$ for every photograph and every channel; Section~\ref{sec:results}
 shows how it was chosen and how it varies with module size and lighting.
 
 Prior treatments of cross-module interference are heavier. HiQ's QDA-CMI and LSVM-CMI

@@ -43,8 +43,9 @@ rate peaks at $\beta=0.06$: \HiqCodeChosen\% on CUHK-CQRC against \HiqCodeNoDebl
 without leak inversion, and \QrCodeChosen\% on the qrism dataset against
 \QrCodeNoDeblur\%. Because both datasets select the same value, choosing $\beta$ on one
 and testing on the other costs nothing. The optimum is narrow but not sharp: $\beta=0.05$
-cannot be told apart from 0.06 ($p\HiqPFive$ on CUHK-CQRC, $p\QrPFive$ on qrism), while 0.04 ($p\HiqPFour$,
-$p\QrPFour$) and 0.07 ($p\HiqPSeven$, $p\QrPSeven$) are worse on both datasets. Past 0.08
+cannot be told apart from 0.06 ($p\HiqPFive$ on CUHK-CQRC, $p\QrPFive$ on qrism), while 0.07 is
+worse on both datasets ($p\HiqPSeven$, $p\QrPSeven$) and 0.04 is worse on CUHK-CQRC
+($p\HiqPFour$) and marginally so on qrism ($p\QrPFour$). Past 0.08
 the noise gain dominates and decoding collapses, to \HiqCodeTwelve\% and \QrCodeTwelve\%
 at $\beta=0.12$.
 
@@ -54,9 +55,10 @@ The bit error rate does not peak where decoding does. At $\beta=0.06$ it falls f
 \QrBerMinBeta{} on qrism. Our reading is that the photographs that can be decoded at all
 want less correction than those that cannot. On
 the qrism dataset the bit error rate of 0.84\,mm symbols is lowest at
-$\beta=\QrBerMinBetaPxTwenty$, next to their decode optimum, while 0.5\,mm and 0.34\,mm
-symbols, which rarely decode, are best served by $\beta=\QrBerMinBetaPxTwelve$ and
-\QrBerMinBetaPxEight. Those symbols pull the pooled bit error rate toward larger $\beta$
+$\beta=\QrBerMinBetaPxTwenty$ and that of 0.34\,mm symbols at \QrBerMinBetaPxEight, each near
+its decode optimum, while
+0.5\,mm symbols, which rarely decode, are best served by $\beta=\QrBerMinBetaPxTwelve$.
+Those symbols pull the pooled bit error rate toward larger $\beta$
 without adding decoded symbols. The per-photograph optical estimate shows the same split:
 it has the lowest bit error rate of any setting on both datasets, yet on CUHK-CQRC it
 decodes fewer symbols than the fixed value (\HiqCodeOptical\% against \HiqCodeChosen\%,
@@ -87,11 +89,13 @@ be set independently.
 
 \input{generated/tab_breakdown}
 
-Table~\ref{tab:breakdown} breaks the qrism results down. The best $\beta$ grows as modules
-shrink: \QrBestBetaPxTwenty{} at 0.84\,mm, \QrBestBetaPxTwelve{} at 0.5\,mm and
-\QrBestBetaPxEight{} at 0.34\,mm. This is what a blur of fixed width in image pixels predicts, since
-it covers a larger fraction of a smaller module. At 0.34\,mm almost nothing decodes, at most
-\QrBestCodePxEight\%. Capture conditions move the optimum as well: daylight photographs do
+Table~\ref{tab:breakdown} breaks the qrism results down. The best $\beta$ does not follow
+printed module size: it is \QrBestBetaPxTwenty{} at 0.84\,mm, \QrBestBetaPxTwelve{} at 0.5\,mm
+and \QrBestBetaPxEight{} at 0.34\,mm. Leak inversion corrects a blur of fixed width in image
+pixels, and the 0.34\,mm symbols were photographed from closer range
+(Section~\ref{sec:setup}), so their printed size does not set how many pixels a module spans.
+They also decode more often than the 0.5\,mm symbols, \QrCodeChosenPxEight\% against
+\QrCodeChosenPxTwelve\% at $\beta=0.06$. Capture conditions move the optimum as well: daylight photographs do
 best at $\beta=\QrBestBetaDaylight$ (\QrBestCodeDaylight\% against \QrCodeChosenDaylight\%
 at 0.06), while the neutral white-balance condition does best at \QrBestBetaWbNeutral{} and
 the flash condition at \QrBestBetaFlashlight. These per-group optima are chosen on the photographs they are

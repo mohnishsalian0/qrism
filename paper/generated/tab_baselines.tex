@@ -4,10 +4,10 @@
 \small
 \caption{Color recovery pipelines, all fed the same module samples: bit error rate before
 Reed-Solomon correction and symbol decode rate, in percent, over the photographs localized
-at the right version (4600 on CUHK-CQRC, 2456 on qrism). The last block is our method with
+at the right version (4600 on CUHK-CQRC, 2460 on qrism). The last block is our method with
 $\beta$ estimated per photograph from the blur of the finder edges and with the fixed
 $\beta$, which decodes more symbols than every row above that block, with exact McNemar
-$p<10^{-35}$.}
+$p<10^{-25}$.}
 \label{tab:baselines}
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lrrrr@{}}
@@ -16,14 +16,14 @@ $p<10^{-35}$.}
 \cmidrule(lr){2-3}\cmidrule(l){4-5}
 Pipeline & BER & Symbol & BER & Symbol \\
 \midrule
-Nearest centroid & 5.96 & 20.0 & 7.19 & 16.5 \\
-Interference cancellation & 6.91 & 14.3 & 7.92 & 18.5 \\
-JAB Code classifier & 9.09 & 12.7 & 8.89 & 13.2 \\
+Nearest centroid & 5.96 & 20.0 & 6.85 & 21.1 \\
+Interference cancellation & 6.91 & 14.3 & 7.30 & 22.8 \\
+JAB Code classifier & 9.09 & 12.7 & 8.23 & 15.4 \\
 \midrule
-RDA, no leak inversion & 5.29 & 35.4 & 5.90 & 24.3 \\
+RDA, no leak inversion & 5.29 & 35.4 & 5.37 & 29.8 \\
 \midrule
-Ours, $\beta$ per photograph & 4.43 & 36.3 & 4.44 & 34.0 \\
-\textbf{Ours, $\beta=0.06$} & \textbf{4.61} & \textbf{42.9} & \textbf{4.85} & \textbf{33.9} \\
+Ours, $\beta$ per photograph & 4.43 & 36.3 & 4.30 & 39.0 \\
+\textbf{Ours, $\beta=0.06$} & \textbf{4.61} & \textbf{42.9} & \textbf{4.53} & \textbf{38.7} \\
 \bottomrule
 \end{tabular}
 \end{table}

@@ -610,7 +610,6 @@ COND_DESC = {
     "daylight": "Outdoor daylight",
     "flashlight": "Phone flash on",
     "monitor": "Shown on a display",
-    "perspective": "Oblique view",
     "close": "Close range",
     "small": "0.34 mm modules",
     "wb-cool": "White balance cool",
@@ -618,7 +617,7 @@ COND_DESC = {
     "wb-warm": "White balance warm",
 }
 MODULE_MM = {8: "0.34", 12: "0.5", 20: "0.84"}  # printed at 600 dpi
-COND_TABLE_ORDER = ["regular", "daylight", "flashlight", "monitor", "perspective", "close", "small",
+COND_TABLE_ORDER = ["regular", "daylight", "flashlight", "monitor", "close", "small",
                     "wb-cool", "wb-neutral", "wb-warm"]
 
 

@@ -37,8 +37,8 @@ samples are then classified by regularized discriminant analysis with shrink
 $\lambda=0.5$, fitted to the labelled samples. On the public CUHK-CQRC dataset the method
 decodes \HiqCodeChosen\% of localized symbols, against \HiqCodeRda\% without leak inversion
 and \HiqCodeEuclid\% for nearest-centroid classification; on a new dataset of qrism symbols
-it decodes \QrCodeChosen\% of localized symbols, from \QrCodeChosenPxTwenty\% at
-0.84\,mm modules to \QrCodeChosenPxTwelve\% at 0.5\,mm. On HiQ's own test split, with HiQ's shipped classifiers run on the
+it decodes \QrCodeChosen\% of localized symbols: \QrCodeChosenPxTwenty\% at 0.84\,mm
+modules, \QrCodeChosenPxTwelve\% at 0.5\,mm and \QrCodeChosenPxEight\% at 0.34\,mm. On HiQ's own test split, with HiQ's shipped classifiers run on the
 same module samples, ours decodes \PortOursCode\% of symbols against \PortCmiCode\% for the
 best of them; end to end, our decoder reads \PairCommonOurs\% of the symbols that both it and
 the released HiQ decoder localize, against \PairCommonHiq\% for HiQ.
@@ -46,7 +46,8 @@ the released HiQ decoder localize, against \PairCommonHiq\% for HiQ.
 The contributions are:
 \begin{itemize}
 \item a training-free color recovery method for multiplexed QR codes: per-photograph
-calibration from function patterns, a one-parameter inverse of inter-module leakage, and
+calibration from function patterns, a one-parameter inverse of inter-module leakage,
+equivalent to Laplacian sharpening on the module grid, and
 regularized discriminant analysis (Section~\ref{sec:method});
 \item a dataset of \QrAttempted{} photographs of qrism symbols at seven versions, four
 error-correction levels and four phones, with the source render of every symbol;

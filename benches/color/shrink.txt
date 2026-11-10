@@ -65,8 +65,7 @@ warning: unused import: `MaskPattern`
   |             ^^^^^^^^^^^
 
 warning: `qrism` (bin "qrism") generated 2 warnings (run `cargo fix --bin "qrism" -p qrism` to apply 2 suggestions)
-   Compiling qrism v0.1.0 (/Users/mohnishsalian/Projects/qrism)
-    Finished `bench` profile [optimized] target(s) in 3.54s
+    Finished `bench` profile [optimized] target(s) in 0.28s
      Running benches/color/main.rs (target/release/deps/color-ae737c50866f5725)
 
 
@@ -83,8 +82,8 @@ warning: `qrism` (bin "qrism") generated 2 warnings (run `cargo fix --bin "qrism
     0.07       26.8    32.9    36.5    39.0    40.5    41.2    41.9    42.3    42.4    41.9    41.1 
     0.08       21.9    27.6    31.5    33.7    35.1    36.3    37.0    37.9    38.0    37.7    36.6 
 
-    best    b=0.06 s=0.6    data%  90.07   layer%  53.6   code%  43.1 (41.7-44.5)
-    default b=0.06 s=0.5    data%  90.12   layer%  53.7   code%  42.9 (41.5-44.3)   vs best 25 / 16, p 0.211
+    best    b=0.06 s=0.6    data%  90.07   BER%  4.63   layer%  53.6   code%  43.1 (41.7-44.5)
+    default b=0.06 s=0.5    data%  90.12   BER%  4.61   layer%  53.7   code%  42.9 (41.5-44.3)   vs best 25 / 16, p 0.211
 
   by version: each group's best cell against the default (b=0.06 s=0.5)
     group           photos              best   code%   default   best / dflt        p
@@ -98,24 +97,25 @@ warning: `qrism` (bin "qrism") generated 2 warnings (run `cargo fix --bin "qrism
 
 
 ########## rda shrink x beta grid: qrism dataset, all module sizes ##########
+  skipping unparseable file name benches/dataset/high_capacity/qrism/oneplus-nord-ce-6/small/.trashed-1796810777-IMG20261109153545_01.jpg
 
-  3428 photos attempted, 2456 localized; code% over localized photos, beta down, shrink across
+  3388 photos attempted, 2460 localized; code% over localized photos, beta down, shrink across
   (shrink 0 = QDA, 1 = LDA; * = best cell, = = not distinguishable from it, McNemar p >= 0.05)
 
     beta         0.0     0.1     0.2     0.3     0.4     0.5     0.6     0.7     0.8     0.9     1.0
-    0.00       12.9    19.3    21.5    22.9    23.5    24.3    24.6    24.6    24.3    23.7    22.3 
-    0.04       18.7    26.6    29.2    30.8    31.8    31.9    32.0    31.7    31.4    30.8    29.3 
-    0.05       18.9    27.7    30.7    31.8    33.1=   33.4=   33.2=   33.5=   32.6    31.9    30.6 
-    0.06       17.8    28.1    31.6    32.8    33.3    33.9*   33.9=   33.5=   33.0    32.0    30.0 
-    0.07       15.3    27.2    30.3    31.6    32.3    32.7    32.7    32.9    32.2    31.3    30.1 
-    0.08       11.6    25.8    29.0    30.2    31.3    31.3    31.0    30.7    30.3    28.9    27.6 
+    0.00       15.4    23.8    26.8    28.3    28.9    29.8    30.2    30.1    29.8    29.0    27.2 
+    0.04       21.8    32.1    35.0    36.5    37.6=   37.6=   37.6=   37.1    36.6    35.7    33.7 
+    0.05       21.9    33.2    36.4    37.4    38.6=   38.7=   38.4=   38.3=   37.2    36.3    34.5 
+    0.06       20.1    33.4    36.9    38.0=   38.4=   38.7*   38.3=   37.6    36.7    35.4    33.3 
+    0.07       16.7    32.0    34.9    35.8    36.2    36.3    36.1    35.9    35.2    34.1    32.7 
+    0.08       12.3    29.5    32.4    33.2    34.2    34.2    33.8    33.3    32.7    31.2    29.6 
 
-    best    b=0.06 s=0.5    data%  87.94   chan%  56.2   fmt%  99.7   code%  33.9 (32.1-35.8)
-    default b=0.06 s=0.5    data%  87.94   chan%  56.2   fmt%  99.7   code%  33.9 (32.1-35.8)
+    best    b=0.06 s=0.5    data%  89.11   BER%  4.53   chan%  61.3   fmt%  99.6   code%  38.7 (36.8-40.7)
+    default b=0.06 s=0.5    data%  89.11   BER%  4.53   chan%  61.3   fmt%  99.6   code%  38.7 (36.8-40.7)
 
   by module size: each group's best cell against the default (b=0.06 s=0.5)
     group           photos              best   code%   default   best / dflt        p
-    08px               259      b=0.08 s=0.7     1.9       0.4         4 / 0    0.125
+    08px               263      b=0.04 s=0.4    54.8      46.0        29 / 6    0.000
     12px              1061      b=0.07 s=0.7    20.1      18.5       27 / 10    0.008
     20px              1136      b=0.05 s=0.7    56.0      56.0       36 / 36    1.000
 
@@ -125,22 +125,21 @@ warning: `qrism` (bin "qrism") generated 2 warnings (run `cargo fix --bin "qrism
     daylight           271      b=0.04 s=0.6    49.1      41.3        24 / 3    0.000
     flashlight         458      b=0.08 s=0.4    30.6      28.4        17 / 7    0.064
     monitor             75      b=0.07 s=0.8    93.3      89.3         3 / 0    0.250
-    perspective          0
     regular           1024      b=0.05 s=0.5    40.5      39.8       28 / 21    0.392
-    small              259      b=0.08 s=0.7     1.9       0.4         4 / 0    0.125
+    small              263      b=0.04 s=0.4    54.8      46.0        29 / 6    0.000
     wb-cool             23      b=0.08 s=0.3    60.9      47.8         3 / 0    0.250
     wb-neutral         145      b=0.08 s=0.4    50.3      35.9        21 / 0    0.000
     wb-warm            173      b=0.06 s=0.5    16.2      16.2         0 / 0    1.000
 
   by version: each group's best cell against the default (b=0.06 s=0.5)
     group           photos              best   code%   default   best / dflt        p
-    v1                 372      b=0.06 s=0.6    55.4      54.6         3 / 0    0.250
-    v5                 359      b=0.07 s=0.7    41.8      40.7        12 / 8    0.503
-    v10                358      b=0.05 s=0.7    40.8      40.2         6 / 4    0.754
-    v15                356      b=0.06 s=0.2    35.7      35.7         8 / 8    1.000
-    v25                364      b=0.05 s=0.4    27.7      25.5        12 / 4    0.077
-    v30                319      b=0.04 s=0.5    24.5      21.6        15 / 6    0.078
-    v40                328      b=0.04 s=0.5    17.7      15.5        10 / 3    0.092
+    v1                 376      b=0.06 s=0.6    58.8      58.0         3 / 0    0.250
+    v5                 371      b=0.06 s=0.6    45.3      44.7         5 / 3    0.727
+    v10                358      b=0.04 s=0.4    50.8      49.7       15 / 11    0.557
+    v15                354      b=0.06 s=0.2    43.8      40.7        19 / 8    0.052
+    v25                362      b=0.05 s=0.4    31.5      28.2        16 / 4    0.012
+    v30                318      b=0.04 s=0.5    30.5      26.7        17 / 5    0.017
+    v40                321      b=0.04 s=0.5    20.2      18.7        10 / 5    0.302
 
   wrote benches/color/shrink_qrism.csv and benches/color/shrink_qrism_photos.csv
 
@@ -149,6 +148,6 @@ warning: `qrism` (bin "qrism") generated 2 warnings (run `cargo fix --bin "qrism
   (code% over localized photos)
 
     chosen on   setting          hiq code% qrism code%
-    hiq         b=0.06 s=0.6          43.1        33.9
-    qrism       b=0.06 s=0.5          42.9        33.9
-    current     b=0.06 s=0.5          42.9        33.9
+    hiq         b=0.06 s=0.6          43.1        38.3
+    qrism       b=0.06 s=0.5          42.9        38.7
+    current     b=0.06 s=0.5          42.9        38.7

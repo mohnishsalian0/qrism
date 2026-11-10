@@ -23,12 +23,10 @@ function patterns are intact: it is fitted to each photograph without training d
 recovers the colors of a version-40 symbol in \TimeChosenVforty\,ms, and was evaluated on
 both printed and displayed symbols. The decode rates above are for single photographs; a
 phone scanner sees many frames per second and could retry on later ones, but we have not
-measured how often this helps. Symbols with 0.34\,mm modules almost never decode and oblique views are not
-localized (Section~\ref{sec:limitations}), so these uses would need further work before
-deployment.
+measured how often this helps.
 
-The fixed $\beta$ is the main compromise: its best value grows as modules shrink and shifts
-with lighting, and choosing it per photograph in a way that tracks decodability rather than
+The fixed $\beta$ is the main compromise: its best value shifts with module size, capture
+distance and lighting, and choosing it per photograph in a way that tracks decodability rather than
 bit error rate remains open.
 The Rust implementation is available at \url{https://github.com/mohnishsalian0/qrism}, and
 the qrism dataset is released with its source renders.
